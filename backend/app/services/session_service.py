@@ -39,6 +39,17 @@ async def create_session(
         {"message": msg, "delivered": False, "detected_at": None} for msg in key_messages
     ]
 
+    # Phase 24: Generate and snapshot Skill Focus instruction (D-03)
+    focus_instruction = None
+    if scenario.skill_id:
+        from app.services.skill_focus_service import compose_focus_instruction, extract_sop_steps
+        from app.services.skill_manager import load_skill_for_scenario
+
+        skill_content = await load_skill_for_scenario(db, scenario_id)
+        if skill_content:
+            sop_steps = extract_sop_steps(skill_content.content)
+            focus_instruction = compose_focus_instruction(skill_content, 0, sop_steps)
+
     session = CoachingSession(
         user_id=user_id,
         scenario_id=scenario_id,
@@ -48,10 +59,59 @@ async def create_session(
         # Skill audit trail: snapshot from scenario at session creation time
         skill_id=scenario.skill_id,
         skill_version_id=scenario.skill_version_id,
+        # Phase 24: Focus instruction snapshot (D-03)
+        focus_instruction=focus_instruction,
+        sop_current_step=0,
     )
     db.add(session)
     await db.flush()
     return session
+
+
+async def update_sop_progress(
+    db: AsyncSession, session: CoachingSession, messages: list[dict]
+) -> str | None:
+    """Update SOP progress after user message. Returns updated focus_instruction.
+
+    Per D-06: Uses LLM to detect current SOP step.
+    Per D-05: Returns updated focus_instruction with new progress hint.
+    """
+    if not session.focus_instruction or not session.skill_id:
+        return None
+
+    from app.services import config_service
+    from app.services.skill_focus_service import (
+        compose_focus_instruction,
+        detect_sop_step,
+        extract_sop_steps,
+    )
+    from app.services.skill_manager import load_skill_for_scenario
+
+    skill_content = await load_skill_for_scenario(db, session.scenario_id)
+    if not skill_content:
+        return session.focus_instruction
+
+    sop_steps = extract_sop_steps(skill_content.content)
+    if not sop_steps:
+        return session.focus_instruction
+
+    # Get LLM endpoint for progress detection
+    endpoint = await config_service.get_effective_endpoint(db, "azure_openai")
+    api_key = await config_service.get_effective_key(db, "azure_openai")
+
+    if endpoint and api_key:
+        new_step = await detect_sop_step(messages, sop_steps, endpoint, api_key)
+        session.sop_current_step = new_step
+    else:
+        # No LLM configured — increment step heuristically (1 step per 3 messages)
+        new_step = min(len(messages) // 3, len(sop_steps))
+        session.sop_current_step = new_step
+
+    # Recompose focus instruction with updated progress
+    updated_instruction = compose_focus_instruction(skill_content, new_step, sop_steps)
+    session.focus_instruction = updated_instruction
+    await db.flush()
+    return updated_instruction
 
 
 async def get_session(db: AsyncSession, session_id: str, user_id: str) -> CoachingSession:

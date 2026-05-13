@@ -138,6 +138,19 @@ async def send_message(
         history_messages = await session_service.get_session_messages(db, session_id)
         conversation_history = [{"role": m.role, "content": m.content} for m in history_messages]
 
+        # Phase 24: Update SOP progress and get focus instruction for this run (D-01, D-05, D-06)
+        msg_dicts_for_sop = [{"role": m.role, "content": m.content} for m in history_messages]
+        focus_instruction = await session_service.update_sop_progress(
+            db, session, msg_dicts_for_sop
+        )
+
+        # Phase 24: Prepend focus_instruction to scenario context for text-mode SSE (D-01)
+        scenario_context = hcp_prompt
+        if focus_instruction:
+            scenario_context = focus_instruction + "\n\n" + scenario_context
+        # Note: For agent-mode sessions (Azure Foundry SDK), focus_instruction should be
+        # passed as the `additional_instructions` parameter on the agent run.
+
         # Build coach request
         hcp_dict = None
         if session.scenario.hcp_profile:
@@ -150,7 +163,7 @@ async def send_message(
         coach_request = CoachRequest(
             session_id=session_id,
             message=request.message,
-            scenario_context=hcp_prompt,
+            scenario_context=scenario_context,
             hcp_profile=hcp_dict,
             scoring_criteria=scoring_weights,
             conversation_history=conversation_history,
