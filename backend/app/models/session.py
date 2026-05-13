@@ -65,10 +65,6 @@ class CoachingSession(Base, TimestampMixin):
         default=None,
     )
 
-    # Phase 24: Skill Focus instruction snapshot (D-03)
-    focus_instruction: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
-    sop_current_step: Mapped[int | None] = mapped_column(nullable=True, default=0)
-
     # Relationships
     scenario = relationship("Scenario")
     user = relationship("User")

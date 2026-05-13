@@ -64,8 +64,6 @@ class SessionResponse(BaseModel):
     mode: str = "text"
     audio_url: str | None = None
     voice_score_status: str = "none"
-    focus_instruction: str | None = None
-    sop_current_step: int | None = None
     message_count: int = 0
     created_at: datetime
     updated_at: datetime

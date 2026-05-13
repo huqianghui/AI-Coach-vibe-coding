@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Executing Phase 23
-stopped_at: Phase 24 context gathered
-last_updated: "2026-05-13T06:55:44.334Z"
-last_activity: 2026-05-13
+status: Executing Phase 22
+stopped_at: Phase 23 context gathered
+last_updated: "2026-05-07T13:38:38.181Z"
+last_activity: 2026-05-06
 progress:
-  total_phases: 25
+  total_phases: 24
   completed_phases: 21
-  total_plans: 120
+  total_plans: 114
   completed_plans: 107
-  percent: 89
+  percent: 94
 ---
 
 # Project State
@@ -21,12 +21,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** MRs can practice realistic conversations with AI-powered digital HCPs and receive immediate, multi-dimensional feedback to improve their communication skills -- anytime, without needing a real HCP or trainer.
-**Current focus:** Phase 23 — Complete training session with digital human
+**Current focus:** Phase 22 — scenarios
 
 ## Current Position
 
-Phase: 23 (Complete training session with digital human) — EXECUTING
-Plan: 1 of 6
+Phase: 22 (scenarios) — EXECUTING
+Plan: 1 of 12
 Plans 21-01 (backend model/schema/migration), 21-02 (frontend rubric selector), 21-03 (integration verification) all complete.
 
 ## Performance Metrics
@@ -285,7 +285,6 @@ None yet.
 - Phase 17 added: Agent Knowledge Base — Foundry IQ Integration (HCP Agent 知识库管理，Azure AI Search / Foundry IQ 连接，材料自动索引)
 - Phase 19 added: AI Coach Skill Module — Skill 生命周期管理、材料转 Skill、Skill Hub、HCP Agent Skill 分配与 SOP 驱动培训
 - Phase 23 added: Complete training session with digital human — full implementation and refactoring (多语言、UI、数字人、引导、评分完整实现)
-- Phase 24 added: 用户评估模块重构 — session中agent按skill instruction聚焦、session结束后Azure Content Understanding评估打分
 
 ### Quick Tasks Completed
 
@@ -295,7 +294,7 @@ None yet.
 
 ## Session Continuity
 
-Last activity: 2026-05-13
-Last session: 2026-05-13T06:55:44.329Z
-Stopped at: Phase 24 context gathered
-Resume file: .planning/phases/24-1-session-skill-agent-focus-skill-instruction-agent-session-/24-CONTEXT.md
+Last activity: 2026-05-06
+Last session: 2026-05-07T13:38:38.168Z
+Stopped at: Phase 23 context gathered
+Resume file: .planning/phases/23-complete-training-session-with-digital-human-full-implementa/23-CONTEXT.md
