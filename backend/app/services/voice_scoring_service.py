@@ -128,6 +128,9 @@ async def trigger_voice_scoring(session_id: str, language: str = "zh-CN") -> Non
     Uses own DB session (not request-scoped) per durable task pattern.
     Updates session.voice_score_status through lifecycle: pending -> processing -> completed/failed.
     Language follows scenario config (D-12).
+
+    Phase 24 (D-07): Tries Azure Content Understanding first for voice scoring,
+    falls back to MockVoiceScoringBackend when CU is not configured.
     """
     try:
         async with AsyncSessionLocal() as db:
@@ -141,10 +144,43 @@ async def trigger_voice_scoring(session_id: str, language: str = "zh-CN") -> Non
                 )
                 return
 
+            # Phase 24 (D-07): Use CU for voice scoring (replaces mock backend as primary)
+            from app.services.cu_evaluation_service import score_session_with_cu
+
             session.voice_score_status = "processing"
             await db.commit()
 
-            # Real CU takes 30-120s; mock is instant
+            # Try CU evaluation first — it handles both content + voice in one call
+            try:
+                cu_result = await score_session_with_cu(db, session_id)
+                if cu_result and cu_result.get("voice_total") is not None:
+                    # CU voice scoring succeeded — save voice dimensions
+                    voice_dims = [
+                        d for d in cu_result.get("dimensions", [])
+                        if d.get("category") == "voice"
+                    ]
+                    if voice_dims:
+                        voice_scores = {
+                            "dimensions": voice_dims,
+                            "overall_voice_score": cu_result["voice_total"],
+                        }
+                        await save_voice_score_details(db, session_id, voice_scores)
+                        session.voice_score_status = "completed"
+                        await db.commit()
+                        logger.info(
+                            "CU voice scoring completed for session %s: overall=%s",
+                            session_id,
+                            cu_result["voice_total"],
+                        )
+                        return
+            except Exception as e:
+                logger.warning(
+                    "CU voice scoring failed for session %s, falling back to mock: %s",
+                    session_id,
+                    e,
+                )
+
+            # Fallback: use mock voice scoring backend
             await asyncio.sleep(0.1)
 
             backend = get_voice_scoring_backend()

@@ -1,4 +1,10 @@
+# DEPRECATED (Phase 24, D-07): This module is replaced by cu_evaluation_service.py
+# Kept as reference and fallback for environments without Azure CU configured.
+# All new scoring flows use Azure Content Understanding via cu_evaluation_service.
 """LLM-based scoring engine for multi-dimensional coaching evaluation.
+
+DEPRECATED: Primary scoring now uses cu_evaluation_service.py (Azure Content Understanding).
+This module is retained as fallback when CU is not configured.
 
 Calls Azure OpenAI (or compatible endpoint) with structured JSON output
 to produce real scoring based on conversation transcript, HCP profile,

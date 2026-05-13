@@ -13,6 +13,7 @@ from app.models.scenario import Scenario
 from app.models.score import ScoreDetail, SessionScore
 from app.models.session import CoachingSession
 from app.models.skill import Skill
+from app.services.cu_evaluation_service import score_session_with_cu
 from app.services.rubric_service import get_rubric
 from app.services.scoring_engine import score_with_llm
 from app.utils.exceptions import AppException, NotFoundException
@@ -98,16 +99,26 @@ async def score_session(db: AsyncSession, session_id: str) -> SessionScore:
     # Extract Skill-specific assessment criteria if a Skill is assigned
     skill_criteria = _extract_skill_criteria(scenario.skill)
 
-    # Try LLM scoring first, fall back to mock if unavailable
-    scores = await score_with_llm(
-        db, scenario_data, message_dicts, key_messages_status,
-        rubric_dimensions, scenario.pass_threshold, skill_criteria=skill_criteria,
-    )
-    if scores is None:
-        logger.info("LLM scoring unavailable for session %s, using mock fallback", session_id)
-        scores = _generate_mock_scores(
-            scenario, messages, key_messages_status, rubric_dimensions
+    # Phase 24 (D-07): Try CU evaluation first, then LLM fallback, then mock
+    cu_result = await score_session_with_cu(db, session_id)
+
+    if cu_result:
+        # CU scoring succeeded — use structured results
+        logger.info("CU scoring succeeded for session %s", session_id)
+        scores = cu_result
+    else:
+        # CU unavailable — fall back to LLM scoring engine
+        scores = await score_with_llm(
+            db, scenario_data, message_dicts, key_messages_status,
+            rubric_dimensions, scenario.pass_threshold, skill_criteria=skill_criteria,
         )
+        if scores is None:
+            logger.info(
+                "LLM scoring unavailable for session %s, using mock fallback", session_id
+            )
+            scores = _generate_mock_scores(
+                scenario, messages, key_messages_status, rubric_dimensions
+            )
 
     # Create SessionScore
     session_score = SessionScore(
