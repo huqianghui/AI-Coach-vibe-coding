@@ -403,16 +403,14 @@ export default function AzureConfigPage() {
                 {t("azureConfig.aiFoundry.apiKeyHint")}
               </p>
             </div>
-            {aiFoundryRegion && (
-              <div className="grid gap-2 max-w-sm">
-                <Label>{t("azureConfig.aiFoundry.region")}</Label>
-                <Input
-                  value={aiFoundryRegion}
-                  disabled
-                  className="bg-muted text-muted-foreground"
-                />
-              </div>
-            )}
+            <div className="grid gap-2 max-w-sm">
+              <Label>{t("azureConfig.aiFoundry.region")}</Label>
+              <Input
+                value={aiFoundryRegion}
+                onChange={(e) => setAiFoundryRegion(e.target.value)}
+                placeholder={t("azureConfig.aiFoundry.regionPlaceholder")}
+              />
+            </div>
             <div className="flex items-center gap-3 pt-2">
               <Button
                 onClick={handleSaveFoundry}

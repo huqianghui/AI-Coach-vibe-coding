@@ -170,6 +170,7 @@ class TestTranscribeAudio:
         mock_adapter.transcribe.assert_not_awaited()
 
     @patch("app.api.speech.config_service.get_effective_region", new_callable=AsyncMock)
+    @patch("app.api.speech.config_service.get_effective_endpoint", new_callable=AsyncMock)
     @patch("app.api.speech.config_service.get_effective_key", new_callable=AsyncMock)
     @patch("app.api.speech.registry")
     @patch("app.api.speech.settings")
@@ -178,6 +179,7 @@ class TestTranscribeAudio:
         mock_settings,
         mock_registry,
         mock_get_effective_key,
+        mock_get_effective_endpoint,
         mock_get_effective_region,
         client,
     ):
@@ -185,6 +187,7 @@ class TestTranscribeAudio:
         mock_settings.feature_voice_enabled = False
         mock_settings.default_stt_provider = "azure"
         mock_get_effective_key.return_value = "master-speech-key"
+        mock_get_effective_endpoint.return_value = ""
         mock_get_effective_region.return_value = "eastus"
         mock_adapter = AsyncMock()
         mock_adapter.transcribe = AsyncMock(return_value="会议发言")
@@ -200,6 +203,50 @@ class TestTranscribeAudio:
             await session.commit()
 
         _, token = await _create_user_and_token("speech_trans_master_config")
+        response = await client.post(
+            "/api/v1/speech/transcribe",
+            headers={"Authorization": f"Bearer {token}"},
+            files={"audio": ("test.wav", BytesIO(b"fake audio bytes here"), "audio/wav")},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["text"] == "会议发言"
+        mock_adapter.transcribe.assert_awaited_once()
+
+    @patch("app.api.speech.config_service.get_effective_region", new_callable=AsyncMock)
+    @patch("app.api.speech.config_service.get_effective_endpoint", new_callable=AsyncMock)
+    @patch("app.api.speech.config_service.get_effective_key", new_callable=AsyncMock)
+    @patch("app.api.speech.registry")
+    @patch("app.api.speech.settings")
+    async def test_transcribe_allows_active_stt_config_with_entra_endpoint(
+        self,
+        mock_settings,
+        mock_registry,
+        mock_get_effective_key,
+        mock_get_effective_endpoint,
+        mock_get_effective_region,
+        client,
+    ):
+        """Active Azure Speech STT can use endpoint and region without an API key."""
+        mock_settings.feature_voice_enabled = False
+        mock_settings.default_stt_provider = "mock"
+        mock_get_effective_key.return_value = ""
+        mock_get_effective_endpoint.return_value = "https://speech.cognitiveservices.azure.com/"
+        mock_get_effective_region.return_value = "eastus"
+        mock_adapter = AsyncMock()
+        mock_adapter.transcribe = AsyncMock(return_value="会议发言")
+        mock_registry.get.return_value = mock_adapter
+        async with TestSessionLocal() as session:
+            session.add(
+                ServiceConfig(
+                    service_name="azure_speech_stt",
+                    display_name="Azure Speech (STT)",
+                    is_active=True,
+                )
+            )
+            await session.commit()
+
+        _, token = await _create_user_and_token("speech_trans_entra_config")
         response = await client.post(
             "/api/v1/speech/transcribe",
             headers={"Authorization": f"Bearer {token}"},
@@ -378,6 +425,7 @@ class TestSynthesizeSpeech:
         mock_adapter.synthesize.assert_not_awaited()
 
     @patch("app.api.speech.config_service.get_effective_region", new_callable=AsyncMock)
+    @patch("app.api.speech.config_service.get_effective_endpoint", new_callable=AsyncMock)
     @patch("app.api.speech.config_service.get_effective_key", new_callable=AsyncMock)
     @patch("app.api.speech.registry")
     @patch("app.api.speech.settings")
@@ -386,6 +434,7 @@ class TestSynthesizeSpeech:
         mock_settings,
         mock_registry,
         mock_get_effective_key,
+        mock_get_effective_endpoint,
         mock_get_effective_region,
         client,
     ):
@@ -393,6 +442,7 @@ class TestSynthesizeSpeech:
         mock_settings.feature_voice_enabled = False
         mock_settings.default_tts_provider = "azure"
         mock_get_effective_key.return_value = "master-speech-key"
+        mock_get_effective_endpoint.return_value = ""
         mock_get_effective_region.return_value = "eastus"
         mock_adapter = AsyncMock()
         mock_adapter.synthesize = AsyncMock(return_value=b"audio data")
@@ -408,6 +458,50 @@ class TestSynthesizeSpeech:
             await session.commit()
 
         _, token = await _create_user_and_token("speech_synth_master_config")
+        response = await client.post(
+            "/api/v1/speech/synthesize",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"text": "Hello"},
+        )
+
+        assert response.status_code == 200
+        assert response.content == b"audio data"
+        mock_adapter.synthesize.assert_awaited_once()
+
+    @patch("app.api.speech.config_service.get_effective_region", new_callable=AsyncMock)
+    @patch("app.api.speech.config_service.get_effective_endpoint", new_callable=AsyncMock)
+    @patch("app.api.speech.config_service.get_effective_key", new_callable=AsyncMock)
+    @patch("app.api.speech.registry")
+    @patch("app.api.speech.settings")
+    async def test_synthesize_allows_active_tts_config_with_entra_endpoint(
+        self,
+        mock_settings,
+        mock_registry,
+        mock_get_effective_key,
+        mock_get_effective_endpoint,
+        mock_get_effective_region,
+        client,
+    ):
+        """Active Azure Speech TTS can use endpoint and region without an API key."""
+        mock_settings.feature_voice_enabled = False
+        mock_settings.default_tts_provider = "mock"
+        mock_get_effective_key.return_value = ""
+        mock_get_effective_endpoint.return_value = "https://speech.cognitiveservices.azure.com/"
+        mock_get_effective_region.return_value = "eastus"
+        mock_adapter = AsyncMock()
+        mock_adapter.synthesize = AsyncMock(return_value=b"audio data")
+        mock_registry.get.return_value = mock_adapter
+        async with TestSessionLocal() as session:
+            session.add(
+                ServiceConfig(
+                    service_name="azure_speech_tts",
+                    display_name="Azure Speech (TTS)",
+                    is_active=True,
+                )
+            )
+            await session.commit()
+
+        _, token = await _create_user_and_token("speech_synth_entra_config")
         response = await client.post(
             "/api/v1/speech/synthesize",
             headers={"Authorization": f"Bearer {token}"},

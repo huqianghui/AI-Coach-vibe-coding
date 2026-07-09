@@ -120,6 +120,10 @@ class Settings(BaseSettings):
     default_tts_provider: str = "mock"
     default_avatar_provider: str = "mock"
 
+    # Prompt Optimizer sidecar (PROMPT-01): MCP Streamable-HTTP endpoint
+    prompt_optimizer_mcp_url: str = "http://prompt-optimizer:80/mcp"
+    prompt_optimizer_timeout_seconds: float = 60.0
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

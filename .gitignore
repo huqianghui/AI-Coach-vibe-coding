@@ -6,6 +6,8 @@ __pycache__/
 venv/
 *.db
 *.sqlite3
+*.db.bak-*
+*.db.bak
 
 # Node
 node_modules/
@@ -73,3 +75,9 @@ docs/
 !infra/azure/docs/
 !infra/azure/docs/**
 backend/data/
+
+#customer docs
+迈瑞/
+
+# Local dev runtime (scripts/dev-up.sh pidfiles + logs)
+/.dev/

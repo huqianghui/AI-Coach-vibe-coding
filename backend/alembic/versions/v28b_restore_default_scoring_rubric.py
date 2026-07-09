@@ -88,7 +88,9 @@ def upgrade() -> None:
     admin_row = conn.execute(
         sa.text("SELECT id FROM users WHERE role = 'admin' LIMIT 1")
     ).fetchone()
-    admin_id = admin_row[0] if admin_row else "system"
+    if admin_row is None:
+        return
+    admin_id = admin_row[0]
     now = datetime.now(UTC).replace(tzinfo=None)
     conn.execute(
         sa.text(

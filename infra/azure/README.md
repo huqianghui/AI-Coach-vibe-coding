@@ -10,7 +10,7 @@
 |---|---|
 | 应用/通用资源区域 | `swedencentral` |
 | Foundry/AI Services 区域 | 默认跟随应用区域，可用 `-FoundryLocation` 单独指定 |
-| 环境 | `demo` |
+| 环境 | `public` |
 | 名称前缀 | `aicoach` |
 | 部署模式 | `foundryOnly` |
 | 网络配置 | `publicDemo` |
@@ -82,8 +82,8 @@ az account set --subscription "<subscription-id-or-name>"
   -EnvironmentName "public" `
   -NetworkProfile publicDemo `
   -Location eastasia `
-  -FoundryLocation SwedenCentral `
-  -ChatDeploymentCapacity 30
+  -FoundryLocation eastus2 `
+  -DeployApp
 ```
 
 脚本会生成本地忽略文件 `infra\azure\.local\main.parameters.generated.json`，然后执行 Bicep 部署并输出 GitHub OIDC 配置值。云端默认使用 PostgreSQL Entra / Managed Identity 和 Key Vault service-key storage。后续重复运行时，如果资源组里已经有 Key Vault，脚本不会读取 Key Vault secret，也不会默认轮换 bootstrap secrets；只有显式切到 legacy password DB 模式且仍需要生成 `DATABASE_URL` 时，脚本才会提示输入当前 PostgreSQL admin password。
@@ -103,7 +103,7 @@ az account set --subscription "<subscription-id-or-name>"
 ```powershell
 .\infra\azure\scripts\deploy.ps1 `
   -Location "eastasia" `
-  -FoundryLocation "swedencentral"
+  -FoundryLocation "eastus2"
 ```
 
 部署完整 legacy 资源：
@@ -139,7 +139,7 @@ az account set --subscription "<subscription-id-or-name>"
 .\infra\azure\scripts\deploy.ps1
 ```
 
-如果不传 PostgreSQL Entra admin 参数，脚本会自动使用当前 `az login` 用户。首次部署后，脚本会自动运行 DB bootstrap，为后端 Managed Identity 创建/授权数据库 role；`privateBackend` 会在后端 Container Apps Job 内执行这一步，避免从本机公网连接已私有化的 PostgreSQL。运行 `-DeployApp` 时还会启动后端 Container Apps Job，在 Azure 环境内执行 Alembic schema migration 并写入幂等 sample 数据（SkillHub、HCP profiles、scenarios、training materials）。如果只想部署 infra 不做 DB role bootstrap，可传 `-SkipDbBootstrap`；如果要完全跳过 schema/sample bootstrap，可传 `-SkipAppBootstrap`。PostgreSQL Entra admin 后续可以在 Azure Portal 中改成 group 或专用 bootstrap identity。生产环境建议显式传 Entra group：
+如果不传 PostgreSQL Entra admin 参数，脚本会自动使用当前 `az login` 用户。首次部署后，脚本会自动运行 DB bootstrap，为后端 Managed Identity 创建/授权数据库 role；`publicDemo` 会从本机执行这一步，并临时把当前公网 IP 加入 PostgreSQL firewall，完成后默认删除该临时规则；`privateBackend` 会在后端 Container Apps Job 内执行这一步，避免从本机公网连接已私有化的 PostgreSQL。运行 `-DeployApp` 时还会启动后端 Container Apps Job，在 Azure 环境内执行 Alembic schema migration 并写入幂等 sample 数据（SkillHub、HCP profiles、scenarios、training materials）。如果只想部署 infra 不做 DB role bootstrap，可传 `-SkipDbBootstrap`；如果要完全跳过 schema/sample bootstrap，可传 `-SkipAppBootstrap`。PostgreSQL Entra admin 后续可以在 Azure Portal 中改成 group 或专用 bootstrap identity。生产环境建议显式传 Entra group：
 
 ```powershell
 .\infra\azure\scripts\deploy.ps1 `

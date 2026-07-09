@@ -8,7 +8,9 @@ from typing import TYPE_CHECKING, Any
 from app.models.hcp_profile import HcpProfile
 from app.models.scenario import Scenario
 from app.services.conference_prompt_config import (
+    DEFAULT_CONFERENCE_PROMPT_CONFIG,
     normalize_conference_prompt_config,
+    render_double_brace_template,
     render_prompt_template,
 )
 
@@ -16,15 +18,21 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 
-def build_hcp_system_prompt(
+async def build_hcp_system_prompt(
     hcp_profile: HcpProfile,
     scenario: Scenario,
     key_messages: list[str],
+    db: AsyncSession | None = None,
 ) -> str:
     """Build a system prompt that enforces HCP personality for AI coaching.
 
     Includes identity, personality rules, knowledge background, objections,
     scenario context, and key messages for awareness.
+
+    When ``db`` is provided, the base template is resolved from the prompt
+    registry (``hcp.system``). With the seeded default active the output is
+    byte-identical to the legacy imperative build; an admin-activated override
+    is rendered with the same dynamic values instead.
     """
     profile = hcp_profile.to_prompt_dict()
     expertise = profile.get("expertise_areas", [])
@@ -149,7 +157,74 @@ def build_hcp_system_prompt(
         ]
     )
 
-    return "\n".join(prompt_parts)
+    imperative_output = "\n".join(prompt_parts)
+
+    if db is None:
+        return imperative_output
+
+    from app.services.prompt_defaults import PROMPT_DEFAULTS
+    from app.services.prompt_registry import get_prompt
+
+    template = await get_prompt(db, "hcp.system")
+    if template == PROMPT_DEFAULTS["hcp.system"]["content"]:
+        # No admin override active — keep byte-identical legacy output.
+        return imperative_output
+
+    return render_double_brace_template(
+        template,
+        _hcp_prompt_values(profile, scenario, key_messages, personality_instruction),
+    )
+
+
+def _hcp_prompt_values(
+    profile: dict[str, Any],
+    scenario: Scenario,
+    key_messages: list[str],
+    personality_instruction: str,
+) -> dict[str, str]:
+    """Compose section values for rendering an admin ``hcp.system`` override."""
+    expertise = profile.get("expertise_areas", [])
+    objections = profile.get("objections", [])
+
+    identity_lines: list[str] = []
+    if profile.get("hospital"):
+        identity_lines.append(f"You work at {profile['hospital']}.")
+    if profile.get("title"):
+        identity_lines.append(f"Your title is {profile['title']}.")
+
+    knowledge_lines: list[str] = []
+    if expertise:
+        knowledge_lines.append(f"Expertise areas: {', '.join(expertise)}")
+    if profile.get("prescribing_habits"):
+        knowledge_lines.append(f"Prescribing habits: {profile['prescribing_habits']}")
+    if profile.get("concerns"):
+        knowledge_lines.append(f"Primary concerns: {profile['concerns']}")
+    if objections:
+        knowledge_lines.append("Objections (use naturally in conversation):")
+        knowledge_lines.extend(f"{i}. {obj}" for i, obj in enumerate(objections, 1))
+
+    scenario_lines: list[str] = []
+    if scenario.therapeutic_area:
+        scenario_lines.append(f"Therapeutic area: {scenario.therapeutic_area}")
+
+    km_lines: list[str] = []
+    if key_messages:
+        km_lines.append("The MR should deliver these key messages during the conversation:")
+        km_lines.extend(f"{i}. {msg}" for i, msg in enumerate(key_messages, 1))
+
+    return {
+        "name": profile["name"],
+        "specialty": profile["specialty"],
+        "identity_extras": "\n".join(identity_lines),
+        "personality_type": profile["personality_type"],
+        "emotional_state": str(profile["emotional_state"]),
+        "communication_style": str(profile["communication_style"]),
+        "personality_instruction": personality_instruction,
+        "knowledge_section": "\n".join(knowledge_lines),
+        "product": scenario.product,
+        "scenario_extras": "\n".join(scenario_lines),
+        "key_messages_section": "\n".join(km_lines),
+    }
 
 
 def build_scoring_prompt(
@@ -236,13 +311,20 @@ strengths/weaknesses with actual quotes where possible."""
     return prompt
 
 
-def build_key_message_detection_prompt(
-    key_messages: list[str], mr_message: str, conversation_history: list[dict]
+async def build_key_message_detection_prompt(
+    key_messages: list[str],
+    mr_message: str,
+    conversation_history: list[dict],
+    db: AsyncSession | None = None,
 ) -> str:
     """Build prompt for detecting which key messages the MR has delivered.
 
     Returns a prompt that instructs the AI to evaluate the MR's latest message
     against the expected key messages and return detected ones as JSON.
+
+    When ``db`` is provided, the base template is resolved from the prompt
+    registry (``key_message.detection``); the seeded default keeps the output
+    byte-identical, an admin override is rendered with the same values.
     """
     # Build conversation context (last few messages for context)
     if len(conversation_history) > 6:
@@ -255,13 +337,16 @@ def build_key_message_detection_prompt(
         history_lines.append(f"{role_label}: {msg.get('content', '')}")
     history_text = "\n".join(history_lines)
 
+    key_messages_numbered = chr(10).join(f"{i + 1}. {msg}" for i, msg in enumerate(key_messages))
+    sample_json = json.dumps(key_messages[:1])
+
     prompt = f"""# Key Message Detection Task
 
 Analyze the MR's latest message in the context of the conversation to determine
 which key messages have been delivered.
 
 ## Key Messages to Detect
-{chr(10).join(f"{i + 1}. {msg}" for i, msg in enumerate(key_messages))}
+{key_messages_numbered}
 
 ## Recent Conversation Context
 {history_text}
@@ -279,11 +364,29 @@ which key messages have been delivered.
 Return ONLY a JSON array of the key messages that were detected as delivered in this
 latest message:
 
-{json.dumps(key_messages[:1])}
+{sample_json}
 
 Return an empty array [] if no key messages were detected in this message."""
 
-    return prompt
+    if db is None:
+        return prompt
+
+    from app.services.prompt_defaults import PROMPT_DEFAULTS
+    from app.services.prompt_registry import get_prompt
+
+    template = await get_prompt(db, "key_message.detection")
+    if template == PROMPT_DEFAULTS["key_message.detection"]["content"]:
+        return prompt
+
+    return render_double_brace_template(
+        template,
+        {
+            "key_messages_numbered": key_messages_numbered,
+            "history_text": history_text,
+            "mr_message": mr_message,
+            "sample_json": sample_json,
+        },
+    )
 
 
 def build_conference_audience_prompt(
@@ -293,6 +396,7 @@ def build_conference_audience_prompt(
     conversation_history: list[dict],
     other_hcp_questions: list[dict],
     prompt_config: dict[str, Any] | None = None,
+    base_template: str | None = None,
 ) -> str:
     """Build a system prompt for a specific HCP in a conference audience.
 
@@ -339,8 +443,16 @@ def build_conference_audience_prompt(
         )
     other_questions_text = "\n".join(other_question_lines) or "No other HCP questions yet."
 
+    audience_template = config["audience_prompt_template"]
+    if (
+        base_template is not None
+        and audience_template == DEFAULT_CONFERENCE_PROMPT_CONFIG["audience_prompt_template"]
+    ):
+        # No per-entity override — use the registry-resolved base (passed by caller).
+        audience_template = base_template
+
     return render_prompt_template(
-        config["audience_prompt_template"],
+        audience_template,
         {
             "hcp_name": hcp_name,
             "specialty": specialty,

@@ -327,8 +327,51 @@ class TestUpdateScenarioEndpoint:
         assert response.json()["name"] == "New Name"
         assert response.json()["tags"] == ["new-tag"]
 
+    async def test_conference_prompt_version_bumps_on_config_change(self, client):
+        user_id, token = await _create_admin_and_token()
+        hcp_id = await _create_hcp_profile(client, token, user_id)
+        skill_id = await _create_skill(user_id)
 
-class TestDeleteScenarioEndpoint:
+        create_resp = await client.post(
+            "/api/v1/scenarios",
+            json={
+                "name": "ConfPrompt",
+                "hcp_profile_id": hcp_id,
+                "rubric_id": "test-rubric-id",
+                "skill_id": skill_id,
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        scn_id = create_resp.json()["id"]
+        assert create_resp.json()["conference_prompt_version"] == 1
+
+        # Changing the config bumps the version.
+        first = await client.put(
+            f"/api/v1/scenarios/{scn_id}",
+            json={"conference_prompt_config": {"audience_prompt_template": "You are {hcp_name}."}},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert first.status_code == 200
+        assert first.json()["conference_prompt_version"] == 2
+
+        # Re-sending the identical config does not bump the version.
+        same = await client.put(
+            f"/api/v1/scenarios/{scn_id}",
+            json={"conference_prompt_config": {"audience_prompt_template": "You are {hcp_name}."}},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert same.status_code == 200
+        assert same.json()["conference_prompt_version"] == 2
+
+        # A further change bumps again.
+        third = await client.put(
+            f"/api/v1/scenarios/{scn_id}",
+            json={"conference_prompt_config": {"audience_prompt_template": "Updated {hcp_name}."}},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert third.status_code == 200
+        assert third.json()["conference_prompt_version"] == 3
+
     """Tests for DELETE /api/v1/scenarios/{scenario_id}."""
 
     async def test_deletes_scenario(self, client):

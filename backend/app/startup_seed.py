@@ -298,3 +298,15 @@ async def seed_all(session: AsyncSession) -> None:
         _logging.getLogger(__name__).warning(
             "AI Foundry config seed failed (table may not exist yet)", exc_info=True
         )
+
+    # --- 7. Prompt registry ---
+    try:
+        from app.services.prompt_registry import seed_prompt_registry
+
+        await seed_prompt_registry(session)
+    except Exception:
+        import logging as _logging
+
+        _logging.getLogger(__name__).warning(
+            "Prompt registry seed failed (table may not exist yet)", exc_info=True
+        )

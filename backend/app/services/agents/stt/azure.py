@@ -8,6 +8,7 @@ from tempfile import NamedTemporaryFile
 import httpx
 
 from app.services.agents.stt.base import BaseSTTAdapter
+from app.services.azure_auth import get_token_credential_sync
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +22,10 @@ class AzureSTTAdapter(BaseSTTAdapter):
 
     name = "azure"
 
-    def __init__(self, key: str, region: str) -> None:
+    def __init__(self, key: str, region: str, endpoint: str = "") -> None:
         self._key = key
         self._region = region
+        self._endpoint = _normalize_speech_endpoint(endpoint)
 
     async def transcribe(self, audio_data: bytes, language: str = "zh-CN") -> str:
         """Transcribe audio bytes to text using Azure Speech SDK.
@@ -42,7 +44,7 @@ class AzureSTTAdapter(BaseSTTAdapter):
                 "Install with: pip install 'azure-cognitiveservices-speech>=1.48.0'"
             ) from None
 
-        speech_config = speechsdk.SpeechConfig(subscription=self._key, region=self._region)
+        speech_config = self._create_speech_config(speechsdk)
         speech_config.speech_recognition_language = language
 
         audio_config, cleanup_path = _audio_config_from_bytes(speechsdk, audio_data)
@@ -69,8 +71,19 @@ class AzureSTTAdapter(BaseSTTAdapter):
             raise RuntimeError(f"STT error: {result.reason}")
 
     async def is_available(self) -> bool:
-        """Check if Azure Speech key and region are configured."""
-        return bool(self._key and self._region)
+        """Check if Azure Speech can be addressed with key or Entra auth."""
+        return bool(self._region and (self._key or self._endpoint))
+
+    def _create_speech_config(self, speechsdk):
+        """Create SpeechConfig with API key fallback after Entra token credential."""
+        if self._key:
+            return speechsdk.SpeechConfig(subscription=self._key, region=self._region)
+
+        credential = get_token_credential_sync()
+        if credential is not None and self._endpoint:
+            return speechsdk.SpeechConfig(token_credential=credential, endpoint=self._endpoint)
+
+        raise RuntimeError("Azure Speech requires Managed Identity with an endpoint or an API key.")
 
     async def _transcribe_pcm_wav_with_rest(
         self,
@@ -79,6 +92,9 @@ class AzureSTTAdapter(BaseSTTAdapter):
     ) -> str | None:
         sample_rate = _pcm_wav_sample_rate(audio_data)
         if sample_rate is None:
+            return None
+
+        if not self._key:
             return None
 
         url = (
@@ -146,3 +162,12 @@ def _pcm_wav_sample_rate(audio_data: bytes) -> int | None:
     if audio_format != 1 or sample_rate <= 0 or bits_per_sample != 16:
         return None
     return sample_rate
+
+
+def _normalize_speech_endpoint(endpoint: str) -> str:
+    endpoint = endpoint.strip().rstrip("/")
+    if not endpoint:
+        return ""
+    if endpoint.endswith(".services.ai.azure.com"):
+        endpoint = endpoint.removesuffix(".services.ai.azure.com") + ".cognitiveservices.azure.com"
+    return endpoint + "/"

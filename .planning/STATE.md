@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Phase 26 Complete
-stopped_at: Phase 26 all plans executed
-last_updated: "2026-05-22T20:50:00.000Z"
-last_activity: 2026-05-22
+status: Ready to execute
+stopped_at: Completed 27-06-PLAN.md
+last_updated: "2026-07-01T08:47:03.127Z"
+last_activity: 2026-07-01
 progress:
-  total_phases: 28
-  completed_phases: 24
-  total_plans: 134
-  completed_plans: 121
-  percent: 90
+  total_phases: 29
+  completed_phases: 25
+  total_plans: 137
+  completed_plans: 127
+  percent: 93
 ---
 
 # Project State
@@ -21,12 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** MRs can practice realistic conversations with AI-powered digital HCPs and receive immediate, multi-dimensional feedback to improve their communication skills -- anytime, without needing a real HCP or trainer.
-**Current focus:** Phase 26 — add-voice-live-webrtc-transport-option-as-alternative-to-web
+**Current focus:** Phase 27 — prompt-optimizer-unified-prompt-management
 
 ## Current Position
 
+Phase: 27 (prompt-optimizer-unified-prompt-management) — IN PROGRESS (2/6 plans)
+Plan: 6 of 6 complete (27-01, 27-02 done; next 27-03)
 Phase: 26 (add-voice-live-webrtc-transport-option-as-alternative-to-web) — COMPLETE (3/3 plans)
-Plan: 3 of 3
 Phase: 24 (Skill Focus + CU Evaluation) — COMPLETE (5/5 plans)
 Phase: 25 (Refactor user training pages) — COMPLETE (2/2 plans)
 Phase: 26 (Scoring Architecture: LLM Content + CU Voice) — COMPLETE (1/1 plan)
@@ -123,6 +124,14 @@ Phase: 26 (Scoring Architecture: LLM Content + CU Voice) — COMPLETE (1/1 plan)
 | Phase 21 P01 | 9min | 2 tasks | 10 files |
 | Phase 21 P02 | 6min | 2 tasks | 5 files |
 | Phase 21 P03 | 30min | 2 tasks | 20 files |
+| Phase 27 P01 | 35 | 3 tasks | 10 files |
+| Phase 27 P02 | 25 | 2 tasks | 9 files |
+| Phase 27 P03 | 55 | 3 tasks | 8 files |
+| Phase 27 P04 | 40 | 3 tasks | 4 files |
+| Phase 27 P05 | 45 | 3 tasks | 15 files |
+| Phase 27 P06 | 50 | 2 tasks | 15 files |
+| Phase 27 P07 | 30 | 3 tasks | 8 files |
+| Phase 27 P08 | 20 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -276,6 +285,11 @@ Recent decisions affecting current work:
 - [Phase 26]: Content dims (5: key_message, objection_handling, communication, product_knowledge, scientific_info) → LLM; Voice dims (4: fluency, tone, pace, pronunciation) → CU
 - [Phase 26]: merge_scores() uses rubric content_weight/voice_weight (default 60/40) instead of hardcoded 70/30
 - [Phase 26]: Removed _generate_mock_scores(), MockVoiceScoringBackend, score_content_with_cu(), build_content_analyzer_schema()
+- [Phase 27]: 27-02: optimizer endpoint strategy = direct Azure /v1 (approved at checkpoint); LiteLLM proxy documented fallback
+- [Phase 27]: 27-03: builders resolve base templates via registry get_prompt; imperative HCP/key-message builders use a dual-path (byte-identical default, admin override rendered only when active version differs)
+- [Phase 27]: 27-04: prompt management API returns plain newest-first lists (not paginated) and records model='prompt-optimizer' provenance marker on every run
+- [Phase 27]: 27-05: Prompt management admin UI (list+editor, optimize-diff-adopt, version rollback); locale files under public/locales, MessageSquare nav icon
+- [Phase ?]: 27-06: shared PromptOptimizeDialog uses stateless /prompts/optimize; audience prompt wired in scenario-editor.tsx; conference_prompt_version bumps on config change; sidecar as internal Container App with Key Vault secretRef
 
 ### Pending Todos
 
@@ -306,7 +320,7 @@ None yet.
 
 ## Session Continuity
 
-Last activity: 2026-05-22
-Last session: 2026-05-22T11:16:25.854Z
-Stopped at: Phase 26 context gathered
-Resume file: .planning/phases/26-add-voice-live-webrtc-transport-option-as-alternative-to-web/26-CONTEXT.md
+Last activity: 2026-07-01
+Last session: 2026-07-01T08:45:45.630Z
+Stopped at: Completed 27-08-PLAN.md
+Resume file: None

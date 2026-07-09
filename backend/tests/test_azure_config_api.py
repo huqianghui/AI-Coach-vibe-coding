@@ -201,6 +201,37 @@ class TestRegisterAdapterFromConfig:
         assert isinstance(adapter, AzureSTTAdapter)
         assert adapter._key == "foundry-key"
         assert adapter._region == "eastus"
+        assert adapter._endpoint == ""
+        assert mock_settings.default_stt_provider == "azure"
+
+    async def test_speech_stt_can_use_master_endpoint_and_region_without_key(self):
+        """Azure Speech STT registers with master endpoint and region for Entra ID auth."""
+        from app.api.azure_config import register_adapter_from_config
+        from app.services.agents.stt.azure import AzureSTTAdapter
+
+        mock_registry = MagicMock()
+        mock_settings = MagicMock(default_stt_provider="mock")
+        with (
+            patch("app.services.agents.registry.registry", mock_registry),
+            patch("app.api.azure_config.settings", mock_settings),
+        ):
+            await register_adapter_from_config(
+                "azure_speech_stt",
+                endpoint="",
+                api_key="",
+                deployment="",
+                region="",
+                master_endpoint="https://foundry.services.ai.azure.com",
+                master_key="",
+                master_region="eastus2",
+            )
+
+        category, adapter = mock_registry.register.call_args.args
+        assert category == "stt"
+        assert isinstance(adapter, AzureSTTAdapter)
+        assert adapter._key == ""
+        assert adapter._region == "eastus2"
+        assert adapter._endpoint == "https://foundry.cognitiveservices.azure.com/"
         assert mock_settings.default_stt_provider == "azure"
 
     async def test_speech_tts_inherits_master_key_and_region(self):
@@ -229,6 +260,37 @@ class TestRegisterAdapterFromConfig:
         assert isinstance(adapter, AzureTTSAdapter)
         assert adapter._key == "foundry-key"
         assert adapter._region == "eastus"
+        assert adapter._endpoint == ""
+        assert mock_settings.default_tts_provider == "azure"
+
+    async def test_speech_tts_can_use_master_endpoint_and_region_without_key(self):
+        """Azure Speech TTS registers with master endpoint and region for Entra ID auth."""
+        from app.api.azure_config import register_adapter_from_config
+        from app.services.agents.tts.azure import AzureTTSAdapter
+
+        mock_registry = MagicMock()
+        mock_settings = MagicMock(default_tts_provider="mock")
+        with (
+            patch("app.services.agents.registry.registry", mock_registry),
+            patch("app.api.azure_config.settings", mock_settings),
+        ):
+            await register_adapter_from_config(
+                "azure_speech_tts",
+                endpoint="",
+                api_key="",
+                deployment="",
+                region="",
+                master_endpoint="https://foundry.services.ai.azure.com",
+                master_key="",
+                master_region="eastus2",
+            )
+
+        category, adapter = mock_registry.register.call_args.args
+        assert category == "tts"
+        assert isinstance(adapter, AzureTTSAdapter)
+        assert adapter._key == ""
+        assert adapter._region == "eastus2"
+        assert adapter._endpoint == "https://foundry.cognitiveservices.azure.com/"
         assert mock_settings.default_tts_provider == "azure"
 
     async def test_speech_stt_requires_effective_region(self):

@@ -74,6 +74,7 @@ class ScenarioOut(BaseModel):
     hcp_profile: HcpProfileBrief | None = None
     key_messages: list[str]
     conference_prompt_config: dict[str, Any]
+    conference_prompt_version: int = 1
     skill_id: str
     skill_version_id: str | None = None
     rubric_id: str

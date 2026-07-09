@@ -55,7 +55,7 @@ class TestBuildHcpSystemPrompt:
 
         hcp = _make_hcp_profile()
         scenario = _make_scenario()
-        prompt = build_hcp_system_prompt(hcp, scenario, ["Key msg 1"])
+        prompt = await build_hcp_system_prompt(hcp, scenario, ["Key msg 1"])
 
         assert "Dr. Zhang Wei" in prompt
         assert "Oncology" in prompt
@@ -65,7 +65,7 @@ class TestBuildHcpSystemPrompt:
 
         hcp = _make_hcp_profile(hospital="Peking Union", title="Associate Professor")
         scenario = _make_scenario()
-        prompt = build_hcp_system_prompt(hcp, scenario, [])
+        prompt = await build_hcp_system_prompt(hcp, scenario, [])
 
         assert "Peking Union" in prompt
         assert "Associate Professor" in prompt
@@ -75,7 +75,7 @@ class TestBuildHcpSystemPrompt:
 
         hcp = _make_hcp_profile(personality_type="skeptical")
         scenario = _make_scenario()
-        prompt = build_hcp_system_prompt(hcp, scenario, [])
+        prompt = await build_hcp_system_prompt(hcp, scenario, [])
 
         assert "SKEPTICAL" in prompt
         assert "push back on claims" in prompt
@@ -85,7 +85,7 @@ class TestBuildHcpSystemPrompt:
 
         hcp = _make_hcp_profile(personality_type="busy")
         scenario = _make_scenario()
-        prompt = build_hcp_system_prompt(hcp, scenario, [])
+        prompt = await build_hcp_system_prompt(hcp, scenario, [])
 
         assert "BUSY" in prompt
         assert "SHORT" in prompt
@@ -95,7 +95,7 @@ class TestBuildHcpSystemPrompt:
 
         hcp = _make_hcp_profile(personality_type="unknown_type")
         scenario = _make_scenario()
-        prompt = build_hcp_system_prompt(hcp, scenario, [])
+        prompt = await build_hcp_system_prompt(hcp, scenario, [])
 
         assert "professional demeanor" in prompt
 
@@ -104,7 +104,7 @@ class TestBuildHcpSystemPrompt:
 
         hcp = _make_hcp_profile(expertise_areas=json.dumps(["immunotherapy", "lung cancer"]))
         scenario = _make_scenario()
-        prompt = build_hcp_system_prompt(hcp, scenario, [])
+        prompt = await build_hcp_system_prompt(hcp, scenario, [])
 
         assert "immunotherapy" in prompt
         assert "lung cancer" in prompt
@@ -114,7 +114,7 @@ class TestBuildHcpSystemPrompt:
 
         hcp = _make_hcp_profile(objections=json.dumps(["Lack of long-term data", "Too expensive"]))
         scenario = _make_scenario()
-        prompt = build_hcp_system_prompt(hcp, scenario, [])
+        prompt = await build_hcp_system_prompt(hcp, scenario, [])
 
         assert "Lack of long-term data" in prompt
         assert "Too expensive" in prompt
@@ -124,7 +124,7 @@ class TestBuildHcpSystemPrompt:
 
         hcp = _make_hcp_profile()
         scenario = _make_scenario(tags=json.dumps(["product:Tislelizumab"]))
-        prompt = build_hcp_system_prompt(hcp, scenario, [])
+        prompt = await build_hcp_system_prompt(hcp, scenario, [])
 
         assert "Tislelizumab" in prompt
 
@@ -134,7 +134,7 @@ class TestBuildHcpSystemPrompt:
         hcp = _make_hcp_profile()
         scenario = _make_scenario()
         key_msgs = ["Superior PFS data", "Better safety"]
-        prompt = build_hcp_system_prompt(hcp, scenario, key_msgs)
+        prompt = await build_hcp_system_prompt(hcp, scenario, key_msgs)
 
         assert "Superior PFS data" in prompt
         assert "Better safety" in prompt
@@ -144,7 +144,7 @@ class TestBuildHcpSystemPrompt:
 
         hcp = _make_hcp_profile()
         scenario = _make_scenario()
-        prompt = build_hcp_system_prompt(hcp, scenario, [])
+        prompt = await build_hcp_system_prompt(hcp, scenario, [])
 
         assert "Key Messages (for your awareness)" not in prompt
 
@@ -153,7 +153,7 @@ class TestBuildHcpSystemPrompt:
 
         hcp = _make_hcp_profile()
         scenario = _make_scenario()
-        prompt = build_hcp_system_prompt(hcp, scenario, [])
+        prompt = await build_hcp_system_prompt(hcp, scenario, [])
 
         assert "Stay STRICTLY in character" in prompt
         assert "Do NOT provide coaching feedback" in prompt
@@ -235,7 +235,7 @@ class TestBuildKeyMessageDetectionPrompt:
         from app.services.prompt_builder import build_key_message_detection_prompt
 
         key_msgs = ["Superior PFS", "Better safety profile"]
-        prompt = build_key_message_detection_prompt(key_msgs, "test message", [])
+        prompt = await build_key_message_detection_prompt(key_msgs, "test message", [])
 
         assert "Superior PFS" in prompt
         assert "Better safety profile" in prompt
@@ -243,7 +243,7 @@ class TestBuildKeyMessageDetectionPrompt:
     async def test_includes_mr_latest_message(self):
         from app.services.prompt_builder import build_key_message_detection_prompt
 
-        prompt = build_key_message_detection_prompt(
+        prompt = await build_key_message_detection_prompt(
             ["Key msg"], "Brukinsa shows superior PFS data", []
         )
 
@@ -253,7 +253,7 @@ class TestBuildKeyMessageDetectionPrompt:
         from app.services.prompt_builder import build_key_message_detection_prompt
 
         history = [{"role": "user", "content": f"Message {i}"} for i in range(10)]
-        prompt = build_key_message_detection_prompt(["Key msg"], "latest", history)
+        prompt = await build_key_message_detection_prompt(["Key msg"], "latest", history)
 
         # Should only include the last 6 messages
         assert "Message 4" in prompt
@@ -268,7 +268,7 @@ class TestBuildKeyMessageDetectionPrompt:
             {"role": "user", "content": "First message"},
             {"role": "assistant", "content": "Response"},
         ]
-        prompt = build_key_message_detection_prompt(["Key msg"], "latest", history)
+        prompt = await build_key_message_detection_prompt(["Key msg"], "latest", history)
 
         assert "First message" in prompt
         assert "Response" in prompt
@@ -276,7 +276,7 @@ class TestBuildKeyMessageDetectionPrompt:
     async def test_returns_json_array_example(self):
         from app.services.prompt_builder import build_key_message_detection_prompt
 
-        prompt = build_key_message_detection_prompt(["Superior PFS", "Safety"], "test", [])
+        prompt = await build_key_message_detection_prompt(["Superior PFS", "Safety"], "test", [])
 
         assert "Return ONLY a JSON array" in prompt
         assert "empty array []" in prompt

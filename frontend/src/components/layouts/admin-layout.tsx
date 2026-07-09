@@ -11,6 +11,7 @@ import {
   FileText,
   Lightbulb,
   Wand2,
+  MessageSquare,
   BarChart,
   Cloud,
   Radio,
@@ -70,6 +71,7 @@ const sidebarGroups: SidebarGroup[] = [
       { path: "/admin/scoring-rubrics", labelKey: "scoringRubrics", icon: ClipboardCheck },
       { path: "/admin/materials", labelKey: "materials", icon: FileText },
       { path: "/admin/skills", labelKey: "skillHub", icon: Lightbulb },
+      { path: "/admin/prompts", labelKey: "prompts", icon: MessageSquare },
     ],
   },
   {

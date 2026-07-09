@@ -396,6 +396,24 @@ describe("AzureConfigPage", () => {
     );
   });
 
+  it("lets admins edit the AI Foundry master region", async () => {
+    renderWithProviders();
+
+    const regionInput = screen.getByDisplayValue("eastus");
+    await userEvent.clear(regionInput);
+    await userEvent.type(regionInput, "eastus2");
+
+    const saveButtons = screen.getAllByText("azureConfig.saveConfig");
+    await userEvent.click(saveButtons[0]!);
+
+    expect(mockFoundryMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        region: "eastus2",
+      }),
+      expect.any(Object),
+    );
+  });
+
   it("shows success toast on foundry save success", async () => {
     renderWithProviders();
     const saveButtons = screen.getAllByText("azureConfig.saveConfig");

@@ -325,6 +325,7 @@ async def _evaluate_sop_coverage_with_agent(
     *,
     project_endpoint: str,
     api_key: str,
+    prompt_template: str = _SOP_EVAL_PROMPT,
 ) -> tuple[list[dict], list[dict], int]:
     """Evaluate SOP coverage using the skill-evaluator MetaSkill agent.
 
@@ -347,7 +348,7 @@ async def _evaluate_sop_coverage_with_agent(
         transcript_lines.append(f"[#{i}] {role_label}: {msg['content']}")
     transcript_text = "\n".join(transcript_lines)
 
-    prompt = _SOP_EVAL_PROMPT.format(
+    prompt = prompt_template.format(
         sop_steps_text=sop_steps_text,
         transcript_text=transcript_text,
     )
@@ -665,6 +666,9 @@ async def run_dry_run_simulation(dry_run_id: str) -> None:
 
             # 8. Evaluate SOP coverage via skill-evaluator agent
             if eval_meta and eval_meta.agent_id:
+                from app.services.prompt_registry import get_prompt
+
+                sop_eval_template = await get_prompt(db, "dry_run.sop_eval")
                 coverage_map, issues, score = await _evaluate_sop_coverage_with_agent(
                     sop_steps=sop_steps,
                     conversation=conversation,
@@ -673,6 +677,7 @@ async def run_dry_run_simulation(dry_run_id: str) -> None:
                     evaluator_model=eval_meta.model,
                     project_endpoint=project_endpoint,
                     api_key=api_key_val,
+                    prompt_template=sop_eval_template,
                 )
             else:
                 # No evaluator synced — produce empty coverage

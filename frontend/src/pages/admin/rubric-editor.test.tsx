@@ -61,6 +61,7 @@ vi.mock("react-i18next", () => ({
 vi.mock("react-router-dom", () => ({
   useParams: () => ({ id: mockParamsId }),
   useNavigate: () => mockNavigate,
+  useLocation: () => ({ pathname: mockParamsId ? `/admin/scoring-rubrics/${mockParamsId}` : "/admin/scoring-rubrics/new", search: "" }),
 }));
 
 vi.mock("sonner", () => ({
@@ -291,6 +292,43 @@ describe("RubricEditorPage", () => {
       mockParamsId = "r1";
       renderEditor();
       expect(screen.getByText("rubric-r1-voice")).toBeInTheDocument();
+    });
+  });
+
+  describe("prompt optimization", () => {
+    beforeEach(() => {
+      mockParamsId = "r1";
+    });
+
+    it("opens the dedicated optimizer page from the AI optimize button", async () => {
+      const user = userEvent.setup();
+      renderEditor();
+
+      await user.click(screen.getByTestId("optimize-prompt"));
+
+      expect(mockNavigate).toHaveBeenCalledWith("/admin/prompt-optimizer", {
+        state: expect.objectContaining({
+          source: "text",
+          returnTo: "/admin/scoring-rubrics/r1",
+          resultStorageKey: "promptOptimizer:rubric:promptTemplate",
+          content: "Existing scoring prompt {transcript}",
+        }),
+      });
+    });
+
+    it("restores the optimized prompt into the template field after returning", async () => {
+      sessionStorage.setItem(
+        "promptOptimizer:rubric:promptTemplate",
+        "Optimized scoring prompt {transcript}",
+      );
+      renderEditor();
+
+      await waitFor(() => {
+        expect(
+          screen.getByDisplayValue("Optimized scoring prompt {transcript}"),
+        ).toBeInTheDocument();
+      });
+      expect(sessionStorage.getItem("promptOptimizer:rubric:promptTemplate")).toBeNull();
     });
   });
 

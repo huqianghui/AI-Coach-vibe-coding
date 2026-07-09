@@ -435,6 +435,10 @@ async def generate_hcp_questions(
     asking_hcps = [h for h in audience_config if h.get("role") != "moderator"]
 
     # Generate questions sequentially -- each HCP sees prior HCPs' questions
+    from app.services.prompt_registry import get_prompt
+
+    conference_base_template = await get_prompt(db, "conference.audience")
+
     for hcp_config in asking_hcps:
         hcp_prompt = build_conference_audience_prompt(
             hcp_config=hcp_config,
@@ -443,6 +447,7 @@ async def generate_hcp_questions(
             conversation_history=conversation_history,
             other_hcp_questions=other_hcp_questions,
             prompt_config=_conference_prompt_config_from_session(session),
+            base_template=conference_base_template,
         )
 
         coach_request = CoachRequest(
@@ -530,6 +535,9 @@ async def _generate_next_hcp_question(
         and msg.speaker_id in asking_hcp_ids
         and msg.speaker_id != next_hcp_id
     ]
+    from app.services.prompt_registry import get_prompt
+
+    conference_base_template = await get_prompt(db, "conference.audience")
     hcp_prompt = build_conference_audience_prompt(
         hcp_config=next_hcp,
         scenario=scenario,
@@ -537,6 +545,7 @@ async def _generate_next_hcp_question(
         conversation_history=conversation_history,
         other_hcp_questions=other_hcp_questions,
         prompt_config=_conference_prompt_config_from_session(session),
+        base_template=conference_base_template,
     )
 
     coach_request = CoachRequest(
@@ -592,6 +601,9 @@ async def _generate_hcp_response_text(
         for msg in messages
     ]
 
+    from app.services.prompt_registry import get_prompt
+
+    conference_base_template = await get_prompt(db, "conference.audience")
     hcp_prompt = build_conference_audience_prompt(
         hcp_config=hcp_config or {},
         scenario=scenario,
@@ -599,6 +611,7 @@ async def _generate_hcp_response_text(
         conversation_history=conversation_history,
         other_hcp_questions=[],
         prompt_config=_conference_prompt_config_from_session(session),
+        base_template=conference_base_template,
     )
 
     coach_request = CoachRequest(

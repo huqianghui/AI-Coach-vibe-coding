@@ -10,7 +10,30 @@ services:
       - DATABASE_URL=sqlite+aiosqlite:///./data/ai_coach.db
       - CORS_ORIGINS=http://localhost:5173,http://localhost:80
       - CONTENT_UNDERSTANDING_API_VERSION=2025-11-01
+      - PROMPT_OPTIMIZER_MCP_URL=http://prompt-optimizer:80/mcp
     command: uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+  # Prompt optimizer sidecar (PROMPT-01). Unmodified upstream AGPL image, used as a
+  # separate network service only. Internal-only: reachable on the compose network,
+  # never published to the host. Backed by Azure OpenAI via the OpenAI-compatible /v1
+  # ("custom") provider.
+  prompt-optimizer:
+    image: linshen/prompt-optimizer:2.11.7
+    expose:
+      - "80"
+    environment:
+      - MCP_DEFAULT_MODEL_PROVIDER=custom
+      - MCP_DEFAULT_LANGUAGE=zh
+      - VITE_CUSTOM_API_BASE_URL=${VITE_CUSTOM_API_BASE_URL}
+      - VITE_CUSTOM_API_KEY=${AZURE_OPENAI_API_KEY}
+      - VITE_CUSTOM_API_MODEL=${AOAI_DEPLOYMENT}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
 
   frontend:
     build: ./frontend

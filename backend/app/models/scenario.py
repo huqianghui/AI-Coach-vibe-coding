@@ -24,6 +24,8 @@ class Scenario(Base, TimestampMixin):
     )
     key_messages: Mapped[str] = mapped_column(Text, default="[]")  # JSON array of strings
     conference_prompt_config: Mapped[str] = mapped_column(Text, default="{}")
+    # Bumped whenever conference_prompt_config changes, for audit/version history (PROMPT-01)
+    conference_prompt_version: Mapped[int] = mapped_column(default=1)
 
     # Skill association — version-pinned for deterministic agent behavior (D-21, D-22)
     skill_id: Mapped[str] = mapped_column(

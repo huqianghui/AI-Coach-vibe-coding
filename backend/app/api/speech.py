@@ -55,17 +55,19 @@ async def _ensure_azure_speech_configured(
     if not config or not config.is_active:
         return
 
-    api_key = await config_service.get_effective_key(db, service_name)
     region = await config_service.get_effective_region(db, service_name)
-    if api_key and region:
+    api_key = await config_service.get_effective_key(db, service_name)
+    endpoint = await config_service.get_effective_endpoint(db, service_name)
+    if region and (api_key or endpoint):
         return
 
     raise AppException(
         status_code=503,
         code="AZURE_SPEECH_NOT_CONFIGURED",
         message=(
-            "Azure Speech requires an API key and region. "
-            "Configure Azure Speech STT/TTS or provide a master AI Foundry region."
+            "Azure Speech requires a region and either Managed Identity endpoint "
+            "configuration or an API key. Configure Azure Speech STT/TTS or provide "
+            "a master AI Foundry region."
         ),
     )
 
@@ -205,7 +207,8 @@ async def stream_transcription(
     azure_stt_adapter = registry.get("stt", "azure")
     speech_key = getattr(azure_stt_adapter, "_key", settings.azure_speech_key)
     speech_region = getattr(azure_stt_adapter, "_region", settings.azure_speech_region)
-    if not speech_key or not speech_region:
+    speech_endpoint = getattr(azure_stt_adapter, "_endpoint", "")
+    if not speech_region or not (speech_key or speech_endpoint):
         await _send_stream_error(
             ws,
             "AZURE_SPEECH_NOT_CONFIGURED",
@@ -213,7 +216,10 @@ async def stream_transcription(
         )
         return
 
-    speech_config = speechsdk.SpeechConfig(subscription=speech_key, region=speech_region)
+    if hasattr(azure_stt_adapter, "_create_speech_config"):
+        speech_config = azure_stt_adapter._create_speech_config(speechsdk)
+    else:
+        speech_config = speechsdk.SpeechConfig(subscription=speech_key, region=speech_region)
     speech_config.speech_recognition_language = language
     stream_format = speechsdk.audio.AudioStreamFormat(
         samples_per_second=STREAM_SAMPLE_RATE,

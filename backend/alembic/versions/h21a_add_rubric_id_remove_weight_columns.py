@@ -59,6 +59,23 @@ DIM_NAMES = [
 ]
 
 
+def _get_rubric_created_by_user_id(conn) -> str | None:
+    admin_row = conn.execute(
+        sa.text("SELECT id FROM users WHERE role = 'admin' LIMIT 1")
+    ).fetchone()
+    if admin_row:
+        return admin_row[0]
+
+    scenario_user_row = conn.execute(
+        sa.text(
+            "SELECT s.created_by FROM scenarios s "
+            "JOIN users u ON u.id = s.created_by "
+            "WHERE s.created_by IS NOT NULL LIMIT 1"
+        )
+    ).fetchone()
+    return scenario_user_row[0] if scenario_user_row else None
+
+
 def upgrade() -> None:
     # -- Step 1: Add rubric_id column as NULLABLE (temporarily) --
     with op.batch_alter_table("scenarios") as batch_op:
@@ -95,13 +112,12 @@ def upgrade() -> None:
         combo = (row[1], row[2], row[3], row[4], row[5])
         weight_combos.setdefault(combo, []).append(row[0])
 
-    # Find admin user for created_by (use first admin, fallback to 'system')
-    admin_row = conn.execute(
-        sa.text("SELECT id FROM users WHERE role = 'admin' LIMIT 1")
-    ).fetchone()
-    admin_id = admin_row[0] if admin_row else "system"
+    created_by_user_id = _get_rubric_created_by_user_id(conn)
 
     for combo, scenario_ids in weight_combos.items():
+        if created_by_user_id is None:
+            raise RuntimeError("Cannot create migrated scoring rubrics without an existing user")
+
         rubric_id = str(uuid.uuid4())
         is_default = combo == (30, 25, 20, 15, 10)
 
@@ -145,7 +161,7 @@ def upgrade() -> None:
                 "stype": "f2f",
                 "dims": dims,
                 "is_default": is_default,
-                "created_by": admin_id,
+                "created_by": created_by_user_id,
                 "cat": now,
                 "uat": now,
             },
@@ -172,6 +188,9 @@ def upgrade() -> None:
         if default_row:
             fallback_rid = default_row[0]
         else:
+            if created_by_user_id is None:
+                raise RuntimeError("Cannot create fallback scoring rubric without an existing user")
+
             fallback_rid = str(uuid.uuid4())
             default_dims = json.dumps(
                 [
@@ -198,7 +217,7 @@ def upgrade() -> None:
                     "stype": "f2f",
                     "dims": default_dims,
                     "is_default": True,
-                    "created_by": admin_id,
+                    "created_by": created_by_user_id,
                     "cat": now,
                     "uat": now,
                 },

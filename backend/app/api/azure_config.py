@@ -64,6 +64,7 @@ async def register_adapter_from_config(
     effective_key = api_key or master_key
     effective_region = region or master_region
     effective_deployment = deployment or master_model
+    effective_endpoint = endpoint or master_endpoint
 
     if service_name == "azure_openai" and effective_key:
         from app.services.agents.adapters.azure_openai import AzureOpenAIAdapter
@@ -77,22 +78,35 @@ async def register_adapter_from_config(
         registry.register("llm", adapter)
         settings.default_llm_provider = "azure_openai"
 
-    elif service_name == "azure_speech_stt" and effective_key and effective_region:
+    elif (
+        service_name == "azure_speech_stt"
+        and effective_region
+        and (effective_key or effective_endpoint)
+    ):
         from app.services.agents.stt.azure import AzureSTTAdapter
 
-        registry.register("stt", AzureSTTAdapter(effective_key, effective_region))
+        registry.register(
+            "stt",
+            AzureSTTAdapter(effective_key, effective_region, effective_endpoint),
+        )
         settings.default_stt_provider = "azure"
 
-    elif service_name == "azure_speech_tts" and effective_key and effective_region:
+    elif (
+        service_name == "azure_speech_tts"
+        and effective_region
+        and (effective_key or effective_endpoint)
+    ):
         from app.services.agents.tts.azure import AzureTTSAdapter
 
-        registry.register("tts", AzureTTSAdapter(effective_key, effective_region))
+        registry.register(
+            "tts",
+            AzureTTSAdapter(effective_key, effective_region, effective_endpoint),
+        )
         settings.default_tts_provider = "azure"
 
     elif service_name == "azure_avatar" and effective_key:
         from app.services.agents.avatar.azure import AzureAvatarAdapter
 
-        effective_endpoint = endpoint or master_endpoint
         registry.register(
             "avatar",
             AzureAvatarAdapter(effective_endpoint, effective_key, region=effective_region),

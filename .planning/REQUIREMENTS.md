@@ -187,3 +187,13 @@
 ---
 *Requirements defined: 2026-03-24*
 *Last updated: 2026-03-24 after roadmap creation -- all requirements mapped to phases*
+
+
+### Prompt Management (PROMPT)
+
+- [x] **PROMPT-01**: Integrate the open-source prompt-optimizer via a sidecar + backend MCP client, backed by Azure OpenAI (unmodified upstream image; internal-only)
+- [x] **PROMPT-02**: All project prompts are unified into a single versioned registry with a get_prompt resolver; builders read from the registry with default-equivalent fallback
+- [x] **PROMPT-03**: Every AI optimization is recorded as an auditable run (original, optimized result, mode, template, model, time, actor)
+- [x] **PROMPT-04**: Each prompt has an immutable version history supporting rollback to any prior version
+- [x] **PROMPT-05**: A single admin UI manages all prompts: browse, edit, AI-optimize with diff, adopt, and roll back
+- [x] **PROMPT-06**: Admins can create a brand-new prompt from the management UI (not limited to optimizing existing ones) and view the text content of any historical version

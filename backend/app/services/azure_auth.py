@@ -57,6 +57,16 @@ def _get_credential_sync() -> Any:
         return None
 
 
+def get_token_credential_sync() -> Any:
+    """Return a sync DefaultAzureCredential for Azure SDKs that accept TokenCredential.
+
+    Speech SDK token-credential constructors are synchronous, so they cannot use
+    the async helper below. The credential is cached and can use local az login
+    or the Container App managed identity via DefaultAzureCredential.
+    """
+    return _get_credential_sync()
+
+
 async def get_azure_credential() -> Any:
     """Get a cached async DefaultAzureCredential instance.
 

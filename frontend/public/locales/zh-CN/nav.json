@@ -15,5 +15,6 @@
   "analytics": "分析",
   "voiceLive": "Voice Live",
   "skillHub": "技能中心",
-  "metaSkills": "技能 AI 配置"
+  "metaSkills": "技能 AI 配置",
+  "prompts": "Prompt 管理"
 }

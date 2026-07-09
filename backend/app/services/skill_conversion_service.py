@@ -273,15 +273,17 @@ async def _call_sop_extraction(db: AsyncSession, text_chunk: str) -> dict:
     """Call Azure OpenAI with SOP extraction prompt. Returns parsed JSON dict."""
     client, deployment = await _get_openai_client(db)
     from app.config import get_settings
+    from app.services.prompt_registry import get_prompt
 
     settings = get_settings()
+    sop_extraction_template = await get_prompt(db, "skill.sop_extraction")
 
     response = await client.chat.completions.create(
         model=deployment,
         messages=[
             {
                 "role": "system",
-                "content": SOP_EXTRACTION_PROMPT.format(
+                "content": sop_extraction_template.format(
                     language_instruction=_get_language_instruction(),
                 ),
             },
@@ -680,7 +682,10 @@ async def regenerate_sop_with_feedback(
     if not skill.content:
         bad_request("Skill has no SOP content to regenerate")
 
-    prompt = AI_FEEDBACK_PROMPT.format(
+    from app.services.prompt_registry import get_prompt
+
+    ai_feedback_template = await get_prompt(db, "skill.ai_feedback")
+    prompt = ai_feedback_template.format(
         current_content=skill.content[:50000],
         feedback=feedback[:5000],
         language_instruction=_get_language_instruction(),

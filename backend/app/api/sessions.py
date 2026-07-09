@@ -128,10 +128,11 @@ async def send_message(
         # Build HCP system prompt
         key_messages = json.loads(session.scenario.key_messages)
 
-        hcp_prompt = build_hcp_system_prompt(
+        hcp_prompt = await build_hcp_system_prompt(
             session.scenario.hcp_profile,
             session.scenario,
             key_messages,
+            db=db,
         )
 
         # Fetch conversation history for multi-turn dialogue

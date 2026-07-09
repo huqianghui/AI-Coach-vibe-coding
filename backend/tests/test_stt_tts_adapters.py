@@ -40,7 +40,7 @@ class TestAzureSTTAvailability:
         assert await adapter.is_available() is False
 
     async def test_unavailable_with_empty_key(self):
-        """Empty key with valid region is still unavailable."""
+        """Empty key with valid region but no endpoint is unavailable."""
         adapter = AzureSTTAdapter("", "eastus")
         assert await adapter.is_available() is False
 
@@ -52,6 +52,11 @@ class TestAzureSTTAvailability:
     async def test_available_with_credentials(self):
         """Both key and region provided makes adapter available."""
         adapter = AzureSTTAdapter("my-key", "eastus")
+        assert await adapter.is_available() is True
+
+    async def test_available_with_entra_endpoint_and_region(self):
+        """Endpoint plus region allows keyless Managed Identity auth."""
+        adapter = AzureSTTAdapter("", "eastus", "https://speech.cognitiveservices.azure.com/")
         assert await adapter.is_available() is True
 
 
@@ -69,6 +74,23 @@ class TestAzureSTTTranscribe:
         """Adapter name is 'azure'."""
         adapter = AzureSTTAdapter("k", "r")
         assert adapter.name == "azure"
+
+    async def test_keyless_config_uses_token_credential_endpoint(self):
+        """Keyless STT creates SpeechConfig with TokenCredential and custom endpoint."""
+        sdk, _ = _mock_azure_speech_sdk()
+        credential = MagicMock()
+        adapter = AzureSTTAdapter("", "eastus", "https://speech.services.ai.azure.com")
+
+        with patch(
+            "app.services.agents.stt.azure.get_token_credential_sync",
+            return_value=credential,
+        ):
+            adapter._create_speech_config(sdk)
+
+        sdk.SpeechConfig.assert_called_once_with(
+            token_credential=credential,
+            endpoint="https://speech.cognitiveservices.azure.com/",
+        )
 
     async def test_transcribe_recognized_speech(self):
         """Transcribe returns text when speech is recognized."""
@@ -168,13 +190,18 @@ class TestAzureTTSAvailability:
         assert await adapter.is_available() is False
 
     async def test_unavailable_with_empty_key(self):
-        """Empty key with valid region is still unavailable."""
+        """Empty key with valid region but no endpoint is unavailable."""
         adapter = AzureTTSAdapter("", "eastus")
         assert await adapter.is_available() is False
 
     async def test_available_with_credentials(self):
         """Both key and region provided makes adapter available."""
         adapter = AzureTTSAdapter("my-key", "eastus")
+        assert await adapter.is_available() is True
+
+    async def test_available_with_entra_endpoint_and_region(self):
+        """Endpoint plus region allows keyless Managed Identity auth."""
+        adapter = AzureTTSAdapter("", "eastus", "https://speech.cognitiveservices.azure.com/")
         assert await adapter.is_available() is True
 
 
@@ -210,6 +237,23 @@ class TestAzureTTSListVoices:
 
 class TestAzureTTSSynthesize:
     """Tests for AzureTTSAdapter.synthesize error handling."""
+
+    async def test_keyless_config_uses_token_credential_endpoint(self):
+        """Keyless TTS creates SpeechConfig with TokenCredential and custom endpoint."""
+        sdk, _ = _mock_azure_speech_sdk()
+        credential = MagicMock()
+        adapter = AzureTTSAdapter("", "eastus", "https://speech.services.ai.azure.com")
+
+        with patch(
+            "app.services.agents.tts.azure.get_token_credential_sync",
+            return_value=credential,
+        ):
+            adapter._create_speech_config(sdk)
+
+        sdk.SpeechConfig.assert_called_once_with(
+            token_credential=credential,
+            endpoint="https://speech.cognitiveservices.azure.com/",
+        )
 
     async def test_synthesize_without_sdk_raises_runtime_error(self):
         """Synthesize raises RuntimeError when azure SDK is not installed."""

@@ -2,7 +2,9 @@
 
 import asyncio
 
+from app.services.agents.stt.azure import _normalize_speech_endpoint
 from app.services.agents.tts.base import BaseTTSAdapter
+from app.services.azure_auth import get_token_credential_sync
 
 
 class AzureTTSAdapter(BaseTTSAdapter):
@@ -14,9 +16,10 @@ class AzureTTSAdapter(BaseTTSAdapter):
 
     name = "azure"
 
-    def __init__(self, key: str, region: str) -> None:
+    def __init__(self, key: str, region: str, endpoint: str = "") -> None:
         self._key = key
         self._region = region
+        self._endpoint = _normalize_speech_endpoint(endpoint)
 
     async def synthesize(
         self, text: str, language: str = "zh-CN", voice: str | None = None
@@ -35,7 +38,7 @@ class AzureTTSAdapter(BaseTTSAdapter):
 
         voice_id = voice or "zh-CN-XiaoxiaoNeural"
 
-        speech_config = speechsdk.SpeechConfig(subscription=self._key, region=self._region)
+        speech_config = self._create_speech_config(speechsdk)
 
         synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=None)
 
@@ -132,8 +135,19 @@ class AzureTTSAdapter(BaseTTSAdapter):
         return zh_cn_voices
 
     async def is_available(self) -> bool:
-        """Check if Azure Speech key and region are configured."""
-        return bool(self._key and self._region)
+        """Check if Azure Speech can be addressed with key or Entra auth."""
+        return bool(self._region and (self._key or self._endpoint))
+
+    def _create_speech_config(self, speechsdk):
+        """Create SpeechConfig with API key fallback after Entra token credential."""
+        if self._key:
+            return speechsdk.SpeechConfig(subscription=self._key, region=self._region)
+
+        credential = get_token_credential_sync()
+        if credential is not None and self._endpoint:
+            return speechsdk.SpeechConfig(token_credential=credential, endpoint=self._endpoint)
+
+        raise RuntimeError("Azure Speech requires Managed Identity with an endpoint or an API key.")
 
 
 def _escape_xml(text: str) -> str:

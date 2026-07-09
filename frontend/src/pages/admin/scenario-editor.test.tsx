@@ -122,6 +122,7 @@ const MOCK_ACTIVE_SCENARIO: Scenario = {
 describe("ScenarioEditorPage - HCP field visibility", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    sessionStorage.clear();
     mockScenarioData = undefined;
   });
 
@@ -166,5 +167,22 @@ describe("ScenarioEditorPage - HCP field visibility", () => {
     expect(mutateArg.data).not.toHaveProperty("skill_id");
     expect(mutateArg.data).not.toHaveProperty("rubric_id");
     expect(mutateArg.data).not.toHaveProperty("key_messages");
+  });
+
+  it("restores optimized conference audience prompt after returning from optimizer", async () => {
+    sessionStorage.setItem(
+      "promptOptimizer:scenario:audiencePrompt",
+      "Optimized audience template",
+    );
+    mockScenarioData = { ...MOCK_ACTIVE_SCENARIO, mode: "conference" };
+
+    renderEditEditor();
+
+    await userEvent.click(screen.getByRole("tab", { name: /linked config/i }));
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Optimized audience template")).toBeInTheDocument();
+    });
+    expect(sessionStorage.getItem("promptOptimizer:scenario:audiencePrompt")).toBeNull();
   });
 });

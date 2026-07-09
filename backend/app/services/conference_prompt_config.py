@@ -124,3 +124,11 @@ def render_prompt_template(template: str, values: dict[str, Any]) -> str:
     for key, value in values.items():
         rendered = rendered.replace("{" + key + "}", str(value or ""))
     return rendered
+
+
+def render_double_brace_template(template: str, values: dict[str, Any]) -> str:
+    """Render ``{{placeholder}}`` tokens safely (missing/extra tokens do not crash)."""
+    rendered = template
+    for key, value in values.items():
+        rendered = rendered.replace("{{" + key + "}}", str(value if value is not None else ""))
+    return rendered

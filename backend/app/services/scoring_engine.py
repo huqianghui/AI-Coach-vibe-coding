@@ -207,8 +207,15 @@ def build_scoring_prompt(
     key_messages_status: list[dict],
     rubric_dimensions: list[dict],
     prompt_template: str = "",
+    base_template: str = "",
 ) -> str:
-    """Build the scoring prompt from session data."""
+    """Build the scoring prompt from session data.
+
+    ``prompt_template`` is a per-entity (rubric) override rendered with the safe
+    custom renderer. ``base_template`` is the registry-resolved default base
+    (``scoring.base``); when empty the module constant is used. With the seeded
+    default the ``str.format`` output is byte-identical to the legacy behavior.
+    """
     # Format transcript with strong role labels to prevent LLM role confusion
     transcript_lines = []
     for msg in messages:
@@ -255,7 +262,8 @@ def build_scoring_prompt(
     if prompt_template:
         return _render_custom_prompt_template(prompt_template.strip(), values)
 
-    return SCORING_PROMPT_TEMPLATE.format(**values)
+    template = base_template or SCORING_PROMPT_TEMPLATE
+    return template.format(**values)
 
 
 async def score_with_llm(
@@ -307,12 +315,21 @@ async def score_with_llm(
     except RuntimeError as exc:
         raise ScoringUnavailableException(f"Content scoring unavailable: {exc}")
 
+    from app.services.prompt_registry import get_prompt
+
+    try:
+        base_template = await get_prompt(db, "scoring.base")
+    except Exception:
+        # Registry lookup failed (e.g. unseeded DB) -- fall back to built-in default.
+        base_template = ""
+
     prompt = build_scoring_prompt(
         scenario_data,
         messages,
         key_messages_status,
         rubric_dimensions,
         prompt_template=prompt_template,
+        base_template=base_template,
     )
 
     try:

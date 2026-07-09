@@ -31,6 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 17: Agent Knowledge Base — Foundry IQ Integration** - HCP Agent 知识库管理：连接 Azure AI Search / Foundry IQ，上传训练材料自动创建知识库索引，知识库配置同步到 AI Foundry Agent (completed 2026-04-10)
 - [x] **Phase 18: Training Material Download & Preview** - 培训材料文件下载和在线预览：后端添加文件下载 API，前端 PDF 在线预览、DOCX/XLSX 下载，修复 storage_url 信息泄露 (completed 2026-04-10)
 - [x] **Phase 21: Scoring Criteria Refactor** - 评分标准模块重构，消除硬编码维度，ScoringRubric 升级为评分唯一权威来源，支持动态自定义维度 (completed 2026-04-28)
+- [x] **Phase 27: Prompt Optimizer & Unified Prompt Management** - Integrate prompt-optimizer (Docker sidecar + MCP client), unify all 9 prompts into a versioned registry with optimization history, provide an admin management UI, support creating new prompts, and view historical version content (completed 2026-07-01)
 
 ## Phase Details
 
@@ -696,3 +697,31 @@ Plans:
 - [x] 26-01-PLAN.md -- Backend WebRTC session endpoint (token broker + signaling URL assembly) (2/2 tasks, completed 2026-05-22)
 - [x] 26-02-PLAN.md -- Frontend useVoiceLiveWebRTC hook (RTCPeerConnection, signaling WS, data channel) (2/2 tasks, completed 2026-05-22)
 - [x] 26-03-PLAN.md -- UI transport selector integration (VoiceTransportSelect, dual hook wiring, i18n) (2/2 tasks, completed 2026-05-22)
+
+
+### Phase 27: Prompt Optimizer & Unified Prompt Management
+
+**Goal:** Integrate the open-source prompt-optimizer via a Docker/Container Apps sidecar and MCP client, migrate all 9 project prompts into a unified versioned registry (PromptTemplate/PromptVersion/PromptOptimizationRun), record every optimization run, and expose a single admin UI to browse, edit, AI-optimize (with diff), adopt, and roll back any prompt.
+**Requirements**: PROMPT-01, PROMPT-02, PROMPT-03, PROMPT-04, PROMPT-05, PROMPT-06
+**Depends on:** Phase 21 (ScoringRubric versioning precedent)
+**Plans:** 8/8 plans complete
+
+Plans:
+- [x] 27-01-PLAN.md -- Prompt Registry foundation: 3 ORM models + migration, defaults catalog, get_prompt resolver, seed, tests
+- [x] 27-02-PLAN.md -- Optimizer sidecar + MCP client + stateless /prompts/optimize + Azure /v1 feasibility gate
+- [x] 27-03-PLAN.md -- Migrate all builders to registry (get_prompt) with snapshot regression (no behavior drift)
+- [x] 27-04-PLAN.md -- Prompt management REST API: versions, activate/rollback, optimization run recording, adopt
+- [x] 27-05-PLAN.md -- Frontend unified management UI: list + editor, AI optimize/diff/adopt, version history, E2E
+- [x] 27-06-PLAN.md -- Per-entity prompts (rubric, conference) reuse + Azure internal Container App deploy
+- [x] 27-07-PLAN.md -- Create New Prompt: POST /prompts + list-page create dialog (was Phase 28 Plan 01)
+- [x] 27-08-PLAN.md -- View historical version content: read-only version content viewer (was Phase 28 Plan 02)
+
+**Success Criteria** (what must be TRUE):
+  1. Every one of the 9 project prompts is registered, versioned, and admin-editable from a single UI
+  2. Admin can AI-optimize any prompt, compare original vs optimized, and adopt it as a new version
+  3. Every optimization is recorded as a run (original, result, mode, model, time) and version history supports rollback
+  4. Migrating builders to the registry causes zero output change with default (seeded) content
+  5. The prompt-optimizer runs as an internal-only service backed by Azure OpenAI with secrets from Key Vault
+  6. Admin can create a brand-new prompt from the list UI (not limited to optimizing existing ones) and view the text content of any historical version
+
+**UI hint**: yes

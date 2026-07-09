@@ -1,11 +1,11 @@
 import { useEffect, useRef } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useForm, useFieldArray, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { ArrowLeft, Save, Trash2, Plus, RefreshCw } from "lucide-react";
+import { ArrowLeft, Save, Trash2, Plus, RefreshCw, Sparkles } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -35,7 +35,10 @@ import {
   useDefaultRubricTemplate,
 } from "@/hooks/use-rubrics";
 import { CuStatusSection } from "@/components/admin/cu-status-section";
+import type { PromptOptimizerLocationState } from "./prompt-optimizer";
 import type { RubricCreate, RubricUpdate } from "@/types/rubric";
+
+const RUBRIC_PROMPT_OPTIMIZER_RESULT_KEY = "promptOptimizer:rubric:promptTemplate";
 
 const dimensionSchema = z.object({
   name: z.string().min(1, "Dimension name is required"),
@@ -61,6 +64,7 @@ type RubricFormValues = Omit<z.infer<typeof rubricSchema>, "dimensions"> & {
 export default function RubricEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useTranslation(["admin", "common"]);
   const isNew = !id;
 
@@ -129,6 +133,26 @@ export default function RubricEditorPage() {
       form.setValue("prompt_template", defaultPrompt);
     }
   }, [isNew, defaultRubricTemplate, defaultPrompt, form]);
+
+  useEffect(() => {
+    if (!isNew && !rubric) return;
+    const optimizedText = sessionStorage.getItem(RUBRIC_PROMPT_OPTIMIZER_RESULT_KEY);
+    if (!optimizedText) return;
+    sessionStorage.removeItem(RUBRIC_PROMPT_OPTIMIZER_RESULT_KEY);
+    defaultRubricApplied.current = true;
+    form.setValue("prompt_template", optimizedText, { shouldDirty: true });
+  }, [form, isNew, rubric]);
+
+  const openPromptOptimizer = () => {
+    const state: PromptOptimizerLocationState = {
+      source: "text",
+      returnTo: `${location.pathname}${location.search}`,
+      resultStorageKey: RUBRIC_PROMPT_OPTIMIZER_RESULT_KEY,
+      content: form.getValues("prompt_template") ?? "",
+      title: t("admin:rubrics.promptTemplate"),
+    };
+    navigate("/admin/prompt-optimizer", { state });
+  };
 
   const handleSubmit = (values: RubricFormValues) => {
     const payload: RubricCreate = {
@@ -283,20 +307,32 @@ export default function RubricEditorPage() {
           <div className="grid gap-2">
             <div className="flex items-center justify-between gap-3">
               <Label>{t("admin:rubrics.promptTemplate")}</Label>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={!defaultPrompt}
-                onClick={() =>
-                  form.setValue("prompt_template", defaultPrompt, {
-                    shouldDirty: true,
-                  })
-                }
-              >
-                <RefreshCw className="mr-2 size-3.5" />
-                {t("admin:rubrics.useDefaultPromptTemplate")}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={openPromptOptimizer}
+                  data-testid="optimize-prompt"
+                >
+                  <Sparkles className="mr-2 size-3.5" />
+                  {t("prompts:actions.optimize", { defaultValue: "AI \u4f18\u5316" })}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={!defaultPrompt}
+                  onClick={() =>
+                    form.setValue("prompt_template", defaultPrompt, {
+                      shouldDirty: true,
+                    })
+                  }
+                >
+                  <RefreshCw className="mr-2 size-3.5" />
+                  {t("admin:rubrics.useDefaultPromptTemplate")}
+                </Button>
+              </div>
             </div>
             <Textarea
               rows={10}

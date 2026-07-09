@@ -12,7 +12,7 @@ param namePrefix string = 'aicoach'
   'private'
   'prod'
 ])
-param environmentName string = 'demo'
+param environmentName string = 'public'
 
 @description('Azure region for resource deployment.')
 param location string = 'eastus2'

@@ -2,7 +2,7 @@
 param(
     [string]$Location = "swedencentral",
     [string]$FoundryLocation = "",
-    [string]$EnvironmentName = "demo",
+    [string]$EnvironmentName = "public",
     [string]$NamePrefix = "aicoach",
     [string]$ResourceGroupName = "",
     [ValidateSet("foundryOnly", "fullLegacy")]
@@ -41,6 +41,8 @@ param(
     [switch]$SkipAppBootstrap,
     [switch]$SkipSampleData,
     [switch]$EnableDatabaseAutoCreateTables,
+    [string]$PostgresBootstrapClientIp = "",
+    [switch]$KeepPostgresBootstrapFirewallRule,
     [switch]$KeepGeneratedParameters
 )
 
@@ -236,6 +238,70 @@ function Get-PostgresEntraAccessToken {
     return $token
 }
 
+function Get-PostgresServerNameFromFqdn {
+    param([Parameter(Mandatory = $true)][string]$PostgresHost)
+
+    return ($PostgresHost -split "\.")[0]
+}
+
+function Get-CurrentPublicIp {
+    if (-not [string]::IsNullOrWhiteSpace($PostgresBootstrapClientIp)) {
+        return $PostgresBootstrapClientIp.Trim()
+    }
+
+    $ip = Invoke-RestMethod -Uri "https://api.ipify.org" -TimeoutSec 15
+    if ([string]::IsNullOrWhiteSpace($ip)) {
+        throw "Could not determine current public IP for PostgreSQL bootstrap firewall rule. Pass -PostgresBootstrapClientIp explicitly."
+    }
+
+    return ([string]$ip).Trim()
+}
+
+function New-PostgresBootstrapFirewallRule {
+    param(
+        [Parameter(Mandatory = $true)][string]$ResourceGroupName,
+        [Parameter(Mandatory = $true)][string]$PostgresHost
+    )
+
+    $serverName = Get-PostgresServerNameFromFqdn -PostgresHost $PostgresHost
+    $clientIp = Get-CurrentPublicIp
+    $ruleName = "AllowBootstrapClient-$(Get-Date -Format yyyyMMddHHmmss)"
+
+    Write-Host "Temporarily allowing PostgreSQL bootstrap client IP $clientIp..." -ForegroundColor Cyan
+    az postgres flexible-server firewall-rule create `
+        --resource-group $ResourceGroupName `
+        --server-name $serverName `
+        --name $ruleName `
+        --start-ip-address $clientIp `
+        --end-ip-address $clientIp `
+        --output none
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not create PostgreSQL bootstrap firewall rule '$ruleName'."
+    }
+
+    return @{
+        ResourceGroupName = $ResourceGroupName
+        ServerName = $serverName
+        RuleName = $ruleName
+        ClientIp = $clientIp
+    }
+}
+
+function Remove-PostgresBootstrapFirewallRule {
+    param([Parameter(Mandatory = $true)][hashtable]$Rule)
+
+    Write-Host "Removing temporary PostgreSQL bootstrap firewall rule '$($Rule.RuleName)'..." -ForegroundColor Cyan
+    az postgres flexible-server firewall-rule delete `
+        --resource-group $Rule.ResourceGroupName `
+        --server-name $Rule.ServerName `
+        --name $Rule.RuleName `
+        --yes `
+        --output none
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "Could not remove temporary PostgreSQL bootstrap firewall rule '$($Rule.RuleName)'. Remove it manually after deployment."
+    }
+}
+
 function Invoke-PostgresEntraBootstrapJob {
     param(
         [Parameter(Mandatory = $true)][string]$ResourceGroupName,
@@ -312,6 +378,21 @@ function Invoke-PostgresEntraBootstrapJob {
     }
 
     throw "PostgreSQL Entra bootstrap job did not complete within 15 minutes."
+}
+
+function Format-AdminConfigValue {
+    param([AllowNull()][object]$Value)
+
+    if ($null -eq $Value) {
+        return "(not available)"
+    }
+
+    $text = [string]$Value
+    if ([string]::IsNullOrWhiteSpace($text)) {
+        return "(not available)"
+    }
+
+    return $text
 }
 
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -647,6 +728,9 @@ if ($BackendDatabaseAuthMode -eq "azureAd" -and -not $SkipDbBootstrap) {
             "--backend-object-id", $outputs.backendIdentityPrincipalId.value,
             "--backend-object-type", "service"
         )
+        $bootstrapFirewallRule = New-PostgresBootstrapFirewallRule `
+            -ResourceGroupName $outputs.resourceGroupName.value `
+            -PostgresHost $outputs.postgresServerFqdn.value
         Push-Location (Join-Path $RepoRoot "backend")
         try {
             python @bootstrapArgs
@@ -656,6 +740,12 @@ if ($BackendDatabaseAuthMode -eq "azureAd" -and -not $SkipDbBootstrap) {
         }
         finally {
             Pop-Location
+            if ($KeepPostgresBootstrapFirewallRule) {
+                Write-Host "Keeping temporary PostgreSQL bootstrap firewall rule '$($bootstrapFirewallRule.RuleName)' for troubleshooting." -ForegroundColor Yellow
+            }
+            else {
+                Remove-PostgresBootstrapFirewallRule -Rule $bootstrapFirewallRule
+            }
         }
     }
 }
@@ -693,6 +783,27 @@ Write-Host "ACR_NAME=$($outputs.containerRegistryName.value)"
 Write-Host "BACKEND_APP_NAME=$($outputs.backendContainerAppName.value)"
 Write-Host "BACKEND_BOOTSTRAP_JOB_NAME=$($outputs.backendBootstrapJobName.value)"
 Write-Host "FRONTEND_APP_NAME=$($outputs.frontendContainerAppName.value)"
+
+$deploymentSummary = $outputs.deployment.value
+$aiFoundrySummary = if ($deploymentSummary) { $deploymentSummary.aiFoundry } else { $null }
+$foundryDeployments = if ($aiFoundrySummary) { $aiFoundrySummary.deployments } else { $null }
+$foundryModelOrDeployment = if ($foundryDeployments -is [array] -and $foundryDeployments.Count -gt 0) {
+    $foundryDeployments[0]
+}
+elseif ($null -ne $foundryDeployments -and -not [string]::IsNullOrWhiteSpace([string]$foundryDeployments)) {
+    $foundryDeployments
+}
+else {
+    $ChatDeploymentName
+}
+
+Write-Host ""
+Write-Host "Admin Azure Config values:" -ForegroundColor Cyan
+Write-Host "Frontend URL:              $(Format-AdminConfigValue $outputs.frontendUrl.value)"
+Write-Host "AI Foundry endpoint:       $(Format-AdminConfigValue $aiFoundrySummary.endpoint)"
+Write-Host "AI Foundry project:        $(Format-AdminConfigValue $aiFoundrySummary.projectName)"
+Write-Host "Default model/deployment:  $(Format-AdminConfigValue $foundryModelOrDeployment)"
+Write-Host "Foundry region:            $(Format-AdminConfigValue $outputs.foundryLocation.value)"
 
 if (-not $KeepGeneratedParameters) {
     Remove-Item -Path $parametersPath -Force

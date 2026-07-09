@@ -81,6 +81,7 @@ class ScenarioResponse(BaseModel):
     hcp_profile: HcpProfileSummary | None = None
     key_messages: str  # JSON string from DB
     conference_prompt_config: str
+    conference_prompt_version: int = 1
     skill_id: str
     skill_version_id: str | None = None
     rubric_id: str

@@ -222,9 +222,13 @@ async def update_scenario(db: AsyncSession, scenario_id: str, data: ScenarioUpda
     if "tags" in update_data and isinstance(update_data["tags"], list):
         update_data["tags"] = json.dumps(update_data["tags"])
     if "conference_prompt_config" in update_data:
-        update_data["conference_prompt_config"] = json.dumps(
+        serialized = json.dumps(
             normalize_conference_prompt_config(update_data["conference_prompt_config"])
         )
+        update_data["conference_prompt_config"] = serialized
+        # Bump the version whenever the conference prompt config actually changes (PROMPT-01)
+        if serialized != scenario.conference_prompt_config:
+            update_data["conference_prompt_version"] = (scenario.conference_prompt_version or 1) + 1
 
     # If HCP profile ID is being changed, verify the new one exists
     if "hcp_profile_id" in update_data:

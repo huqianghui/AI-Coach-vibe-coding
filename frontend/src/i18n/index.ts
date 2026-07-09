@@ -11,7 +11,7 @@ i18n
     fallbackLng: "en-US",
     supportedLngs: ["en-US", "zh-CN"],
     defaultNS: "common",
-    ns: ["common", "auth", "nav", "dashboard", "training", "coach", "admin", "scoring", "analytics", "conference", "skill", "voice", "meta-skill", "session"],
+    ns: ["common", "auth", "nav", "dashboard", "training", "coach", "admin", "scoring", "analytics", "conference", "skill", "voice", "meta-skill", "session", "prompts"],
     backend: {
       loadPath: "/locales/{{lng}}/{{ns}}.json",
     },
