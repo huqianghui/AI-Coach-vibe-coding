@@ -7,7 +7,9 @@ import { MemoryRouter } from "react-router-dom";
 const mockNavigate = vi.fn();
 const mockMutateAsync = vi.fn();
 const mockConferenceMutateAsync = vi.fn();
+const mockCreateGroupRunMutateAsync = vi.fn();
 let scenarioData: unknown[] | undefined;
+let scenarioGroupData: unknown[] | undefined;
 let isLoading = false;
 
 
@@ -36,6 +38,17 @@ vi.mock("@/hooks/use-scenarios", () => ({
   useActiveScenarios: () => ({
     data: scenarioData,
     isLoading,
+  }),
+}));
+
+vi.mock("@/hooks/use-scenario-groups", () => ({
+  useActiveScenarioGroups: () => ({
+    data: scenarioGroupData,
+    isLoading,
+  }),
+  useCreateScenarioGroupRun: () => ({
+    mutateAsync: mockCreateGroupRunMutateAsync,
+    isPending: false,
   }),
 }));
 
@@ -128,7 +141,9 @@ let ScenarioSelection: React.ComponentType;
 beforeEach(async () => {
   vi.clearAllMocks();
   mockConferenceMutateAsync.mockReset();
+  mockCreateGroupRunMutateAsync.mockReset();
   scenarioData = [];
+  scenarioGroupData = [];
   isLoading = false;
   const mod = await import("./training");
   ScenarioSelection = mod.default;
@@ -140,12 +155,13 @@ describe("ScenarioSelection (Training) Page", () => {
     expect(screen.getByText("scenarioSelection.title")).toBeInTheDocument();
   });
 
-  it("renders F2F and Conference tabs", () => {
+  it("renders F2F, Conference, and group tabs", () => {
     renderPage();
     expect(screen.getByText("scenarioSelection.tabF2F")).toBeInTheDocument();
     expect(
       screen.getByText("scenarioSelection.tabConference"),
     ).toBeInTheDocument();
+    expect(screen.getByText("组合训练")).toBeInTheDocument();
   });
 
   it("shows empty state when no scenarios available", () => {
@@ -285,12 +301,13 @@ describe("ScenarioSelection Tabs", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("renders only F2F and Conference tabs", () => {
+  it("renders F2F, Conference, and group tabs", () => {
     renderPage();
     expect(screen.getByText("scenarioSelection.tabF2F")).toBeInTheDocument();
     expect(
       screen.getByText("scenarioSelection.tabConference"),
     ).toBeInTheDocument();
+    expect(screen.getByText("组合训练")).toBeInTheDocument();
   });
 });
 

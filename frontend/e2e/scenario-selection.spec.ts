@@ -17,11 +17,12 @@ test.describe("Scenario Selection (Phase 2)", () => {
     // Page heading should be visible
     await expect(page.locator("h1")).toBeVisible();
 
-    // F2F and Conference tabs should be present
+    // F2F, Conference, and group training tabs should be present
     await expect(page.getByRole("tab", { name: /F2F/i })).toBeVisible();
     await expect(
       page.getByRole("tab", { name: /Conference/i }),
     ).toBeVisible();
+    await expect(page.getByRole("tab", { name: /组合训练/i })).toBeVisible();
   });
 
   test("scenario cards display with difficulty badges or empty state", async ({
@@ -130,6 +131,13 @@ test.describe("Scenario Selection (Phase 2)", () => {
     await f2fTab.click();
     await page.waitForTimeout(500);
 
+    await expect(page.locator("h1")).toBeVisible();
+  });
+
+  test("group training tab can be opened", async ({ page }) => {
+    const groupTab = page.getByRole("tab", { name: /组合训练/i });
+    await groupTab.click();
+    await expect(groupTab).toHaveAttribute("aria-selected", "true");
     await expect(page.locator("h1")).toBeVisible();
   });
 });

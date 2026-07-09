@@ -178,6 +178,7 @@ async def score_session(db: AsyncSession, session_id: str) -> SessionScore:
     session.status = "scored"
     session.overall_score = overall_score
     session.passed = passed
+    await _sync_group_run_item_after_scoring(db, session)
 
     await db.flush()
 
@@ -188,6 +189,20 @@ async def score_session(db: AsyncSession, session_id: str) -> SessionScore:
         .where(SessionScore.id == session_score.id)
     )
     return score_result.scalar_one()
+
+
+async def _sync_group_run_item_after_scoring(db: AsyncSession, session: CoachingSession) -> None:
+    """Update a scenario group run item after its child session is scored."""
+    from app.models.scenario_group import ScenarioGroupRunItem
+
+    result = await db.execute(
+        select(ScenarioGroupRunItem).where(ScenarioGroupRunItem.session_id == session.id)
+    )
+    run_item = result.scalar_one_or_none()
+    if run_item is not None:
+        run_item.status = "scored"
+        run_item.score = session.overall_score
+        run_item.passed = session.passed
 
 
 async def rescore_session(db: AsyncSession, session_id: str) -> SessionScore:

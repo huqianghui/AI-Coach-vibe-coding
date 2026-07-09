@@ -29,6 +29,9 @@ test.describe("Admin Scenarios Management", () => {
     });
     await expect(createButton.first()).toBeVisible();
 
+    await expect(page.getByRole("heading", { name: /合并场景/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /创建组合场景/i })).toBeVisible();
+
     // Table headers should be visible (new columns after Phase 22)
     await expect(page.getByText("Name").first()).toBeVisible();
     await expect(page.getByText("Tags").first()).toBeVisible();

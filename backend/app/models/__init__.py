@@ -10,6 +10,12 @@ from app.models.prompt_optimization_run import PromptOptimizationRun
 from app.models.prompt_template import PromptTemplate
 from app.models.prompt_version import PromptVersion
 from app.models.scenario import Scenario
+from app.models.scenario_group import (
+    ScenarioGroup,
+    ScenarioGroupItem,
+    ScenarioGroupRun,
+    ScenarioGroupRunItem,
+)
 from app.models.score import ScoreDetail, SessionScore
 from app.models.scoring_rubric import ScoringRubric
 from app.models.service_config import ServiceConfig
@@ -32,6 +38,10 @@ __all__ = [
     "VoiceScore",
     "VoiceScoreDetail",
     "Scenario",
+    "ScenarioGroup",
+    "ScenarioGroupItem",
+    "ScenarioGroupRun",
+    "ScenarioGroupRunItem",
     "CoachingSession",
     "ConferenceAudienceHcp",
     "SessionMessage",

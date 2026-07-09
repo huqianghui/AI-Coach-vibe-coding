@@ -25,6 +25,7 @@ export default function TrainingSession() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get("id") ?? "";
+  const groupRunId = searchParams.get("groupRunId");
 
   // Fetch session and messages
   const { data: session } = useSession(sessionId || undefined);
@@ -119,11 +120,14 @@ export default function TrainingSession() {
     setShowEndDialog(false);
     try {
       await endSessionMutation.mutateAsync(sessionId);
-      navigate(`/user/scoring/${sessionId}`);
+      const scoringUrl = groupRunId
+        ? `/user/scoring/${sessionId}?groupRunId=${groupRunId}`
+        : `/user/scoring/${sessionId}`;
+      navigate(scoringUrl);
     } catch {
       // Error handled by mutation
     }
-  }, [sessionId, endSessionMutation, navigate]);
+  }, [groupRunId, sessionId, endSessionMutation, navigate]);
 
   // Session stats
   const sessionStats = useMemo(() => {

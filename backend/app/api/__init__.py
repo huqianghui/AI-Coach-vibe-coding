@@ -11,6 +11,7 @@ from app.api.materials import router as materials_router
 from app.api.meta_skills import router as meta_skills_router
 from app.api.prompts import router as prompts_router
 from app.api.rubrics import router as rubrics_router
+from app.api.scenario_groups import router as scenario_groups_router
 from app.api.scenarios import router as scenarios_router
 from app.api.scoring import router as scoring_router
 from app.api.sessions import router as sessions_router
@@ -34,6 +35,7 @@ __all__ = [
     "prompts_router",
     "rubrics_router",
     "scenarios_router",
+    "scenario_groups_router",
     "scoring_router",
     "sessions_router",
     "skills_router",
