@@ -8,7 +8,6 @@ import type { Rubric } from "@/types/rubric";
 const mockNavigate = vi.fn();
 const mockCreateMutate = vi.fn();
 const mockUpdateMutate = vi.fn();
-const mockOptimizeMutate = vi.fn();
 const defaultPromptTemplate = "Default scoring prompt {transcript}";
 const defaultRubricTemplate = {
   name: "Default F2F Scoring Rubric",
@@ -62,17 +61,11 @@ vi.mock("react-i18next", () => ({
 vi.mock("react-router-dom", () => ({
   useParams: () => ({ id: mockParamsId }),
   useNavigate: () => mockNavigate,
+  useLocation: () => ({ pathname: mockParamsId ? `/admin/scoring-rubrics/${mockParamsId}` : "/admin/scoring-rubrics/new", search: "" }),
 }));
 
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
-}));
-
-vi.mock("@/hooks/use-prompts", () => ({
-  useOptimizeText: () => ({
-    mutate: mockOptimizeMutate,
-    isPending: false,
-  }),
 }));
 
 vi.mock("@/hooks/use-rubrics", () => ({
@@ -307,41 +300,35 @@ describe("RubricEditorPage", () => {
       mockParamsId = "r1";
     });
 
-    it("opens the shared optimize dialog from the AI optimize button", async () => {
+    it("opens the dedicated optimizer page from the AI optimize button", async () => {
       const user = userEvent.setup();
       renderEditor();
 
       await user.click(screen.getByTestId("optimize-prompt"));
 
-      expect(await screen.findByTestId("run-optimize")).toBeInTheDocument();
+      expect(mockNavigate).toHaveBeenCalledWith("/admin/prompt-optimizer", {
+        state: expect.objectContaining({
+          source: "text",
+          returnTo: "/admin/scoring-rubrics/r1",
+          resultStorageKey: "promptOptimizer:rubric:promptTemplate",
+          content: "Existing scoring prompt {transcript}",
+        }),
+      });
     });
 
-    it("adopts the optimized prompt into the template field", async () => {
-      const user = userEvent.setup();
-      mockOptimizeMutate.mockImplementation(
-        (_payload: unknown, opts: { onSuccess: (res: { optimized_prompt: string }) => void }) =>
-          opts.onSuccess({ optimized_prompt: "Optimized scoring prompt {transcript}" }),
+    it("restores the optimized prompt into the template field after returning", async () => {
+      sessionStorage.setItem(
+        "promptOptimizer:rubric:promptTemplate",
+        "Optimized scoring prompt {transcript}",
       );
       renderEditor();
-
-      await user.click(screen.getByTestId("optimize-prompt"));
-      await user.click(await screen.findByTestId("run-optimize"));
-
-      expect(mockOptimizeMutate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          prompt: "Existing scoring prompt {transcript}",
-          mode: "system",
-        }),
-        expect.any(Object),
-      );
-
-      await user.click(await screen.findByTestId("adopt-run"));
 
       await waitFor(() => {
         expect(
           screen.getByDisplayValue("Optimized scoring prompt {transcript}"),
         ).toBeInTheDocument();
       });
+      expect(sessionStorage.getItem("promptOptimizer:rubric:promptTemplate")).toBeNull();
     });
   });
 

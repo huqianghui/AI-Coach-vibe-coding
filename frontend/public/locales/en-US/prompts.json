@@ -69,6 +69,9 @@
   "optimize": {
     "title": "AI Optimize Prompt",
     "description": "Pick an optimization mode; the AI produces an optimized version to compare.",
+    "pageBadge": "Dedicated page",
+    "back": "Back",
+    "settings": "Optimization settings",
     "mode": "Mode",
     "modeSystem": "System prompt",
     "modeUser": "User prompt",
@@ -79,9 +82,14 @@
     "running": "Optimizing…",
     "original": "Original",
     "optimized": "Optimized",
+    "emptyOptimized": "Run optimization to generate a revised prompt.",
+    "noContent": "No prompt content to optimize.",
     "adopt": "Adopt as new version",
+    "adoptToEditor": "Use in editor",
     "adopted": "Adopted as a new version",
+    "adoptedToEditor": "Optimized prompt applied to the editor",
     "failed": "Optimization failed",
+    "missingState": "No prompt optimization context was found. Please open the optimizer from a prompt editor.",
     "cancel": "Cancel"
   }
 }

@@ -69,6 +69,9 @@
   "optimize": {
     "title": "AI 优化 Prompt",
     "description": "选择优化模式，AI 将生成优化后的版本供对比。",
+    "pageBadge": "独立页面",
+    "back": "返回",
+    "settings": "优化设置",
     "mode": "模式",
     "modeSystem": "系统提示优化",
     "modeUser": "用户提示优化",
@@ -79,9 +82,14 @@
     "running": "优化中…",
     "original": "原始",
     "optimized": "优化后",
+    "emptyOptimized": "运行优化后将在这里显示新的 Prompt。",
+    "noContent": "没有可优化的 Prompt 内容。",
     "adopt": "采用为新版本",
+    "adoptToEditor": "写回编辑器",
     "adopted": "已采用为新版本",
+    "adoptedToEditor": "已将优化结果写回编辑器",
     "failed": "优化失败",
+    "missingState": "未找到 Prompt 优化上下文，请从 Prompt 编辑页面打开优化器。",
     "cancel": "取消"
   }
 }

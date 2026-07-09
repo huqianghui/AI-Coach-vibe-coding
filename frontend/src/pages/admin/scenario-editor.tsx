@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useForm, Controller, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -30,7 +30,6 @@ import {
 } from "@/components/ui/form";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ObjectionList } from "@/components/admin/objection-list";
-import { PromptOptimizeDialog } from "@/components/admin/prompt-optimize-dialog";
 import {
   ConferenceAudienceConfig,
   MIN_AUDIENCE,
@@ -52,6 +51,9 @@ import type { ConferencePromptConfig, ScenarioCreate, ScenarioUpdate } from "@/t
 import type { AudienceHcpCreate } from "@/types/conference";
 import type { HcpProfile } from "@/types/hcp";
 import type { Rubric } from "@/types/rubric";
+import type { PromptOptimizerLocationState } from "./prompt-optimizer";
+
+const AUDIENCE_PROMPT_OPTIMIZER_RESULT_KEY = "promptOptimizer:scenario:audiencePrompt";
 
 /** Predefined tag categories with values. Will migrate to system_enums API in future. */
 const PREDEFINED_TAGS: Record<string, string[]> = {
@@ -158,9 +160,9 @@ function isSameStringArray(a: string[], b: string[]): boolean {
 export default function ScenarioEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useTranslation(["admin", "common"]);
   const isNew = !id;
-  const [audienceOptimizeOpen, setAudienceOptimizeOpen] = useState(false);
 
   const { data: scenario, isLoading: scenarioLoading } = useScenario(id);
   const createMutation = useCreateScenario();
@@ -230,6 +232,16 @@ export default function ScenarioEditorPage() {
   }, [scenario, form]);
 
   useEffect(() => {
+    if (!isNew && !scenario) return;
+    const optimizedText = sessionStorage.getItem(AUDIENCE_PROMPT_OPTIMIZER_RESULT_KEY);
+    if (!optimizedText) return;
+    sessionStorage.removeItem(AUDIENCE_PROMPT_OPTIMIZER_RESULT_KEY);
+    form.setValue("conference_prompt_config.audience_prompt_template", optimizedText, {
+      shouldDirty: true,
+    });
+  }, [form, isNew, scenario]);
+
+  useEffect(() => {
     if (audienceData) {
       setAudience(
         audienceData.map((a) => ({
@@ -266,6 +278,17 @@ export default function ScenarioEditorPage() {
       return false;
     }
     return true;
+  };
+
+  const openAudiencePromptOptimizer = () => {
+    const state: PromptOptimizerLocationState = {
+      source: "text",
+      returnTo: `${location.pathname}${location.search}`,
+      resultStorageKey: AUDIENCE_PROMPT_OPTIMIZER_RESULT_KEY,
+      content: form.getValues("conference_prompt_config.audience_prompt_template") ?? "",
+      title: t("admin:scenarios.editor.conferencePrompt.hcpTemplateSection"),
+    };
+    navigate("/admin/prompt-optimizer", { state });
   };
 
   const saveAudienceThenFinish = (scenarioId: string, isConference: boolean) => {
@@ -557,7 +580,7 @@ export default function ScenarioEditorPage() {
                     <Label>{t("scenarios.editor.fields.tags")}</Label>
 
                     {/* Current tags display */}
-                    <div className="flex flex-wrap gap-1.5 min-h-[32px] p-2 border rounded-md bg-muted/30">
+                    <div className="flex min-h-8 flex-wrap gap-1.5 rounded-md border bg-muted/30 p-2">
                       {currentTags.length === 0 && (
                         <span className="text-xs text-muted-foreground">
                           {t("scenarios.editor.fields.tagsPlaceholder")}
@@ -587,7 +610,7 @@ export default function ScenarioEditorPage() {
                     {/* Predefined tag categories */}
                     {Object.entries(PREDEFINED_TAGS).map(([category, values]) => (
                       <div key={category} className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-xs text-muted-foreground capitalize min-w-[80px]">
+                        <span className="min-w-20 text-xs capitalize text-muted-foreground">
                           {category.replace("_", " ")}:
                         </span>
                         {values.map((value) => {
@@ -806,7 +829,7 @@ export default function ScenarioEditorPage() {
                               type="button"
                               variant="outline"
                               size="sm"
-                              onClick={() => setAudienceOptimizeOpen(true)}
+                              onClick={openAudiencePromptOptimizer}
                               data-testid="optimize-audience-prompt"
                             >
                               <Sparkles className="mr-2 size-3.5" />
@@ -821,20 +844,6 @@ export default function ScenarioEditorPage() {
                           <p className="text-xs leading-relaxed text-muted-foreground">
                             {t("scenarios.editor.conferencePrompt.placeholders")}
                           </p>
-                          <PromptOptimizeDialog
-                            open={audienceOptimizeOpen}
-                            onOpenChange={setAudienceOptimizeOpen}
-                            content={
-                              form.watch("conference_prompt_config.audience_prompt_template") ?? ""
-                            }
-                            onAdopt={(text) =>
-                              form.setValue(
-                                "conference_prompt_config.audience_prompt_template",
-                                text,
-                                { shouldDirty: true },
-                              )
-                            }
-                          />
                         </div>
                       </details>
 

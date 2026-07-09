@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useEffect, useRef } from "react";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useForm, useFieldArray, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -35,8 +35,10 @@ import {
   useDefaultRubricTemplate,
 } from "@/hooks/use-rubrics";
 import { CuStatusSection } from "@/components/admin/cu-status-section";
-import { PromptOptimizeDialog } from "@/components/admin/prompt-optimize-dialog";
+import type { PromptOptimizerLocationState } from "./prompt-optimizer";
 import type { RubricCreate, RubricUpdate } from "@/types/rubric";
+
+const RUBRIC_PROMPT_OPTIMIZER_RESULT_KEY = "promptOptimizer:rubric:promptTemplate";
 
 const dimensionSchema = z.object({
   name: z.string().min(1, "Dimension name is required"),
@@ -62,9 +64,9 @@ type RubricFormValues = Omit<z.infer<typeof rubricSchema>, "dimensions"> & {
 export default function RubricEditorPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useTranslation(["admin", "common"]);
   const isNew = !id;
-  const [optimizeOpen, setOptimizeOpen] = useState(false);
 
   const { data: rubric, isLoading: rubricLoading } = useRubric(id);
   const { data: defaultPromptTemplate } = useDefaultPromptTemplate();
@@ -131,6 +133,26 @@ export default function RubricEditorPage() {
       form.setValue("prompt_template", defaultPrompt);
     }
   }, [isNew, defaultRubricTemplate, defaultPrompt, form]);
+
+  useEffect(() => {
+    if (!isNew && !rubric) return;
+    const optimizedText = sessionStorage.getItem(RUBRIC_PROMPT_OPTIMIZER_RESULT_KEY);
+    if (!optimizedText) return;
+    sessionStorage.removeItem(RUBRIC_PROMPT_OPTIMIZER_RESULT_KEY);
+    defaultRubricApplied.current = true;
+    form.setValue("prompt_template", optimizedText, { shouldDirty: true });
+  }, [form, isNew, rubric]);
+
+  const openPromptOptimizer = () => {
+    const state: PromptOptimizerLocationState = {
+      source: "text",
+      returnTo: `${location.pathname}${location.search}`,
+      resultStorageKey: RUBRIC_PROMPT_OPTIMIZER_RESULT_KEY,
+      content: form.getValues("prompt_template") ?? "",
+      title: t("admin:rubrics.promptTemplate"),
+    };
+    navigate("/admin/prompt-optimizer", { state });
+  };
 
   const handleSubmit = (values: RubricFormValues) => {
     const payload: RubricCreate = {
@@ -290,7 +312,7 @@ export default function RubricEditorPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => setOptimizeOpen(true)}
+                  onClick={openPromptOptimizer}
                   data-testid="optimize-prompt"
                 >
                   <Sparkles className="mr-2 size-3.5" />
@@ -328,13 +350,6 @@ export default function RubricEditorPage() {
           </div>
         </CardContent>
       </Card>
-
-      <PromptOptimizeDialog
-        open={optimizeOpen}
-        onOpenChange={setOptimizeOpen}
-        content={form.watch("prompt_template") ?? ""}
-        onAdopt={(text) => form.setValue("prompt_template", text, { shouldDirty: true })}
-      />
 
       {/* Dimensions Card */}
       <Card>

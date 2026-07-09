@@ -62,8 +62,9 @@ test.describe("Prompt Management", () => {
     await page.waitForURL(/\/admin\/prompts\/.+/);
     await expect(page.getByTestId("prompt-content")).toBeVisible();
 
-    // Open the AI optimize dialog and run it.
+    // Open the AI optimize page and run it.
     await page.getByTestId("optimize-open").click();
+    await page.waitForURL(/\/admin\/prompts\/.+\/optimize/);
     await expect(page.getByTestId("run-optimize")).toBeVisible();
     await page.getByTestId("run-optimize").click();
 
@@ -79,6 +80,7 @@ test.describe("Prompt Management", () => {
 
     // Adopt the optimized result as a new active version.
     await page.getByTestId("adopt-run").click();
+    await page.waitForURL(/\/admin\/prompts\/[^/]+$/);
     await page.waitForLoadState("networkidle");
 
     // A rollback control should now be available for a prior version.
@@ -90,18 +92,19 @@ test.describe("Prompt Management", () => {
     }
   });
 
-  test("admin optimizes a scoring rubric prompt via the shared dialog", async ({
+  test("admin optimizes a scoring rubric prompt via the optimizer page", async ({
     page,
   }) => {
-    // A rubric editor reuses the same optimize dialog as the prompt registry.
+    // A rubric editor opens the same full-page optimizer as the prompt registry.
     await page.goto("/admin/scoring-rubrics/new");
     await page.waitForLoadState("networkidle");
     await expect(page).not.toHaveURL(/\/login/);
 
-    // Open the shared AI optimize dialog from the prompt-template card.
+    // Open the full-page AI optimizer from the prompt-template card.
     const optimizeBtn = page.getByTestId("optimize-prompt");
     await expect(optimizeBtn).toBeVisible();
     await optimizeBtn.click();
+    await page.waitForURL(/\/admin\/prompt-optimizer/);
 
     await expect(page.getByTestId("run-optimize")).toBeVisible();
     await page.getByTestId("run-optimize").click();
@@ -118,7 +121,7 @@ test.describe("Prompt Management", () => {
 
     // Adopting fills the rubric prompt-template field with the optimized text.
     await page.getByTestId("adopt-run").click();
-    await expect(page.getByTestId("optimize-diff")).toHaveCount(0);
+    await page.waitForURL(/\/admin\/scoring-rubrics\/new/);
   });
 
   test("prompt content is rendered as plain text (no HTML injection)", async ({

@@ -27,14 +27,13 @@ import {
 import { cn } from "@/lib/utils";
 import {
   useActivateVersion,
-  useAdoptRun,
-  useOptimizePrompt,
   usePrompt,
   usePromptVersions,
   useSaveVersion,
   useUpdatePromptMeta,
 } from "@/hooks/use-prompts";
-import type { OptimizeMode, PromptVersion } from "@/types/prompt";
+import type { PromptOptimizerLocationState } from "./prompt-optimizer";
+import type { PromptVersion } from "@/types/prompt";
 
 const CATEGORY_OPTIONS = [
   "general",
@@ -54,8 +53,6 @@ export default function PromptEditorPage() {
   const { data: versions } = usePromptVersions(key);
   const saveMutation = useSaveVersion(key);
   const activateMutation = useActivateVersion(key);
-  const optimizeMutation = useOptimizePrompt(key);
-  const adoptMutation = useAdoptRun(key);
   const metaMutation = useUpdatePromptMeta(key);
 
   const [content, setContent] = useState("");
@@ -67,10 +64,6 @@ export default function PromptEditorPage() {
     description: "",
     variables: "",
   });
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [mode, setMode] = useState<OptimizeMode>("system");
-  const [requirements, setRequirements] = useState("");
-  const [optimized, setOptimized] = useState<{ runId: string; text: string } | null>(null);
   const [viewVersion, setViewVersion] = useState<PromptVersion | null>(null);
 
   useEffect(() => {
@@ -133,35 +126,15 @@ export default function PromptEditorPage() {
     });
   };
 
-  const handleOptimize = () => {
-    optimizeMutation.mutate(
-      { mode, requirements: mode === "iterate" ? requirements : null },
-      {
-        onSuccess: (res) => setOptimized({ runId: res.run_id, text: res.optimized_prompt }),
-        onError: () => toast.error(t("optimize.failed")),
-      },
-    );
-  };
-
-  const handleAdopt = () => {
-    if (!optimized) return;
-    adoptMutation.mutate(
-      { run_id: optimized.runId },
-      {
-        onSuccess: () => {
-          toast.success(t("optimize.adopted"));
-          setDialogOpen(false);
-          setOptimized(null);
-        },
-      },
-    );
-  };
-
   const openOptimize = () => {
-    setOptimized(null);
-    setRequirements("");
-    setMode("system");
-    setDialogOpen(true);
+    if (!key) return;
+    const state: PromptOptimizerLocationState = {
+      source: "registry",
+      returnTo: `/admin/prompts/${key}`,
+      originalContent: prompt?.active_version?.content ?? content,
+      title: prompt?.name ?? key,
+    };
+    navigate(`/admin/prompts/${key}/optimize`, { state });
   };
 
   return (
@@ -362,90 +335,6 @@ export default function PromptEditorPage() {
           </ul>
         </CardContent>
       </Card>
-
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>{t("optimize.title")}</DialogTitle>
-            <DialogDescription>{t("optimize.description")}</DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>{t("optimize.mode")}</Label>
-              <Select value={mode} onValueChange={(v) => setMode(v as OptimizeMode)}>
-                <SelectTrigger className="w-full" data-testid="optimize-mode">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="system">{t("optimize.modeSystem")}</SelectItem>
-                  <SelectItem value="user">{t("optimize.modeUser")}</SelectItem>
-                  <SelectItem value="iterate">{t("optimize.modeIterate")}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {mode === "iterate" && (
-              <div className="space-y-2">
-                <Label htmlFor="optimize-requirements">{t("optimize.requirements")}</Label>
-                <Textarea
-                  id="optimize-requirements"
-                  value={requirements}
-                  onChange={(e) => setRequirements(e.target.value)}
-                  placeholder={t("optimize.requirementsPlaceholder")}
-                  rows={3}
-                />
-              </div>
-            )}
-
-            {optimized && (
-              <div className="grid grid-cols-2 gap-4" data-testid="optimize-diff">
-                <div className="space-y-1">
-                  <Label>{t("optimize.original")}</Label>
-                  <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md border bg-muted/40 p-3 text-xs">
-                    {content}
-                  </pre>
-                </div>
-                <div className="space-y-1">
-                  <Label>{t("optimize.optimized")}</Label>
-                  <pre
-                    className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md border bg-success-50 p-3 text-xs"
-                    data-testid="optimized-text"
-                  >
-                    {optimized.text}
-                  </pre>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              {t("optimize.cancel")}
-            </Button>
-            {optimized ? (
-              <Button
-                onClick={handleAdopt}
-                disabled={adoptMutation.isPending}
-                data-testid="adopt-run"
-              >
-                {t("optimize.adopt")}
-              </Button>
-            ) : (
-              <Button
-                onClick={handleOptimize}
-                disabled={
-                  optimizeMutation.isPending || (mode === "iterate" && !requirements.trim())
-                }
-                data-testid="run-optimize"
-              >
-                <Sparkles className="size-4" />
-                {optimizeMutation.isPending ? t("optimize.running") : t("optimize.run")}
-              </Button>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={viewVersion !== null} onOpenChange={(open) => !open && setViewVersion(null)}>
         <DialogContent className="max-w-3xl">

@@ -91,7 +91,7 @@ export interface AdoptRunRequest {
 }
 
 // Stateless optimization (no persistence) — POST /prompts/optimize.
-// Used by the shared PromptOptimizeDialog for per-entity prompts.
+// Used by the standalone prompt optimizer page for per-entity prompts.
 export interface OptimizeTextRequest {
   prompt: string;
   mode: OptimizeMode;

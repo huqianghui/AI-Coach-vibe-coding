@@ -27,8 +27,6 @@ vi.mock("react-router-dom", async () => {
 
 const mockSaveMutate = vi.fn();
 const mockActivateMutate = vi.fn();
-const mockOptimizeMutate = vi.fn();
-const mockAdoptMutate = vi.fn();
 const mockMetaMutate = vi.fn();
 
 let mockPromptReturn: { data: Prompt | undefined; isError: boolean };
@@ -39,8 +37,6 @@ vi.mock("@/hooks/use-prompts", () => ({
   usePromptVersions: () => mockVersionsReturn,
   useSaveVersion: () => ({ mutate: mockSaveMutate, isPending: false }),
   useActivateVersion: () => ({ mutate: mockActivateMutate, isPending: false }),
-  useOptimizePrompt: () => ({ mutate: mockOptimizeMutate, isPending: false }),
-  useAdoptRun: () => ({ mutate: mockAdoptMutate, isPending: false }),
   useUpdatePromptMeta: () => ({ mutate: mockMetaMutate, isPending: false }),
 }));
 
@@ -128,25 +124,20 @@ describe("PromptEditorPage", () => {
     expect(mockActivateMutate).toHaveBeenCalledWith(1, expect.any(Object));
   });
 
-  it("AI Optimize opens a diff and Adopt calls useAdoptRun", async () => {
+  it("AI Optimize opens the dedicated optimizer page", async () => {
     const user = userEvent.setup();
-    mockOptimizeMutate.mockImplementation((_payload, opts) =>
-      opts.onSuccess({ run_id: "run-1", optimized_prompt: "OPTIMIZED TEXT" }),
-    );
     renderPage();
 
     await user.click(screen.getByTestId("optimize-open"));
-    await user.click(screen.getByTestId("run-optimize"));
 
-    expect(mockOptimizeMutate).toHaveBeenCalledWith(
-      { mode: "system", requirements: null },
-      expect.any(Object),
-    );
-    expect(screen.getByTestId("optimize-diff")).toBeInTheDocument();
-    expect(screen.getByTestId("optimized-text")).toHaveTextContent("OPTIMIZED TEXT");
-
-    await user.click(screen.getByTestId("adopt-run"));
-    expect(mockAdoptMutate).toHaveBeenCalledWith({ run_id: "run-1" }, expect.any(Object));
+    expect(mockNavigate).toHaveBeenCalledWith("/admin/prompts/hcp.system/optimize", {
+      state: expect.objectContaining({
+        source: "registry",
+        returnTo: "/admin/prompts/hcp.system",
+        originalContent: "current content",
+        title: "HCP System Prompt",
+      }),
+    });
   });
 
   it("shows an error message when the prompt fails to load", () => {
