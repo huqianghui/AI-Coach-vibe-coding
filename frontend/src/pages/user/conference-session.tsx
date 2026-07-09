@@ -135,6 +135,7 @@ export default function ConferenceSession() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get("id") ?? "";
+  const groupRunId = searchParams.get("groupRunId");
   const initialInputMode = searchParams.get("inputMode") === "audio" ? "audio" : "text";
   const hasRequestedStartRef = useRef(false);
 
@@ -780,11 +781,14 @@ export default function ConferenceSession() {
         }
       }
       await endSessionMutation.mutateAsync(sessionId);
-      navigate(`/user/scoring/${sessionId}`);
+      const scoringUrl = groupRunId
+        ? `/user/scoring/${sessionId}?groupRunId=${groupRunId}`
+        : `/user/scoring/${sessionId}`;
+      navigate(scoringUrl);
     } catch {
       toast.error(t("error.endFailed"));
     }
-  }, [avatarStream, endSessionMutation, inputMode, navigate, recordingState, sessionId, sessionRecorder, stopSpeaking, t, voiceLive]);
+  }, [avatarStream, endSessionMutation, groupRunId, inputMode, navigate, recordingState, sessionId, sessionRecorder, stopSpeaking, t, voiceLive]);
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background">

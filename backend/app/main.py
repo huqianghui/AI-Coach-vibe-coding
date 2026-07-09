@@ -19,6 +19,7 @@ from app.api import (
     materials_router,
     meta_skills_router,
     rubrics_router,
+    scenario_groups_router,
     scenarios_router,
     scoring_router,
     sessions_router,
@@ -121,6 +122,7 @@ app.include_router(auth_router, prefix=settings.api_prefix)
 app.include_router(config_router, prefix=settings.api_prefix)
 app.include_router(hcp_profiles_router, prefix=settings.api_prefix)
 app.include_router(scenarios_router, prefix=settings.api_prefix)
+app.include_router(scenario_groups_router, prefix=settings.api_prefix)
 app.include_router(sessions_router, prefix=settings.api_prefix)
 app.include_router(scoring_router, prefix=settings.api_prefix)
 app.include_router(rubrics_router, prefix=settings.api_prefix)

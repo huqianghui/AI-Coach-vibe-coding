@@ -7,6 +7,12 @@ from app.models.material import MaterialVersion, TrainingMaterial
 from app.models.message import SessionMessage
 from app.models.meta_skill import MetaSkill
 from app.models.scenario import Scenario
+from app.models.scenario_group import (
+    ScenarioGroup,
+    ScenarioGroupItem,
+    ScenarioGroupRun,
+    ScenarioGroupRunItem,
+)
 from app.models.score import ScoreDetail, SessionScore
 from app.models.scoring_rubric import ScoringRubric
 from app.models.service_config import ServiceConfig
@@ -29,6 +35,10 @@ __all__ = [
     "VoiceScore",
     "VoiceScoreDetail",
     "Scenario",
+    "ScenarioGroup",
+    "ScenarioGroupItem",
+    "ScenarioGroupRun",
+    "ScenarioGroupRunItem",
     "CoachingSession",
     "ConferenceAudienceHcp",
     "SessionMessage",

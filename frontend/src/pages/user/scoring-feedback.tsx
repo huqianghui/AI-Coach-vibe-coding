@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { MessageSquare, ChevronDown, ChevronUp } from "lucide-react";
 import { Badge, Button, ScrollArea } from "@/components/ui";
@@ -14,6 +14,7 @@ import { useSessionScore, useTriggerScoring, useScoreHistory } from "@/hooks/use
 import { useSessionReport } from "@/hooks/use-reports";
 import { useSession, useSessionMessages } from "@/hooks/use-session";
 import { useCombinedScore } from "@/hooks/use-combined-score";
+import { useRefreshScenarioGroupRunScore } from "@/hooks/use-scenario-groups";
 import { VoiceScoreSection } from "@/components/scoring/voice-score-section";
 
 /** Determine badge variant based on score thresholds. */
@@ -27,7 +28,9 @@ export default function ScoringFeedback() {
   const { t } = useTranslation("scoring");
   const navigate = useNavigate();
   const params = useParams();
+  const [searchParams] = useSearchParams();
   const sessionId = params.sessionId ?? "";
+  const groupRunId = searchParams.get("groupRunId");
 
   const { data: session } = useSession(sessionId || undefined);
   const { data: messages } = useSessionMessages(sessionId || undefined);
@@ -35,6 +38,7 @@ export default function ScoringFeedback() {
     sessionId || undefined
   );
   const triggerScoring = useTriggerScoring();
+  const refreshGroupRunScore = useRefreshScenarioGroupRunScore();
   const [showTranscript, setShowTranscript] = useState(true);
 
   // Load full report only when score is available
@@ -60,6 +64,12 @@ export default function ScoringFeedback() {
       triggerScoring.mutate(sessionId);
     }
   }, [session?.status, score, scoreLoading, sessionId]);
+
+  useEffect(() => {
+    if (groupRunId && score && !refreshGroupRunScore.isPending) {
+      refreshGroupRunScore.mutate(groupRunId);
+    }
+  }, [groupRunId, score?.session_id]);
 
   // Loading state while scoring
   if (scoreLoading || triggerScoring.isPending || !score) {
@@ -256,9 +266,18 @@ export default function ScoringFeedback() {
 
       {/* Bottom action bar */}
       <div className="action-bar flex flex-wrap items-center justify-end gap-4 border-t border-border pt-6">
+        {groupRunId && (
+          <Button
+            variant="outline"
+            onClick={() => navigate(`/user/training/groups?id=${groupRunId}`)}
+            className="transition-colors duration-150"
+          >
+            返回组合训练
+          </Button>
+        )}
         <Button
           variant="outline"
-          onClick={() => navigate("/user/training")}
+          onClick={() => navigate(groupRunId ? `/user/training/groups?id=${groupRunId}` : "/user/training")}
           className="transition-colors duration-150"
         >
           {t("tryAgain")}

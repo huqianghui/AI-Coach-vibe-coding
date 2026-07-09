@@ -14,6 +14,7 @@ const ScoringFeedback = lazy(() => import("@/pages/user/scoring-feedback"));
 const SessionHistory = lazy(() => import("@/pages/user/session-history"));
 const UserReportsPage = lazy(() => import("@/pages/user/reports"));
 const ConferenceSession = lazy(() => import("@/pages/user/conference-session"));
+const ScenarioGroupRunPage = lazy(() => import("@/pages/user/scenario-group-run"));
 const UnifiedSession = lazy(() => import("@/pages/user/unified-session"));
 
 const AdminDashboard = lazy(() => import("@/pages/admin/dashboard"));
@@ -61,6 +62,7 @@ export const router = createBrowserRouter([
         children: [
           { path: "dashboard", element: <SuspensePage><UserDashboard /></SuspensePage> },
           { path: "training", element: <SuspensePage><ScenarioSelection /></SuspensePage> },
+          { path: "training/groups", element: <SuspensePage><ScenarioGroupRunPage /></SuspensePage> },
           { path: "scoring/:sessionId", element: <SuspensePage><ScoringFeedback /></SuspensePage> },
           { path: "history", element: <SuspensePage><SessionHistory /></SuspensePage> },
           { path: "reports", element: <SuspensePage><UserReportsPage /></SuspensePage> },

@@ -305,10 +305,25 @@ async def end_session(db: AsyncSession, session_id: str, user_id: str) -> Coachi
         )
 
     await db.flush()
+    await _sync_group_run_item_after_session_end(db, session)
     # Full refresh to reload scalar columns (updated_at, etc.) + relationships
     await db.refresh(session)
     await db.refresh(session, attribute_names=["scenario", "messages"])
     return session
+
+
+async def _sync_group_run_item_after_session_end(
+    db: AsyncSession, session: CoachingSession
+) -> None:
+    """Mark a scenario group run item completed when its child session ends."""
+    from app.models.scenario_group import ScenarioGroupRunItem
+
+    result = await db.execute(
+        select(ScenarioGroupRunItem).where(ScenarioGroupRunItem.session_id == session.id)
+    )
+    run_item = result.scalar_one_or_none()
+    if run_item is not None and session.status == "completed":
+        run_item.status = "completed"
 
 
 async def get_session_messages(db: AsyncSession, session_id: str) -> list[SessionMessage]:
