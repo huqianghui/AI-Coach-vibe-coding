@@ -8,10 +8,10 @@ via Streamable HTTP (JSON-RPC 2.0). No optimizer source is modified.
 
 from __future__ import annotations
 
-from datetime import timedelta
+import json
+from typing import Any
 
-from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+import httpx
 
 from app.config import get_settings
 
@@ -46,17 +46,61 @@ def _build_arguments(
     return arguments
 
 
-def _extract_text(result) -> str:
+def _extract_text(result: dict[str, Any]) -> str:
     """Return the text of the first content block, raising on error/malformed results."""
-    if getattr(result, "isError", False):
+    if result.get("isError"):
         raise PromptOptimizerError(f"prompt-optimizer returned an error: {result}")
 
-    content = getattr(result, "content", None) or []
+    content = result.get("content") or []
     for block in content:
-        text = getattr(block, "text", None)
+        text = block.get("text") if isinstance(block, dict) else None
         if text is not None:
             return text
     raise PromptOptimizerError("prompt-optimizer returned no text content")
+
+
+def _extract_jsonrpc_result(response: httpx.Response) -> dict[str, Any]:
+    if response.status_code >= 400:
+        raise PromptOptimizerError(
+            f"prompt-optimizer HTTP {response.status_code}: {response.text[:300]}"
+        )
+
+    payload = _decode_jsonrpc_payload(response)
+    if not isinstance(payload, dict):
+        raise PromptOptimizerError("prompt-optimizer returned a non-object JSON-RPC response")
+    if payload.get("error"):
+        raise PromptOptimizerError(f"prompt-optimizer JSON-RPC error: {payload['error']}")
+
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        raise PromptOptimizerError("prompt-optimizer returned no JSON-RPC result object")
+    return result
+
+
+def _decode_jsonrpc_payload(response: httpx.Response) -> Any:
+    try:
+        return response.json()
+    except json.JSONDecodeError:
+        pass
+
+    content_type = response.headers.get("content-type", "")
+    if "text/event-stream" not in content_type:
+        raise PromptOptimizerError(
+            "prompt-optimizer returned non-JSON response: "
+            f"content-type={content_type!r}, body={response.text[:300]!r}"
+        )
+
+    data_lines: list[str] = []
+    for line in response.text.splitlines():
+        if line.startswith("data:"):
+            data = line.removeprefix("data:").strip()
+            if data and data != "[DONE]":
+                data_lines.append(data)
+
+    if not data_lines:
+        raise PromptOptimizerError("prompt-optimizer returned an empty SSE response")
+
+    return json.loads("\n".join(data_lines))
 
 
 async def optimize_prompt(
@@ -91,13 +135,59 @@ async def optimize_prompt(
     arguments = _build_arguments(prompt, mode, requirements, template)
     tool_name = _TOOL_BY_MODE[mode]
 
-    async with streamablehttp_client(url, timeout=timedelta(seconds=timeout)) as (
-        read,
-        write,
-        _,
-    ):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            result = await session.call_tool(tool_name, arguments)
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+    }
 
-    return _extract_text(result)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        init_response = await client.post(
+            url,
+            headers=headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-03-26",
+                    "capabilities": {},
+                    "clientInfo": {"name": "ai-coach-backend", "version": "0.1.0"},
+                },
+            },
+        )
+        _extract_jsonrpc_result(init_response)
+        session_id = init_response.headers.get("mcp-session-id")
+        if not session_id:
+            raise PromptOptimizerError("prompt-optimizer did not return mcp-session-id")
+
+        session_headers = {**headers, "mcp-session-id": session_id}
+        initialized_response = await client.post(
+            url,
+            headers=session_headers,
+            json={
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized",
+                "params": {},
+            },
+        )
+        if initialized_response.status_code >= 400:
+            raise PromptOptimizerError(
+                "prompt-optimizer initialized notification failed: "
+                f"HTTP {initialized_response.status_code} - {initialized_response.text[:300]}"
+            )
+
+        call_response = await client.post(
+            url,
+            headers=session_headers,
+            json={
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {
+                    "name": tool_name,
+                    "arguments": arguments,
+                },
+            },
+        )
+
+    return _extract_text(_extract_jsonrpc_result(call_response))

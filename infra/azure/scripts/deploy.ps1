@@ -494,10 +494,12 @@ $managePostgresAdminPassword = [string]::IsNullOrWhiteSpace($postgresServerName)
 $jwtSecretExists = Test-KeyVaultSecretExists -VaultResourceId $keyVaultResourceId -SecretName "jwt-secret-key"
 $encryptionKeyExists = Test-KeyVaultSecretExists -VaultResourceId $keyVaultResourceId -SecretName "encryption-key"
 $postgresPasswordSecretExists = Test-KeyVaultSecretExists -VaultResourceId $keyVaultResourceId -SecretName "postgres-admin-password"
+$promptOptimizerProxySecretExists = Test-KeyVaultSecretExists -VaultResourceId $keyVaultResourceId -SecretName "prompt-optimizer-proxy-secret"
 $manageJwtSecret = $null -ne $JwtSecret -or -not $jwtSecretExists
 $manageEncryptionKey = $null -ne $EncryptionKey -or -not $encryptionKeyExists
 $managePostgresPasswordSecret = $null -ne $PostgresAdminPassword -or -not $postgresPasswordSecretExists
-$manageBootstrapSecrets = $manageJwtSecret -or $manageEncryptionKey -or $managePostgresPasswordSecret
+$managePromptOptimizerProxySecret = -not $promptOptimizerProxySecretExists
+$manageBootstrapSecrets = $manageJwtSecret -or $manageEncryptionKey -or $managePostgresPasswordSecret -or $managePromptOptimizerProxySecret
 
 if ($keyVaultName) {
     Write-Host "Existing Key Vault '$keyVaultName' found. Existing secrets will not be overwritten unless explicitly supplied or missing." -ForegroundColor Cyan
@@ -568,6 +570,12 @@ else {
 
 $backendImage = $defaultBackendImage
 $frontendImage = $defaultFrontendImage
+$promptOptimizerProxySecretValue = if ($managePromptOptimizerProxySecret) {
+    New-RandomSecret
+}
+else {
+    "existing-prompt-optimizer-proxy-secret-not-managed"
+}
 if ($resourceGroupExists -eq "true") {
     Write-Host "Reusing existing Container App images when present..." -ForegroundColor Cyan
     $backendImage = Get-ContainerAppImage -ResourceGroupName $resourceGroupName -ContainerAppName $backendContainerAppName -DefaultImage $defaultBackendImage
@@ -595,6 +603,7 @@ $parameters = [ordered]@{
         storageAccountName = @{ value = $defaultStorageName }
         backendImage = @{ value = $backendImage }
         frontendImage = @{ value = $frontendImage }
+        promptOptimizerProxySecret = @{ value = $promptOptimizerProxySecretValue }
         postgresAdminPassword = @{ value = $postgresAdminPasswordValue }
         jwtSecret = @{ value = $jwtSecretValue }
         encryptionKey = @{ value = $encryptionKeyValue }
@@ -602,6 +611,7 @@ $parameters = [ordered]@{
         manageJwtSecret = @{ value = $manageJwtSecret }
         manageEncryptionKey = @{ value = $manageEncryptionKey }
         managePostgresPasswordSecret = @{ value = $managePostgresPasswordSecret }
+        managePromptOptimizerProxySecret = @{ value = $managePromptOptimizerProxySecret }
         managePostgresAdminPassword = @{ value = $managePostgresAdminPassword }
         databaseAutoCreateTables = @{ value = [bool]$EnableDatabaseAutoCreateTables }
         backendDatabaseAuthMode = @{ value = $BackendDatabaseAuthMode }
@@ -783,6 +793,7 @@ Write-Host "ACR_NAME=$($outputs.containerRegistryName.value)"
 Write-Host "BACKEND_APP_NAME=$($outputs.backendContainerAppName.value)"
 Write-Host "BACKEND_BOOTSTRAP_JOB_NAME=$($outputs.backendBootstrapJobName.value)"
 Write-Host "FRONTEND_APP_NAME=$($outputs.frontendContainerAppName.value)"
+Write-Host "PROMPT_OPTIMIZER_APP_NAME=$($outputs.promptOptimizerContainerAppName.value)"
 
 $deploymentSummary = $outputs.deployment.value
 $aiFoundrySummary = if ($deploymentSummary) { $deploymentSummary.aiFoundry } else { $null }
@@ -804,6 +815,8 @@ Write-Host "AI Foundry endpoint:       $(Format-AdminConfigValue $aiFoundrySumma
 Write-Host "AI Foundry project:        $(Format-AdminConfigValue $aiFoundrySummary.projectName)"
 Write-Host "Default model/deployment:  $(Format-AdminConfigValue $foundryModelOrDeployment)"
 Write-Host "Foundry region:            $(Format-AdminConfigValue $outputs.foundryLocation.value)"
+Write-Host "Prompt Optimizer app:      $(Format-AdminConfigValue $outputs.promptOptimizerContainerAppName.value)"
+Write-Host "Prompt Optimizer MCP URL:  $(Format-AdminConfigValue $outputs.promptOptimizerMcpUrl.value)"
 
 if (-not $KeepGeneratedParameters) {
     Remove-Item -Path $parametersPath -Force

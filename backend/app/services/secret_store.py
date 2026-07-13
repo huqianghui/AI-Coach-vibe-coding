@@ -29,6 +29,7 @@ SERVICE_SECRET_NAMES = {
     "content_understanding": "azure-content-understanding-api-key",
     "azure_voice_live": "azure-voice-live-api-key",
     "azure_openai_realtime": "azure-openai-realtime-api-key",
+    "prompt_optimizer": "prompt-optimizer-api-key",
 }
 
 

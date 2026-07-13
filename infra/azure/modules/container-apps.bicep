@@ -13,6 +13,7 @@ param backendIdentityName string
 param backendIdentityClientId string
 param backendImage string
 param frontendImage string
+param promptOptimizerImage string = 'linshen/prompt-optimizer:2.11.7'
 param postgresServerFqdn string
 param postgresDatabaseName string
 param postgresAdminLogin string
@@ -49,10 +50,13 @@ param managedEnvironmentInfrastructureSubnetId string = ''
 var environmentResourceName = 'cae-${namePrefix}-${environmentName}'
 var backendAppName = 'ca-${namePrefix}-${environmentName}-backend'
 var frontendAppName = 'ca-${namePrefix}-${environmentName}-frontend'
+var promptOptimizerAppName = 'ca-${namePrefix}-${environmentName}-po'
 var backendBootstrapJobName = 'job-${namePrefix}-${environmentName}-bootstrap'
 var backendIngressExternal = networkProfile == 'publicDemo'
 var usePrivateVNet = networkProfile == 'privateBackend' && !empty(managedEnvironmentInfrastructureSubnetId)
 var useAzureAdDatabaseAuth = backendDatabaseAuthMode == 'azureAd'
+var backendFqdn = backendIngressExternal ? '${backendAppName}.${managedEnvironment.properties.defaultDomain}' : '${backendAppName}.internal.${managedEnvironment.properties.defaultDomain}'
+var promptOptimizerProxyBaseUrl = 'https://${backendFqdn}/api/v1/internal/openai/v1'
 
 resource workspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' existing = {
   name: logAnalyticsWorkspaceName
@@ -116,6 +120,11 @@ resource backendApp 'Microsoft.App/containerApps@2023-05-01' = {
         {
           name: 'encryption-key'
           keyVaultUrl: '${keyVaultUri}secrets/encryption-key'
+          identity: backendIdentityId
+        }
+        {
+          name: 'prompt-optimizer-proxy-secret'
+          keyVaultUrl: '${keyVaultUri}secrets/prompt-optimizer-proxy-secret'
           identity: backendIdentityId
         }
       ]
@@ -222,10 +231,107 @@ resource backendApp 'Microsoft.App/containerApps@2023-05-01' = {
               name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
               value: applicationInsightsConnectionString
             }
+            {
+              name: 'PROMPT_OPTIMIZER_MCP_URL'
+              value: 'https://${promptOptimizerApp.properties.configuration.ingress.fqdn}/mcp'
+            }
+            {
+              name: 'PROMPT_OPTIMIZER_PROXY_SECRET'
+              secretRef: 'prompt-optimizer-proxy-secret'
+            }
+            {
+              name: 'PROMPT_OPTIMIZER_PROXY_SECRET_SOURCE'
+              value: 'keyvault'
+            }
           ]
           resources: {
             cpu: json('1.0')
             memory: '2Gi'
+          }
+        }
+      ]
+      scale: {
+        minReplicas: 1
+        maxReplicas: 2
+      }
+    }
+  }
+}
+
+resource promptOptimizerApp 'Microsoft.App/containerApps@2023-05-01' = {
+  name: promptOptimizerAppName
+  location: location
+  tags: tags
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${backendIdentityId}': {}
+    }
+  }
+  properties: {
+    managedEnvironmentId: managedEnvironment.id
+    configuration: {
+      activeRevisionsMode: 'Single'
+      ingress: {
+        external: false
+        targetPort: 80
+        transport: 'auto'
+        allowInsecure: false
+      }
+      secrets: [
+        {
+          name: 'prompt-optimizer-proxy-secret'
+          keyVaultUrl: '${keyVaultUri}secrets/prompt-optimizer-proxy-secret'
+          identity: backendIdentityId
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'prompt-optimizer'
+          image: promptOptimizerImage
+          env: [
+            {
+              name: 'MCP_DEFAULT_MODEL_PROVIDER'
+              value: 'custom'
+            }
+            {
+              name: 'MCP_DEFAULT_LANGUAGE'
+              value: 'zh'
+            }
+            {
+              name: 'VITE_CUSTOM_API_BASE_URL'
+              value: promptOptimizerProxyBaseUrl
+            }
+            {
+              name: 'VITE_CUSTOM_API_KEY'
+              secretRef: 'prompt-optimizer-proxy-secret'
+            }
+            {
+              name: 'VITE_CUSTOM_API_MODEL'
+              value: 'prompt-optimizer'
+            }
+            {
+              name: 'MCP_DEFAULT_MODEL_BASE_URL'
+              value: promptOptimizerProxyBaseUrl
+            }
+            {
+              name: 'MCP_DEFAULT_MODEL_API_KEY'
+              secretRef: 'prompt-optimizer-proxy-secret'
+            }
+            {
+              name: 'MCP_DEFAULT_MODEL_NAME'
+              value: 'prompt-optimizer'
+            }
+            {
+              name: 'PROMPT_OPTIMIZER_PROXY_SECRET_SOURCE'
+              value: 'keyvault'
+            }
+          ]
+          resources: {
+            cpu: json('0.5')
+            memory: '1Gi'
           }
         }
       ]
@@ -439,6 +545,9 @@ output summary object = {
   backendAppName: backendApp.name
   backendBootstrapJobName: backendBootstrapJob.name
   backendUrl: 'https://${backendApp.properties.configuration.ingress.fqdn}'
+  promptOptimizerAppName: promptOptimizerApp.name
+  promptOptimizerMcpUrl: 'https://${promptOptimizerApp.properties.configuration.ingress.fqdn}/mcp'
+  promptOptimizerProxyBaseUrl: promptOptimizerProxyBaseUrl
   frontendAppName: frontendApp.name
   frontendUrl: 'https://${frontendApp.properties.configuration.ingress.fqdn}'
   registryLoginServer: registryLoginServer
@@ -450,4 +559,6 @@ output backendUrl string = 'https://${backendApp.properties.configuration.ingres
 output frontendUrl string = 'https://${frontendApp.properties.configuration.ingress.fqdn}'
 output backendAppName string = backendApp.name
 output backendBootstrapJobName string = backendBootstrapJob.name
+output promptOptimizerAppName string = promptOptimizerApp.name
+output promptOptimizerMcpUrl string = 'https://${promptOptimizerApp.properties.configuration.ingress.fqdn}/mcp'
 output frontendAppName string = frontendApp.name

@@ -93,6 +93,16 @@ param backendImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworl
 @description('Frontend container image. Pass a real ACR image after building and pushing.')
 param frontendImage string = 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
 
+@description('Prompt Optimizer container image. The upstream image is deployed unmodified as an internal sidecar service.')
+param promptOptimizerImage string = 'linshen/prompt-optimizer:2.11.7'
+
+@secure()
+@description('Internal shared secret used only between the prompt-optimizer Container App and backend OpenAI-compatible proxy.')
+param promptOptimizerProxySecret string = ''
+
+@description('Whether to create or update the internal Prompt Optimizer proxy secret in Key Vault.')
+param managePromptOptimizerProxySecret bool = true
+
 @description('Backend CORS origins. Frontend normally calls the backend through nginx /api proxy, so same-origin browser calls do not require CORS.')
 param corsOrigins string = 'http://localhost:5173,http://localhost:3000'
 
@@ -259,10 +269,12 @@ module keyVault './modules/key-vault.bicep' = {
     jwtSecret: jwtSecret
     encryptionKey: encryptionKey
     postgresAdminPassword: postgresAdminPassword
+    promptOptimizerProxySecret: promptOptimizerProxySecret
     manageBootstrapSecrets: manageBootstrapSecrets
     manageJwtSecret: manageJwtSecret
     manageEncryptionKey: manageEncryptionKey
     managePostgresPasswordSecret: managePostgresPasswordSecret
+    managePromptOptimizerProxySecret: managePromptOptimizerProxySecret
     networkProfile: networkProfile
   }
 }
@@ -347,6 +359,7 @@ module containerApps './modules/container-apps.bicep' = {
     backendIdentityClientId: managedIdentity.outputs.backendIdentityClientId
     backendImage: backendImage
     frontendImage: frontendImage
+    promptOptimizerImage: promptOptimizerImage
     postgresServerFqdn: postgresql.outputs.serverFqdn
     postgresDatabaseName: postgresql.outputs.databaseName
     postgresAdminLogin: postgresql.outputs.administratorLogin
@@ -473,6 +486,8 @@ output storageBlobEndpoint string = storage.outputs.blobEndpoint
 output backendContainerAppName string = containerApps.outputs.backendAppName
 output backendBootstrapJobName string = containerApps.outputs.backendBootstrapJobName
 output frontendContainerAppName string = containerApps.outputs.frontendAppName
+output promptOptimizerContainerAppName string = containerApps.outputs.promptOptimizerAppName
+output promptOptimizerMcpUrl string = containerApps.outputs.promptOptimizerMcpUrl
 output backendUrl string = containerApps.outputs.backendUrl
 output frontendUrl string = containerApps.outputs.frontendUrl
 output postgresServerFqdn string = postgresql.outputs.serverFqdn
@@ -518,4 +533,5 @@ output githubActions object = {
   BACKEND_APP_NAME: containerApps.outputs.backendAppName
   BACKEND_BOOTSTRAP_JOB_NAME: containerApps.outputs.backendBootstrapJobName
   FRONTEND_APP_NAME: containerApps.outputs.frontendAppName
+  PROMPT_OPTIMIZER_APP_NAME: containerApps.outputs.promptOptimizerAppName
 }

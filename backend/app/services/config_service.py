@@ -257,3 +257,14 @@ async def get_effective_region(db: AsyncSession, service_name: str) -> str:
     if master:
         return master.region
     return ""
+
+
+async def get_effective_model(db: AsyncSession, service_name: str) -> str:
+    """Return the effective model/deployment for a service, falling back to master config."""
+    config = await get_config(db, service_name)
+    if config and config.model_or_deployment:
+        return config.model_or_deployment
+    master = await get_master_config(db)
+    if master:
+        return master.model_or_deployment
+    return ""

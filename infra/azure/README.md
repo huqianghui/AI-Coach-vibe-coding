@@ -25,7 +25,7 @@
 默认包含：
 
 - Azure Container Registry
-- 后端和前端 Azure Container Apps
+- 后端、前端和 Prompt Optimizer Azure Container Apps
 - Log Analytics 和 Application Insights
 - 用户分配 Managed Identity
 - Key Vault
@@ -35,6 +35,7 @@
 - Azure OpenAI `gpt-4o` 模型部署，用于 chat/scoring
 - GitHub Actions OIDC bootstrap
 - RBAC role assignments
+- Prompt Optimizer 使用 internal-only Container App，不公网暴露；它通过后端 internal OpenAI-compatible proxy 继承 Admin AI Foundry master config 的 endpoint/auth/model，并可通过 Admin config 单独覆盖 optimizer model。
 
 可选能力：
 

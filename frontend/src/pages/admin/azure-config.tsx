@@ -16,6 +16,7 @@ import {
   Check,
   X,
   Info,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -117,6 +118,14 @@ const AZURE_SERVICES: AzureServiceDef[] = [
     description: "Real-time voice coaching with configurable model",
     icon: <Phone className="size-5 text-primary" />,
     modelPlaceholder: "e.g. gpt-4o-realtime-preview",
+  },
+  {
+    key: "promptOptimizer",
+    backendKey: "prompt_optimizer",
+    name: "Prompt Optimizer",
+    description: "AI prompt optimization sidecar; inherits AI Foundry endpoint/auth by default",
+    icon: <Sparkles className="size-5 text-primary" />,
+    modelPlaceholder: "leave empty to use AI Foundry master model",
   },
 ];
 

@@ -197,7 +197,7 @@ def _render_custom_prompt_template(template: str, values: dict[str, str]) -> str
     """Render supported placeholders without interpreting other JSON braces."""
     rendered = template
     for key, value in values.items():
-        rendered = rendered.replace(f"{{{key}}}", value)
+        rendered = rendered.replace(f"{{{key}}}", str(value))
     return rendered.replace("{{", "{").replace("}}", "}")
 
 

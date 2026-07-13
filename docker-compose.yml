@@ -11,12 +11,12 @@ services:
       - CORS_ORIGINS=http://localhost:5173,http://localhost:80
       - CONTENT_UNDERSTANDING_API_VERSION=2025-11-01
       - PROMPT_OPTIMIZER_MCP_URL=http://prompt-optimizer:80/mcp
+      - PROMPT_OPTIMIZER_PROXY_SECRET=${PROMPT_OPTIMIZER_PROXY_SECRET:-local-prompt-optimizer-proxy-secret}
     command: uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
-  # Prompt optimizer sidecar (PROMPT-01). Unmodified upstream AGPL image, used as a
-  # separate network service only. Internal-only: reachable on the compose network,
-  # never published to the host. Backed by Azure OpenAI via the OpenAI-compatible /v1
-  # ("custom") provider.
+  # Prompt optimizer sidecar (PROMPT-01). Unmodified upstream AGPL image, used as
+  # a separate network service only. It calls the backend internal OpenAI-compatible
+  # proxy, so Azure endpoint/auth/model stay owned by backend master config.
   prompt-optimizer:
     image: linshen/prompt-optimizer:2.11.7
     expose:
@@ -24,9 +24,12 @@ services:
     environment:
       - MCP_DEFAULT_MODEL_PROVIDER=custom
       - MCP_DEFAULT_LANGUAGE=zh
-      - VITE_CUSTOM_API_BASE_URL=${VITE_CUSTOM_API_BASE_URL}
-      - VITE_CUSTOM_API_KEY=${AZURE_OPENAI_API_KEY}
-      - VITE_CUSTOM_API_MODEL=${AOAI_DEPLOYMENT}
+      - VITE_CUSTOM_API_BASE_URL=http://backend:8000/api/v1/internal/openai/v1
+      - VITE_CUSTOM_API_KEY=${PROMPT_OPTIMIZER_PROXY_SECRET:-local-prompt-optimizer-proxy-secret}
+      - VITE_CUSTOM_API_MODEL=prompt-optimizer
+      - MCP_DEFAULT_MODEL_BASE_URL=http://backend:8000/api/v1/internal/openai/v1
+      - MCP_DEFAULT_MODEL_API_KEY=${PROMPT_OPTIMIZER_PROXY_SECRET:-local-prompt-optimizer-proxy-secret}
+      - MCP_DEFAULT_MODEL_NAME=prompt-optimizer
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:80/healthz"]
       interval: 30s

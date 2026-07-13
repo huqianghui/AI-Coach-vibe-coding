@@ -72,6 +72,7 @@ UNRESTRICTED_SERVICES: set[str] = {
     "azure_speech_tts",
     "azure_content",
     "azure_openai_realtime",
+    "prompt_optimizer",
 }
 
 ALL_SERVICE_NAMES: list[str] = [
@@ -82,6 +83,7 @@ ALL_SERVICE_NAMES: list[str] = [
     "azure_content",
     "azure_openai_realtime",
     "azure_voice_live",
+    "prompt_optimizer",
 ]
 
 _AVATAR_REGIONS_DISPLAY = ", ".join(sorted(AVATAR_REGIONS))

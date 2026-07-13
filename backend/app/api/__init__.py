@@ -6,6 +6,7 @@ from app.api.conference import router as conference_router
 from app.api.config import router as config_router
 from app.api.dry_runs import router as dry_runs_router
 from app.api.hcp_profiles import router as hcp_profiles_router
+from app.api.internal_openai_proxy import router as internal_openai_proxy_router
 from app.api.knowledge_base import router as knowledge_base_router
 from app.api.materials import router as materials_router
 from app.api.meta_skills import router as meta_skills_router
@@ -29,6 +30,7 @@ __all__ = [
     "config_router",
     "dry_runs_router",
     "hcp_profiles_router",
+    "internal_openai_proxy_router",
     "knowledge_base_router",
     "materials_router",
     "meta_skills_router",

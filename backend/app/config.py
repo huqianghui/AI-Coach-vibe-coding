@@ -123,6 +123,8 @@ class Settings(BaseSettings):
     # Prompt Optimizer sidecar (PROMPT-01): MCP Streamable-HTTP endpoint
     prompt_optimizer_mcp_url: str = "http://prompt-optimizer:80/mcp"
     prompt_optimizer_timeout_seconds: float = 60.0
+    prompt_optimizer_proxy_secret: str = ""
+    prompt_optimizer_proxy_api_version: str = "2024-06-01"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

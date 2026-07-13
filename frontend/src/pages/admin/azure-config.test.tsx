@@ -173,7 +173,7 @@ describe("AzureConfigPage", () => {
     expect(screen.getByText("azureConfig.aiFoundry.description")).toBeInTheDocument();
   });
 
-  it("renders all 7 Azure service names", () => {
+  it("renders all 8 Azure service names", () => {
     renderWithProviders();
     expect(screen.getByText("Azure OpenAI")).toBeInTheDocument();
     expect(screen.getByText("Azure Speech (STT)")).toBeInTheDocument();
@@ -182,6 +182,7 @@ describe("AzureConfigPage", () => {
     expect(screen.getByText("Azure Content Understanding")).toBeInTheDocument();
     expect(screen.getByText("Azure OpenAI Realtime")).toBeInTheDocument();
     expect(screen.getByText("Azure Voice Live API")).toBeInTheDocument();
+    expect(screen.getByText("Prompt Optimizer")).toBeInTheDocument();
   });
 
   it("renders all service descriptions", () => {
@@ -193,6 +194,11 @@ describe("AzureConfigPage", () => {
     expect(screen.getByText("Multimodal evaluation for training materials")).toBeInTheDocument();
     expect(screen.getByText("Real-time audio streaming for voice conversations")).toBeInTheDocument();
     expect(screen.getByText("Real-time voice coaching with configurable model")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "AI prompt optimization sidecar; inherits AI Foundry endpoint/auth by default",
+      ),
+    ).toBeInTheDocument();
   });
 
   // ---- Loading state ----
@@ -218,7 +224,7 @@ describe("AzureConfigPage", () => {
     renderWithProviders();
     // Each service has a switch with aria-label "Enable {name}"
     const switches = screen.getAllByRole("switch");
-    expect(switches.length).toBe(7);
+    expect(switches.length).toBe(8);
   });
 
   // ---- handleTestAll ----
