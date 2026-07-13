@@ -66,10 +66,10 @@ class TestGetRegionCapabilities:
             ), f"Mismatch for {service_name}"
 
     def test_all_service_names_in_result(self):
-        """All 7 services are present in result."""
+        """All 8 services are present in result."""
         result = get_region_capabilities("eastus2")
         services = result["services"]
-        assert len(services) == 7
+        assert len(services) == 8
         for name in ALL_SERVICE_NAMES:
             assert name in services, f"Missing service: {name}"
 
@@ -117,5 +117,5 @@ class TestRegionConstants:
         assert "swedencentral" in VOICE_LIVE_REGIONS
 
     def test_all_service_names_count(self):
-        """ALL_SERVICE_NAMES has 7 entries."""
-        assert len(ALL_SERVICE_NAMES) == 7
+        """ALL_SERVICE_NAMES has 8 entries."""
+        assert len(ALL_SERVICE_NAMES) == 8
