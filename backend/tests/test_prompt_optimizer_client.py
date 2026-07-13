@@ -117,7 +117,7 @@ async def test_sse_jsonrpc_response_is_supported():
     )
     _FakeAsyncClient.responses[-1] = _FakeResponse(
         text=(
-            'event: message\n'
+            "event: message\n"
             'data: {"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text",'
             '"text":"OPTIMIZED SSE"}]}}\n\n'
         ),
