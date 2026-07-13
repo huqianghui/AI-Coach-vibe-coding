@@ -55,7 +55,7 @@ var backendBootstrapJobName = 'job-${namePrefix}-${environmentName}-bootstrap'
 var backendIngressExternal = networkProfile == 'publicDemo'
 var usePrivateVNet = networkProfile == 'privateBackend' && !empty(managedEnvironmentInfrastructureSubnetId)
 var useAzureAdDatabaseAuth = backendDatabaseAuthMode == 'azureAd'
-var backendFqdn = '${backendAppName}.${managedEnvironment.properties.defaultDomain}'
+var backendFqdn = backendIngressExternal ? '${backendAppName}.${managedEnvironment.properties.defaultDomain}' : '${backendAppName}.internal.${managedEnvironment.properties.defaultDomain}'
 var promptOptimizerProxyBaseUrl = 'https://${backendFqdn}/api/v1/internal/openai/v1'
 
 resource workspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' existing = {
