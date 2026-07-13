@@ -41,6 +41,7 @@ SERVICE_DISPLAY_NAMES = {
     "azure_content": "Azure Content Understanding",
     "azure_voice_live": "Azure Voice Live API",
     "azure_openai_realtime": "Azure OpenAI Realtime",
+    "prompt_optimizer": "Prompt Optimizer",
 }
 
 

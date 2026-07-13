@@ -649,7 +649,7 @@ async def test_service_connection(
         return await test_ai_foundry_endpoint(
             effective_endpoint, effective_key, effective_deployment
         )
-    elif service_name == "azure_openai":
+    elif service_name in ("azure_openai", "prompt_optimizer"):
         effective_endpoint = endpoint or (
             f"{master_endpoint.rstrip('/')}/" if master_endpoint else ""
         )

@@ -15,10 +15,14 @@ param encryptionKey string
 @secure()
 param postgresAdminPassword string
 
+@secure()
+param promptOptimizerProxySecret string
+
 param manageBootstrapSecrets bool = true
 param manageJwtSecret bool = true
 param manageEncryptionKey bool = true
 param managePostgresPasswordSecret bool = true
+param managePromptOptimizerProxySecret bool = true
 
 @allowed([
   'publicDemo'
@@ -77,6 +81,14 @@ resource postgresPasswordSecretResource 'Microsoft.KeyVault/vaults/secrets@2023-
   }
 }
 
+resource promptOptimizerProxySecretResource 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (managePromptOptimizerProxySecret) {
+  parent: vault
+  name: 'prompt-optimizer-proxy-secret'
+  properties: {
+    value: promptOptimizerProxySecret
+  }
+}
+
 output summary object = {
   module: 'key-vault'
   vaultName: vault.name
@@ -86,12 +98,14 @@ output summary object = {
     'jwt-secret-key'
     'encryption-key'
     'postgres-admin-password'
+    'prompt-optimizer-proxy-secret'
   ]
   manageBootstrapSecrets: manageBootstrapSecrets
   managedSecrets: {
     jwtSecret: manageJwtSecret
     encryptionKey: manageEncryptionKey
     postgresAdminPassword: managePostgresPasswordSecret
+    promptOptimizerProxySecret: managePromptOptimizerProxySecret
   }
   environmentName: environmentName
   location: location

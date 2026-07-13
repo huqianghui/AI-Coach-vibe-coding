@@ -2,15 +2,14 @@
 # One-click local dev launcher for the AI Coach platform + prompt-optimizer.
 #
 # Starts, in order:
-#   1. AAD token-injecting proxy (host)      -> :PROXY_PORT   (Entra ID for OpenAI)
-#   2. prompt-optimizer sidecar (container)   -> :OPTIMIZER_PORT
-#   3. FastAPI backend (host, uvicorn)        -> :BACKEND_PORT
-#   4. Vite frontend (host)                   -> :FRONTEND_PORT
+#   1. prompt-optimizer sidecar (container)   -> :OPTIMIZER_PORT
+#   2. FastAPI backend (host, uvicorn)        -> :BACKEND_PORT
+#   3. Vite frontend (host)                   -> :FRONTEND_PORT
 #
 # Why a script (not just docker-compose):
 #   * Port 8000 is occupied by an unrelated container, so the backend runs on 8100.
-#   * The Foundry resource has API-key auth disabled, so the optimizer must reach
-#     Azure OpenAI through an Entra ID token proxy that reuses the host `az login`.
+#   * The optimizer calls the backend internal OpenAI-compatible proxy so local and
+#     cloud both use master config / Entra ID / Key Vault instead of direct keys.
 #
 # Usage:   scripts/dev-up.sh          (start everything)
 #          scripts/dev-down.sh        (stop everything)
@@ -24,9 +23,9 @@ cd "$ROOT"
 BACKEND_PORT="${BACKEND_PORT:-8100}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 OPTIMIZER_PORT="${OPTIMIZER_PORT:-8188}"
-PROXY_PORT="${PROXY_PORT:-8199}"
 OPTIMIZER_IMAGE="${OPTIMIZER_IMAGE:-linshen/prompt-optimizer:2.11.7}"
 OPTIMIZER_NAME="prompt-optimizer-dev"
+PROMPT_OPTIMIZER_PROXY_SECRET="${PROMPT_OPTIMIZER_PROXY_SECRET:-local-prompt-optimizer-proxy-secret}"
 
 RUN_DIR="$ROOT/.dev"
 mkdir -p "$RUN_DIR"
@@ -37,12 +36,6 @@ read_env() { # read_env <KEY>
   [ -f backend/.env ] || return 0
   sed -n "s/^$1=//p" backend/.env | tail -1
 }
-
-UPSTREAM_BASE="${AOAI_UPSTREAM_BASE:-$(read_env AZURE_FOUNDRY_ENDPOINT)}"
-UPSTREAM_BASE="${UPSTREAM_BASE:-https://ai-foundry-svc2.services.ai.azure.com}"
-UPSTREAM_BASE="${UPSTREAM_BASE%/}"
-MODEL="$(read_env AZURE_OPENAI_DEPLOYMENT)"
-MODEL="${MODEL:-gpt-4o}"
 
 VENV_PY="$ROOT/backend/.venv/bin/python"
 UVICORN="$ROOT/backend/.venv/bin/uvicorn"
@@ -73,43 +66,37 @@ start_bg() { # start_bg <name> <logfile> <cmd...>
 [ -x "$VENV_PY" ] || die "backend venv missing: $VENV_PY (run: cd backend && python -m venv .venv && pip install -e '.[dev]')"
 command -v docker >/dev/null || die "docker not found"
 if ! az account show >/dev/null 2>&1; then
-  warn "az CLI not logged in. The AAD proxy needs Entra ID — run 'az login' or prompt optimization will 401."
+  warn "az CLI not logged in. Backend proxy needs Entra ID unless master config has an API key."
 fi
 
-# ---- 1. AAD token-injecting proxy ------------------------------------------
-if port_open "$PROXY_PORT"; then
-  log "AAD proxy already listening on :$PROXY_PORT (reusing)"
-else
-  AOAI_UPSTREAM_BASE="$UPSTREAM_BASE" AOAI_PROXY_PORT="$PROXY_PORT" \
-    start_bg aoai-proxy "$RUN_DIR/aoai-proxy.log" \
-      "$VENV_PY" "$ROOT/backend/scripts/aoai_aad_proxy.py"
-  wait_for "$PROXY_PORT" "AAD proxy"
-fi
-
-# ---- 2. prompt-optimizer sidecar -------------------------------------------
+# ---- 1. prompt-optimizer sidecar -------------------------------------------
 docker rm -f "$OPTIMIZER_NAME" >/dev/null 2>&1 || true
 docker run -d --name "$OPTIMIZER_NAME" -p "$OPTIMIZER_PORT:80" \
   --add-host=host.docker.internal:host-gateway \
   -e MCP_DEFAULT_MODEL_PROVIDER=custom \
   -e MCP_DEFAULT_LANGUAGE=zh \
-  -e VITE_CUSTOM_API_BASE_URL="http://host.docker.internal:$PROXY_PORT/openai/v1" \
-  -e VITE_CUSTOM_API_KEY="aad-proxy-placeholder" \
-  -e VITE_CUSTOM_API_MODEL="$MODEL" \
+  -e VITE_CUSTOM_API_BASE_URL="http://host.docker.internal:$BACKEND_PORT/api/v1/internal/openai/v1" \
+  -e VITE_CUSTOM_API_KEY="$PROMPT_OPTIMIZER_PROXY_SECRET" \
+  -e VITE_CUSTOM_API_MODEL="prompt-optimizer" \
+  -e MCP_DEFAULT_MODEL_BASE_URL="http://host.docker.internal:$BACKEND_PORT/api/v1/internal/openai/v1" \
+  -e MCP_DEFAULT_MODEL_API_KEY="$PROMPT_OPTIMIZER_PROXY_SECRET" \
+  -e MCP_DEFAULT_MODEL_NAME="prompt-optimizer" \
   "$OPTIMIZER_IMAGE" >/dev/null
-log "optimizer container '$OPTIMIZER_NAME' started -> :$OPTIMIZER_PORT (model=$MODEL)"
+log "optimizer container '$OPTIMIZER_NAME' started -> :$OPTIMIZER_PORT"
 wait_for "$OPTIMIZER_PORT" "optimizer"
 
-# ---- 3. Backend -------------------------------------------------------------
+# ---- 2. Backend -------------------------------------------------------------
 if port_open "$BACKEND_PORT"; then
   warn "backend port :$BACKEND_PORT already in use — not starting a second backend"
 else
   ( cd "$ROOT/backend" && PROMPT_OPTIMIZER_MCP_URL="http://localhost:$OPTIMIZER_PORT/mcp" \
+      PROMPT_OPTIMIZER_PROXY_SECRET="$PROMPT_OPTIMIZER_PROXY_SECRET" \
       start_bg backend "$RUN_DIR/backend.log" \
         "$UVICORN" app.main:app --reload --port "$BACKEND_PORT" )
   wait_for "$BACKEND_PORT" "backend"
 fi
 
-# ---- 4. Frontend ------------------------------------------------------------
+# ---- 3. Frontend ------------------------------------------------------------
 if port_open "$FRONTEND_PORT"; then
   warn "frontend port :$FRONTEND_PORT already in use — not starting a second frontend"
 else
@@ -123,5 +110,4 @@ printf '\n\033[1;32mAll services up:\033[0m\n'
 printf '  Frontend   http://localhost:%s\n' "$FRONTEND_PORT"
 printf '  Backend    http://localhost:%s   (health: /api/health)\n' "$BACKEND_PORT"
 printf '  Optimizer  http://localhost:%s (MCP: /mcp)\n' "$OPTIMIZER_PORT"
-printf '  AAD proxy  http://localhost:%s     -> %s\n' "$PROXY_PORT" "$UPSTREAM_BASE"
 printf '\nLogs in .dev/*.log   |   Stop with: scripts/dev-down.sh\n'

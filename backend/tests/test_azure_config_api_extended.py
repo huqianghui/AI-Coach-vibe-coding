@@ -58,8 +58,9 @@ class TestRegionCapabilitiesEndpoint:
         # Avatar is available in eastus2
         assert services["azure_avatar"]["available"] is True
 
-        # All 7 services present
-        assert len(services) == 7
+        # All 8 services present
+        assert len(services) == 8
+        assert services["prompt_optimizer"]["available"] is True
 
     async def test_region_capabilities_unknown_region(self, client):
         """Unknown region: avatar unavailable, openai available."""
@@ -151,3 +152,32 @@ class TestAzureOpenAIRealtimeAcceptance:
             },
         )
         assert response.status_code == 400
+
+
+class TestPromptOptimizerConfigAcceptance:
+    """Tests for PUT /api/v1/azure-config/services/prompt_optimizer."""
+
+    async def test_put_prompt_optimizer_accepted(self, client):
+        token = await _create_admin_token()
+        response = await client.put(
+            "/api/v1/azure-config/services/prompt_optimizer",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "endpoint": "",
+                "api_key": "",
+                "model_or_deployment": "gpt-4o-mini",
+                "region": "",
+                "is_active": True,
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["service_name"] == "prompt_optimizer"
+        assert data["display_name"] == "Prompt Optimizer"
+        assert data["model_or_deployment"] == "gpt-4o-mini"
+
+    async def test_prompt_optimizer_has_keyvault_secret_mapping(self):
+        from app.services.secret_store import secret_name_for_service
+
+        assert secret_name_for_service("prompt_optimizer") == "prompt-optimizer-api-key"

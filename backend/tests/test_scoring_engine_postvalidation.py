@@ -288,6 +288,23 @@ class TestBuildScoringPromptRoleLabels:
         assert 'Return JSON: {"summary": "..."}' in prompt
         assert ">>> MR (EVALUATE THIS PERSON) <<<: I discussed efficacy." in prompt
 
+    def test_custom_prompt_template_renders_non_string_values(self):
+        """Custom templates render numeric scenario/HCP values safely."""
+        prompt = build_scoring_prompt(
+            scenario_data={
+                "hcp_profile": {
+                    "name": "Dr. Li",
+                    "communication_style": 50,
+                }
+            },
+            messages=[],
+            key_messages_status=[],
+            rubric_dimensions=DEFAULT_RUBRIC_DIMENSIONS,
+            prompt_template="Communication style: {hcp_comm_style}",
+        )
+
+        assert prompt == "Communication style: 50"
+
 
 class TestScoreWithLlmPostValidation:
     """Tests that score_with_llm() applies post-validation rules."""

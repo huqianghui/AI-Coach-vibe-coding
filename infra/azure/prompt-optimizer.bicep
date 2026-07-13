@@ -1,10 +1,10 @@
-// Internal Container App for the prompt-optimizer sidecar + Key Vault secret reference.
+// Internal Container App for the prompt-optimizer sidecar + backend proxy secret.
 //
 // Deploys the open-source linshen/prompt-optimizer MCP service as a standalone
 // Azure Container App with INTERNAL ingress only (no public FQDN — T-27-16). The
 // backend reaches it over the managed-environment private DNS via
-// PROMPT_OPTIMIZER_MCP_URL. The Azure OpenAI API key is never stored in plaintext;
-// it is pulled from Key Vault through a user-assigned managed identity (T-27-17).
+// PROMPT_OPTIMIZER_MCP_URL. The optimizer does not receive Azure credentials; it
+// calls the backend internal OpenAI-compatible proxy with a shared internal secret.
 // The AGPL image is deployed unmodified as a separate service (T-27-18).
 targetScope = 'resourceGroup'
 
@@ -20,20 +20,15 @@ param tags object
 @description('Resource ID of the shared Container Apps managed environment.')
 param managedEnvironmentId string
 
-@description('Resource ID of the user-assigned managed identity used to read Key Vault secrets.')
+@description('Resource ID of the user-assigned managed identity assigned to the Container App.')
 param managedIdentityId string
 
-@description('Base URI of the Key Vault holding the Azure OpenAI API key (e.g. https://kv.vault.azure.net/).')
-param keyVaultUri string
+@description('Backend internal OpenAI-compatible proxy base URL, e.g. https://backend/api/v1/internal/openai/v1.')
+param backendProxyBaseUrl string
 
-@description('Name of the Key Vault secret that holds the Azure OpenAI API key.')
-param azureOpenAiApiKeySecretName string = 'azure-openai-api-key'
-
-@description('Azure OpenAI OpenAI-compatible base URL, e.g. https://<resource>.openai.azure.com/openai/v1.')
-param azureOpenAiApiBaseUrl string
-
-@description('Azure OpenAI deployment / model name the optimizer should call.')
-param azureOpenAiModel string
+@secure()
+@description('Internal shared secret accepted by the backend prompt optimizer proxy.')
+param promptOptimizerProxySecret string
 
 @description('Container image for the prompt-optimizer sidecar (deployed unmodified).')
 param image string = 'linshen/prompt-optimizer:2.11.7'
@@ -45,7 +40,7 @@ param image string = 'linshen/prompt-optimizer:2.11.7'
 ])
 param defaultLanguage string = 'zh'
 
-var appName = 'ca-${namePrefix}-${environmentName}-prompt-optimizer'
+var appName = 'ca-${namePrefix}-${environmentName}-po'
 var targetPort = 80
 
 resource promptOptimizerApp 'Microsoft.App/containerApps@2023-05-01' = {
@@ -71,10 +66,8 @@ resource promptOptimizerApp 'Microsoft.App/containerApps@2023-05-01' = {
       }
       secrets: [
         {
-          // Azure OpenAI API key sourced from Key Vault via managed identity (T-27-17).
-          name: 'azure-openai-api-key'
-          keyVaultUrl: '${keyVaultUri}secrets/${azureOpenAiApiKeySecretName}'
-          identity: managedIdentityId
+          name: 'prompt-optimizer-proxy-secret'
+          value: promptOptimizerProxySecret
         }
       ]
     }
@@ -94,15 +87,27 @@ resource promptOptimizerApp 'Microsoft.App/containerApps@2023-05-01' = {
             }
             {
               name: 'VITE_CUSTOM_API_BASE_URL'
-              value: azureOpenAiApiBaseUrl
+              value: backendProxyBaseUrl
             }
             {
               name: 'VITE_CUSTOM_API_KEY'
-              secretRef: 'azure-openai-api-key'
+              secretRef: 'prompt-optimizer-proxy-secret'
             }
             {
               name: 'VITE_CUSTOM_API_MODEL'
-              value: azureOpenAiModel
+              value: 'prompt-optimizer'
+            }
+            {
+              name: 'MCP_DEFAULT_MODEL_BASE_URL'
+              value: backendProxyBaseUrl
+            }
+            {
+              name: 'MCP_DEFAULT_MODEL_API_KEY'
+              secretRef: 'prompt-optimizer-proxy-secret'
+            }
+            {
+              name: 'MCP_DEFAULT_MODEL_NAME'
+              value: 'prompt-optimizer'
             }
           ]
           resources: {
@@ -123,4 +128,4 @@ resource promptOptimizerApp 'Microsoft.App/containerApps@2023-05-01' = {
 output internalFqdn string = promptOptimizerApp.properties.configuration.ingress.fqdn
 
 @description('Value to set as PROMPT_OPTIMIZER_MCP_URL on the backend.')
-output mcpUrl string = 'http://${promptOptimizerApp.properties.configuration.ingress.fqdn}/mcp'
+output mcpUrl string = 'https://${promptOptimizerApp.properties.configuration.ingress.fqdn}/mcp'

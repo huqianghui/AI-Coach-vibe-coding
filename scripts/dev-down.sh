@@ -8,8 +8,8 @@ OPTIMIZER_NAME="prompt-optimizer-dev"
 
 log() { printf '\033[1;36m[dev-down]\033[0m %s\n' "$*"; }
 
-# Kill host processes by recorded pid (frontend, backend, aad-proxy).
-for name in frontend backend aoai-proxy; do
+# Kill host processes by recorded pid (frontend, backend).
+for name in frontend backend; do
   pidfile="$RUN_DIR/$name.pid"
   if [ -f "$pidfile" ]; then
     pid="$(cat "$pidfile")"
