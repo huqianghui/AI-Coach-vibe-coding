@@ -21,6 +21,8 @@ export interface VoiceSessionLifecycleDeps {
 }
 
 export interface StartSessionOptions {
+  /** Trusted backend coaching Session identifier for training paths. */
+  sessionId?: string;
   hcpProfileId?: string;
   systemPrompt?: string;
   vlInstanceId?: string;
@@ -106,12 +108,13 @@ export function useVoiceSessionLifecycle(
         };
 
         // 3. Connect via backend WebSocket proxy
-        const result = await voiceLive.connect(
-          options.hcpProfileId,
-          options.systemPrompt,
-          options.vlInstanceId,
-          options.enableAvatar ?? options.avatarEnabled,
-        );
+        const result = await voiceLive.connect({
+          hcpProfileId: options.hcpProfileId,
+          systemPrompt: options.systemPrompt,
+          vlInstanceId: options.vlInstanceId,
+          enableAvatar: options.enableAvatar ?? options.avatarEnabled,
+          sessionId: options.sessionId,
+        });
 
         if (abortController.signal.aborted) {
           await voiceLive.disconnect();

@@ -4,6 +4,7 @@ import type {
   VoiceConnectionState,
   AudioState,
 } from "@/types/voice-live";
+import type { VoiceLiveConnectOptions } from "@/hooks/use-voice-live";
 import { fetchWebRTCSession } from "@/api/voice-live";
 import {
   createVoiceLogger,
@@ -212,7 +213,19 @@ export function useVoiceLiveWebRTC(options: VoiceLiveOptions) {
    * @returns avatarEnabled (always false for WebRTC), model name, and empty ICE servers.
    */
   const connect = useCallback(
-    async (hcpProfileId?: string, systemPrompt?: string, vlInstanceId?: string) => {
+    async (
+      optionsOrHcpProfileId?: VoiceLiveConnectOptions | string,
+      legacySystemPrompt?: string,
+      legacyVlInstanceId?: string,
+    ) => {
+      const { hcpProfileId, systemPrompt, vlInstanceId } =
+        typeof optionsOrHcpProfileId === "object"
+          ? optionsOrHcpProfileId
+          : {
+              hcpProfileId: optionsOrHcpProfileId,
+              systemPrompt: legacySystemPrompt,
+              vlInstanceId: legacyVlInstanceId,
+            };
       const sid = crypto.randomUUID().slice(0, 8);
       setSessionCorrelationId(sid);
       resetEventSummary();

@@ -13,6 +13,18 @@ import {
 
 const log = createVoiceLogger("VoiceLive");
 
+export interface VoiceLiveConnectOptions {
+  hcpProfileId?: string;
+  systemPrompt?: string;
+  vlInstanceId?: string;
+  enableAvatar?: boolean;
+  sessionId?: string;
+}
+
+interface InternalVoiceLiveConnectOptions extends VoiceLiveConnectOptions {
+  isReconnect?: boolean;
+}
+
 /**
  * Voice Live session hook using backend WebSocket proxy.
  *
@@ -39,7 +51,7 @@ export function useVoiceLive(options: VoiceLiveOptions) {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
   const intentionalCloseRef = useRef(false);
-  const lastConnectArgsRef = useRef<{ hcpProfileId?: string; systemPrompt?: string; vlInstanceId?: string; enableAvatar?: boolean } | null>(null);
+  const lastConnectArgsRef = useRef<VoiceLiveConnectOptions | null>(null);
 
   /** Ref for external avatar SDP answer callback (set by voice-session.tsx). */
   const avatarSdpCallbackRef = useRef<((serverSdp: string) => void) | null>(
@@ -51,14 +63,38 @@ export function useVoiceLive(options: VoiceLiveOptions) {
    * @returns avatarEnabled, model name, and ICE servers for avatar WebRTC.
    */
   const connect = useCallback(
-    async (hcpProfileId?: string, systemPrompt?: string, vlInstanceId?: string, enableAvatar?: boolean) => {
+    async (
+      optionsOrHcpProfileId?: InternalVoiceLiveConnectOptions | string,
+      legacySystemPrompt?: string,
+      legacyVlInstanceId?: string,
+      legacyEnableAvatar?: boolean,
+      legacySessionId?: string,
+    ) => {
+      const connectOptions: InternalVoiceLiveConnectOptions =
+        typeof optionsOrHcpProfileId === "object"
+          ? optionsOrHcpProfileId
+          : {
+              hcpProfileId: optionsOrHcpProfileId,
+              systemPrompt: legacySystemPrompt,
+              vlInstanceId: legacyVlInstanceId,
+              enableAvatar: legacyEnableAvatar,
+              sessionId: legacySessionId,
+            };
+      const {
+        hcpProfileId,
+        systemPrompt,
+        vlInstanceId,
+        enableAvatar,
+        sessionId,
+        isReconnect = false,
+      } = connectOptions;
       const sid = crypto.randomUUID().slice(0, 8);
       setSessionCorrelationId(sid);
       resetEventSummary();
       log.info("connect() hcpProfileId=%s vlInstanceId=%s enableAvatar=%s sid=%s", hcpProfileId, vlInstanceId, enableAvatar, sid);
 
-      lastConnectArgsRef.current = { hcpProfileId, systemPrompt, vlInstanceId, enableAvatar };
-      reconnectAttemptRef.current = 0;
+      lastConnectArgsRef.current = { hcpProfileId, systemPrompt, vlInstanceId, enableAvatar, sessionId };
+      if (!isReconnect) reconnectAttemptRef.current = 0;
       intentionalCloseRef.current = false;
       setConnectionState("connecting");
       connectionStateRef.current = "connecting";
@@ -91,11 +127,15 @@ export function useVoiceLive(options: VoiceLiveOptions) {
               JSON.stringify({
                 type: "session.update",
                 session: {
-                  ...(hcpProfileId ? { hcp_profile_id: hcpProfileId } : {}),
-                  ...(vlInstanceId ? { vl_instance_id: vlInstanceId } : {}),
-                  ...(enableAvatar !== undefined ? { avatar_enabled: enableAvatar } : {}),
-                  system_prompt:
-                    systemPrompt || optionsRef.current.systemPrompt,
+                  ...(sessionId ? { session_id: sessionId } : {}),
+                  ...(!sessionId && hcpProfileId ? { hcp_profile_id: hcpProfileId } : {}),
+                  ...(!sessionId && vlInstanceId ? { vl_instance_id: vlInstanceId } : {}),
+                  ...(!sessionId && enableAvatar !== undefined
+                    ? { avatar_enabled: enableAvatar }
+                    : {}),
+                  ...(!sessionId ? {
+                    system_prompt: systemPrompt || optionsRef.current.systemPrompt,
+                  } : {}),
                 },
               }),
             );
@@ -400,7 +440,7 @@ export function useVoiceLive(options: VoiceLiveOptions) {
               reconnectTimerRef.current = setTimeout(() => {
                 const args = lastConnectArgsRef.current;
                 if (args) {
-                  void connect(args.hcpProfileId, args.systemPrompt, args.vlInstanceId, args.enableAvatar).catch(() => {
+                  void connect({ ...args, isReconnect: true }).catch(() => {
                     // Reconnect failed — will be retried by the next onclose
                   });
                 }

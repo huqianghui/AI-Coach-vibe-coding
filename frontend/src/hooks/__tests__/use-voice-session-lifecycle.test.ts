@@ -304,7 +304,7 @@ describe("useVoiceSessionLifecycle", () => {
     expect(deps.voiceLive.disconnect).toHaveBeenCalled();
   });
 
-  it("passes hcpProfileId, systemPrompt, vlInstanceId to voiceLive.connect", async () => {
+  it("passes sessionId and legacy playground options to voiceLive.connect", async () => {
     const { result } = renderHook(() =>
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       useVoiceSessionLifecycle(deps as any),
@@ -312,18 +312,20 @@ describe("useVoiceSessionLifecycle", () => {
 
     await act(async () => {
       await result.current.startSession({
+        sessionId: "session-789",
         hcpProfileId: "hcp-123",
         systemPrompt: "You are a doctor",
         vlInstanceId: "vl-456",
       });
     });
 
-    expect(deps.voiceLive.connect).toHaveBeenCalledWith(
-      "hcp-123",
-      "You are a doctor",
-      "vl-456",
-      undefined,
-    );
+    expect(deps.voiceLive.connect).toHaveBeenCalledWith({
+      hcpProfileId: "hcp-123",
+      systemPrompt: "You are a doctor",
+      vlInstanceId: "vl-456",
+      enableAvatar: undefined,
+      sessionId: "session-789",
+    });
   });
 
   it("forwards enableAvatar to voiceLive.connect when client picks voice-only mode", async () => {
@@ -339,12 +341,13 @@ describe("useVoiceSessionLifecycle", () => {
       });
     });
 
-    expect(deps.voiceLive.connect).toHaveBeenCalledWith(
-      "hcp-123",
-      undefined,
-      undefined,
-      false,
-    );
+    expect(deps.voiceLive.connect).toHaveBeenCalledWith({
+      hcpProfileId: "hcp-123",
+      systemPrompt: undefined,
+      vlInstanceId: undefined,
+      enableAvatar: false,
+      sessionId: undefined,
+    });
   });
 
   it("startRecording callback sends audio when not muted", async () => {
