@@ -18,6 +18,7 @@ from app.services.auth import get_password_hash
 from app.services.conference_service import (
     _compute_relevance_score,
     _serialize_queue,
+    _strip_speaker_prefix,
     create_conference_session,
     end_conference_session,
     generate_hcp_questions,
@@ -27,6 +28,30 @@ from app.services.conference_service import (
 from app.services.turn_manager import QueuedQuestion, TurnManager
 from app.utils.exceptions import AppException, NotFoundException
 from tests.conftest import TestSessionLocal
+
+
+@pytest.mark.parametrize(
+    ("text", "speaker_name", "expected"),
+    [
+        (
+            "张维：谢谢您的回答。您能具体说明推荐依据吗？",
+            "Dr. Zhang Wei (张维)",
+            "谢谢您的回答。您能具体说明推荐依据吗？",
+        ),
+        (
+            "Dr. Zhang Wei: Could you clarify the evidence?",
+            "Dr. Zhang Wei (张维)",
+            "Could you clarify the evidence?",
+        ),
+        (
+            "Could you clarify the evidence?",
+            "Dr. Zhang Wei (张维)",
+            "Could you clarify the evidence?",
+        ),
+    ],
+)
+def test_strip_speaker_prefix(text: str, speaker_name: str, expected: str):
+    assert _strip_speaker_prefix(text, speaker_name) == expected
 
 
 async def _seed_conference_fixture(
@@ -880,6 +905,20 @@ class TestRunPresentationRound:
                 )
             )
             assert all(msg.content for msg in msg_result.scalars().all())
+
+    def test_fallback_questions_vary_across_hcps(self):
+        """Fallback questions cover different topics instead of repeating one template."""
+        from app.services.conference_service import _fallback_hcp_question
+
+        hcp = {"specialty": "肿瘤内科"}
+        first = _fallback_hcp_question(hcp, "请介绍这个产品", prior_question_count=0)
+        second = _fallback_hcp_question(hcp, "请介绍这个产品", prior_question_count=1)
+        third = _fallback_hcp_question(hcp, "请介绍这个产品", prior_question_count=2)
+
+        assert len({first, second, third}) == 3
+        assert "患者人群" in first
+        assert "临床证据" in second
+        assert "安全性" in third
 
     async def test_handle_respond_llm_error_does_not_save_empty_message(self):
         """Adapter errors during follow-up do not create blank HCP messages."""

@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import re
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
@@ -340,6 +341,30 @@ def _normalize_generated_text(text: str) -> str:
     return normalized
 
 
+def _strip_speaker_prefix(text: str, speaker_name: str) -> str:
+    """Remove a redundant model-generated speaker label from response text."""
+    normalized = _normalize_generated_text(text)
+    if not normalized or not speaker_name:
+        return normalized
+
+    name_variants = {speaker_name.strip()}
+    name_variants.update(
+        match.strip() for match in re.findall(r"[（(]([^）)]+)[）)]", speaker_name) if match.strip()
+    )
+    name_without_parenthetical = re.sub(r"\s*[（(][^）)]+[）)]\s*", "", speaker_name).strip()
+    if name_without_parenthetical:
+        name_variants.add(name_without_parenthetical)
+        name_without_title = re.sub(r"^Dr\.\s*", "", name_without_parenthetical, flags=re.I)
+        if name_without_title:
+            name_variants.add(name_without_title)
+
+    for name in sorted(name_variants, key=len, reverse=True):
+        prefix_match = re.match(rf"^{re.escape(name)}\s*[：:]\s*", normalized, flags=re.I)
+        if prefix_match:
+            return normalized[prefix_match.end() :].strip()
+    return normalized
+
+
 def _mr_requests_next_hcp(text: str) -> bool:
     """Return True when the MR explicitly asks to move to the next HCP."""
     normalized = text.strip().lower()
@@ -361,17 +386,32 @@ def _hcp_signals_done(text: str) -> bool:
     )
 
 
-def _fallback_hcp_question(hcp_config: dict, mr_text: str) -> str:
+def _fallback_hcp_question(
+    hcp_config: dict,
+    mr_text: str,
+    prior_question_count: int = 0,
+) -> str:
     """Build a conservative HCP question when the LLM returns no usable text."""
     specialty = hcp_config.get("specialty") or "临床"
     if not mr_text or _contains_cjk(mr_text):
-        return (
-            f"从{specialty}医生的角度，我想请你先说明一下这次主题的核心患者人群和临床价值是什么？"
+        questions = (
+            f"从{specialty}医生的角度，这次主题的核心患者人群和临床价值是什么？",
+            f"从{specialty}医生的角度，支持这一主题的关键临床证据和疗效数据有哪些？",
+            f"从{specialty}医生的角度，这一方案最需要关注的安全性风险和患者管理要点是什么？",
+            f"从{specialty}医生的角度，这一方案与现有治疗选择相比最重要的差异是什么？",
         )
-    return (
-        f"From a {specialty} perspective, could you clarify the core patient population "
-        "and clinical value for this topic?"
-    )
+    else:
+        questions = (
+            f"From a {specialty} perspective, what are the core patient population "
+            "and clinical value for this topic?",
+            f"From a {specialty} perspective, what key clinical evidence and efficacy "
+            "data support this topic?",
+            f"From a {specialty} perspective, what safety risks and patient-management "
+            "considerations matter most?",
+            f"From a {specialty} perspective, what is the most important difference "
+            "from existing treatment options?",
+        )
+    return questions[prior_question_count % len(questions)]
 
 
 async def _collect_coach_text(request: CoachRequest) -> tuple[str, str | None]:
@@ -466,7 +506,7 @@ async def generate_hcp_questions(
             )
 
         # Skip empty questions (HCP chose not to ask)
-        question_text = _normalize_generated_text(question_text)
+        question_text = _strip_speaker_prefix(question_text, hcp_config["name"])
         if not question_text or question_text.lower() in ("", "none", "no question"):
             continue
 
@@ -562,8 +602,13 @@ async def _generate_next_hcp_question(
             next_hcp.get("hcp_profile_id"),
             error,
         )
+    question_text = _strip_speaker_prefix(question_text, next_hcp["name"])
     if not question_text or question_text.lower() in ("", "none", "no question"):
-        question_text = _fallback_hcp_question(next_hcp, mr_text)
+        question_text = _fallback_hcp_question(
+            next_hcp,
+            mr_text,
+            prior_question_count=len(other_hcp_questions),
+        )
 
     queued = QueuedQuestion(
         hcp_profile_id=next_hcp["hcp_profile_id"],
@@ -630,6 +675,7 @@ async def _generate_hcp_response_text(
         )
         return None
 
+    full_response = _strip_speaker_prefix(full_response, hcp_name)
     if not full_response or full_response.lower() in ("", "none", "no question"):
         logger.warning(
             "_generate_hcp_response_text: empty LLM response for session=%s hcp=%s",

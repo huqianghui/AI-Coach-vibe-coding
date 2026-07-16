@@ -66,7 +66,7 @@ async def register_adapter_from_config(
     effective_deployment = deployment or master_model
     effective_endpoint = endpoint or master_endpoint
 
-    if service_name == "azure_openai" and effective_key:
+    if service_name == "azure_openai" and effective_endpoint and effective_deployment:
         from app.services.agents.adapters.azure_openai import AzureOpenAIAdapter
 
         effective_endpoint = endpoint or (

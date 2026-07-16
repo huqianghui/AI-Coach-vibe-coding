@@ -175,6 +175,57 @@ class TestPutServiceEndpoint:
 class TestRegisterAdapterFromConfig:
     """Direct tests for runtime adapter registration."""
 
+    async def test_openai_registers_without_key_for_entra_auth(self):
+        """Azure OpenAI registers without an API key when endpoint and model are configured."""
+        from app.api.azure_config import register_adapter_from_config
+        from app.services.agents.adapters.azure_openai import AzureOpenAIAdapter
+
+        mock_registry = MagicMock()
+        mock_settings = MagicMock(default_llm_provider="mock")
+        with (
+            patch("app.services.agents.registry.registry", mock_registry),
+            patch("app.api.azure_config.settings", mock_settings),
+        ):
+            await register_adapter_from_config(
+                "azure_openai",
+                endpoint="",
+                api_key="",
+                deployment="",
+                region="",
+                master_endpoint="https://foundry.services.ai.azure.com",
+                master_key="",
+                master_model="gpt-4o",
+            )
+
+        category, adapter = mock_registry.register.call_args.args
+        assert category == "llm"
+        assert isinstance(adapter, AzureOpenAIAdapter)
+        assert adapter._endpoint == "https://foundry.services.ai.azure.com/"
+        assert adapter._api_key == ""
+        assert adapter._deployment == "gpt-4o"
+        assert mock_settings.default_llm_provider == "azure_openai"
+
+    async def test_openai_requires_effective_endpoint_and_deployment(self):
+        """Azure OpenAI is not registered when its endpoint or deployment is missing."""
+        from app.api.azure_config import register_adapter_from_config
+
+        mock_registry = MagicMock()
+        mock_settings = MagicMock(default_llm_provider="mock")
+        with (
+            patch("app.services.agents.registry.registry", mock_registry),
+            patch("app.api.azure_config.settings", mock_settings),
+        ):
+            await register_adapter_from_config(
+                "azure_openai",
+                endpoint="https://test.openai.azure.com",
+                api_key="",
+                deployment="",
+                region="",
+            )
+
+        mock_registry.register.assert_not_called()
+        assert mock_settings.default_llm_provider == "mock"
+
     async def test_speech_stt_inherits_master_key_and_region(self):
         """Azure Speech STT can use cloud master credentials when per-service fields are empty."""
         from app.api.azure_config import register_adapter_from_config

@@ -173,12 +173,28 @@ class TestSessionSchemas:
         resp = MessageResponse(
             id="m1",
             session_id="s1",
+            role="assistant",
+            content="How does this compare?",
+            message_index=0,
+            speaker_id="hcp-1",
+            speaker_name="Dr. Chen",
+            created_at=datetime.now(),
+        )
+        assert resp.role == "assistant"
+        assert resp.speaker_id == "hcp-1"
+        assert resp.speaker_name == "Dr. Chen"
+
+    async def test_message_response_defaults_to_no_speaker(self):
+        resp = MessageResponse(
+            id="m1",
+            session_id="s1",
             role="user",
             content="Hello",
             message_index=0,
             created_at=datetime.now(),
         )
-        assert resp.role == "user"
+        assert resp.speaker_id is None
+        assert resp.speaker_name == ""
 
     async def test_session_response_optional_fields(self):
         resp = SessionResponse(
