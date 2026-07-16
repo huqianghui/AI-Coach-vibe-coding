@@ -216,6 +216,37 @@ describe("useVoiceLive (backend WebSocket proxy)", () => {
     expect(result.current.connectionState).toBe("connected");
   });
 
+  it("session-bound connect sends only trusted session_id context", async () => {
+    const { result } = renderHook(() => useVoiceLive(defaultOptions));
+
+    await act(async () => {
+      const promise = result.current.connect(
+        "untrusted-hcp",
+        "untrusted prompt",
+        "untrusted-instance",
+        true,
+        "session-123",
+      );
+      const ws = getLastWs();
+      ws.onopen?.();
+
+      const sent = JSON.parse(ws.sentMessages[0]!);
+      expect(sent.session.session_id).toBe("session-123");
+      expect(sent.session.system_prompt).toBeUndefined();
+      expect(sent.session.hcp_profile_id).toBeUndefined();
+      expect(sent.session.vl_instance_id).toBeUndefined();
+      expect(sent.session.avatar_enabled).toBeUndefined();
+
+      ws.simulateMessage({
+        type: "proxy.connected",
+        model: "gpt-4o",
+        avatar_enabled: true,
+      });
+      ws.simulateMessage({ type: "session.updated", session: {} });
+      return promise;
+    });
+  });
+
   it("connect() sends avatar override when provided", async () => {
     const { result } = renderHook(() => useVoiceLive(defaultOptions));
 
@@ -673,6 +704,96 @@ describe("useVoiceLive (backend WebSocket proxy)", () => {
 
     // Should transition to "connecting" for reconnect
     expect(onConnectionStateChange).toHaveBeenCalledWith("connecting");
+  });
+
+  it("preserves session_id in the first frame after auto-reconnect", async () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useVoiceLive(defaultOptions));
+
+      const firstPromise = result.current.connect(
+        undefined,
+        undefined,
+        undefined,
+        false,
+        "session-reconnect",
+      );
+      const firstWs = getLastWs();
+      firstWs.onopen?.();
+      firstWs.simulateMessage({
+        type: "proxy.connected",
+        model: "gpt-4o",
+        avatar_enabled: false,
+      });
+      firstWs.simulateMessage({ type: "session.updated", session: {} });
+      await act(async () => firstPromise);
+
+      act(() => {
+        firstWs.readyState = MockWebSocket.CLOSED;
+        firstWs.onclose?.({ code: 1006, reason: "", wasClean: false } as CloseEvent);
+        vi.advanceTimersByTime(1000);
+      });
+
+      const reconnectWs = getLastWs();
+      expect(reconnectWs).not.toBe(firstWs);
+      reconnectWs.onopen?.();
+      const sent = JSON.parse(reconnectWs.sentMessages[0]!);
+      expect(sent.session.session_id).toBe("session-reconnect");
+      expect(sent.session.system_prompt).toBeUndefined();
+      await result.current.disconnect();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops after three internal reconnect attempts", async () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useVoiceLive(defaultOptions));
+      const initialPromise = result.current.connect({ sessionId: "session-retry-cap" });
+      const initialWs = getLastWs();
+      initialWs.onopen?.();
+      initialWs.simulateMessage({
+        type: "proxy.connected",
+        model: "gpt-4o",
+        avatar_enabled: false,
+      });
+      initialWs.simulateMessage({ type: "session.updated", session: {} });
+      await act(async () => initialPromise);
+
+      const delays = [1000, 2000, 4000];
+      let activeWs = initialWs;
+      for (const [index, delay] of delays.entries()) {
+        act(() => {
+          activeWs.readyState = MockWebSocket.CLOSED;
+          activeWs.onclose?.({ code: 1006, reason: "", wasClean: false } as CloseEvent);
+          vi.advanceTimersByTime(delay);
+        });
+
+        activeWs = getLastWs();
+        expect(MockWebSocket.instances).toHaveLength(index + 2);
+        await act(async () => {
+          activeWs.onopen?.();
+          activeWs.simulateMessage({
+            type: "proxy.connected",
+            model: "gpt-4o",
+            avatar_enabled: false,
+          });
+          activeWs.simulateMessage({ type: "session.updated", session: {} });
+          await Promise.resolve();
+        });
+      }
+
+      act(() => {
+        activeWs.readyState = MockWebSocket.CLOSED;
+        activeWs.onclose?.({ code: 1006, reason: "", wasClean: false } as CloseEvent);
+        vi.advanceTimersByTime(8000);
+      });
+      expect(MockWebSocket.instances).toHaveLength(4);
+      await result.current.disconnect();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not auto-reconnect after intentional disconnect()", async () => {

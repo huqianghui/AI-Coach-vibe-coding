@@ -51,6 +51,7 @@ async function getScenarios(
     id: string;
     name: string;
     hcp_profile_id: string;
+    skill_id?: string;
   }>;
 }
 
@@ -66,18 +67,22 @@ async function createVoiceSession(
 ): Promise<{ sessionId: string; scenarioName: string; hcpProfileId: string }> {
   const scenarios = await getScenarios(request, adminToken);
   expect(scenarios.length).toBeGreaterThan(0);
-  const scenario = scenarios[0]!;
+  const scenario = scenarios.find((candidate) => Boolean(candidate.skill_id));
+  expect(
+    scenario,
+    "Voice Live Session E2E requires an active scenario with a Skill",
+  ).toBeDefined();
 
   const resp = await request.post(`${API_BASE}/api/v1/sessions`, {
     headers: { Authorization: `Bearer ${userToken}` },
-    data: { scenario_id: scenario.id, mode },
+    data: { scenario_id: scenario!.id, mode },
   });
   expect(resp.ok()).toBe(true);
   const session = await resp.json();
   return {
     sessionId: session.id as string,
-    scenarioName: scenario.name,
-    hcpProfileId: scenario.hcp_profile_id,
+    scenarioName: scenario!.name,
+    hcpProfileId: scenario!.hcp_profile_id,
   };
 }
 
@@ -167,6 +172,52 @@ test.describe("Voice Live Proxy — Backend API Readiness", () => {
 test.describe("Voice Live WebSocket Proxy — Real Connection", () => {
   test.use({ storageState: join(authDir, "user.json") });
   test.setTimeout(60000);
+
+  test("F2F Unified Session binds the Voice Live first frame to session_id", async ({
+    page,
+    request,
+    context,
+  }) => {
+    await context.grantPermissions(["microphone"]);
+    const adminToken = await loginApi(request, "admin", "admin123");
+    const userToken = await loginApi(request, "user1", "user123");
+    const { sessionId } = await createVoiceSession(
+      request,
+      adminToken,
+      userToken,
+      "voice_realtime_model",
+    );
+
+    const firstSessionUpdate = new Promise<Record<string, unknown>>((resolve) => {
+      page.on("websocket", (socket) => {
+        socket.on("framesent", (event) => {
+          const payload = typeof event.payload === "string"
+            ? event.payload
+            : event.payload.toString();
+          try {
+            const frame = JSON.parse(payload) as Record<string, unknown>;
+            if (frame.type === "session.update") resolve(frame);
+          } catch {
+            // Ignore binary audio and non-JSON frames.
+          }
+        });
+      });
+    });
+
+    await page.goto(`/user/training/session?id=${sessionId}`);
+    await page.getByTestId("start-session-btn").click();
+
+    const frame = await Promise.race([
+      firstSessionUpdate,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Voice Live session.update was not sent")), 15000),
+      ),
+    ]);
+    const session = frame.session as Record<string, unknown>;
+    expect(session.session_id).toBe(sessionId);
+    expect(session.system_prompt).toBeUndefined();
+    expect(session.hcp_profile_id).toBeUndefined();
+  });
 
   test("voice session page loads and shows header with scenario info", async ({
     page,

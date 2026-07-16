@@ -21,7 +21,6 @@ import { useAudioPlayer } from "@/hooks/use-audio-player";
 import { useVoiceSessionLifecycle } from "@/hooks/use-voice-session-lifecycle";
 import { useSessionRecorder } from "@/hooks/use-session-recorder";
 import { useSSEStream } from "@/hooks/use-sse";
-import { useFeatureFlags } from "@/hooks/use-config";
 import { persistTranscriptMessage } from "@/api/voice-live";
 import { VoiceSessionHeader } from "@/components/voice/voice-session-header";
 import { AvatarView } from "@/components/voice/avatar-view";
@@ -54,32 +53,11 @@ function isDigitalHumanMode(mode: SessionMode): boolean {
   return mode.startsWith("digital_human_");
 }
 
-function resolveConnectedMode(requestedMode: SessionMode, agentMode: boolean, avatarEnabled: boolean): SessionMode {
+function resolveConnectedMode(requestedMode: SessionMode, avatarEnabled: boolean): SessionMode {
   if (avatarEnabled && isDigitalHumanMode(requestedMode)) {
-    return agentMode ? "digital_human_realtime_agent" : "digital_human_realtime_model";
+    return "digital_human_realtime_model";
   }
-  return agentMode ? "voice_realtime_agent" : "voice_realtime_model";
-}
-
-function getAvailableModesForScenario(
-  scenario: Scenario | undefined,
-  features: { voice_live_enabled?: boolean; avatar_enabled?: boolean } | undefined,
-): SessionMode[] {
-  const modes: SessionMode[] = ["text"];
-  const hcp = scenario?.hcp_profile;
-  const voiceAvailable = Boolean(features?.voice_live_enabled && hcp?.voice_live_enabled);
-  const avatarAvailable = Boolean(
-    voiceAvailable && features?.avatar_enabled && hcp?.avatar_enabled,
-  );
-
-  if (voiceAvailable) {
-    modes.push("voice_realtime_model");
-    if (avatarAvailable) {
-      modes.push("digital_human_realtime_model");
-    }
-  }
-
-  return modes;
+  return "voice_realtime_model";
 }
 
 /**
@@ -141,11 +119,11 @@ export default function UnifiedSession() {
     return { duration, wordCount, messageCount: transcripts.filter((t) => t.isFinal).length };
   }, [transcripts, sessionStarted, startedAt]);
 
-  // Feature flags for mode availability
-  const { data: config } = useFeatureFlags(true);
+  // Session mode is server-owned. Until a mode-update API exists, the UI must
+  // not advertise client-only transitions that the backend cannot authorize.
   const availableModes = useMemo((): SessionMode[] => {
-    return getAvailableModesForScenario(scenario, config?.features);
-  }, [scenario, config]);
+    return [normalizeSessionMode(session?.mode)];
+  }, [session?.mode]);
 
   // Hooks
   const endSessionMutation = useEndSession();
@@ -307,10 +285,8 @@ export default function UnifiedSession() {
 
     try {
       const requestedMode = normalizeSessionMode(session?.mode);
-      const hcpProfileId = scenario?.hcp_profile_id ?? "";
       const result = await startVoiceSession({
-        hcpProfileId,
-        systemPrompt: "",
+        sessionId,
         avatarEnabled: isDigitalHumanMode(requestedMode),
         onMicDenied: () => toast.error(t("micDenied")),
         onAudioWorkletFailed: () => toast.error(tv("error.audioWorkletFailed")),
@@ -325,11 +301,21 @@ export default function UnifiedSession() {
         },
       });
 
+      if (!result) {
+        setSessionStarted(false);
+        return;
+      }
+      if (result.mode !== "model") {
+        log.error("Session model path unexpectedly returned Agent mode");
+        await stopVoiceSession();
+        toast.error("当前训练仅支持服务端授权的模型模式，请重试。 ");
+        setSessionStarted(false);
+        return;
+      }
+
       if (result) {
-        const isAgent = result.mode === "agent";
         const resolvedMode = resolveConnectedMode(
           requestedMode,
-          isAgent,
           result.avatarEnabled,
         );
         setCurrentMode(resolvedMode);
@@ -346,10 +332,13 @@ export default function UnifiedSession() {
           }
         }
       }
+    } catch (error) {
+      log.error("Session start failed: %o", error);
+      setSessionStarted(false);
     } finally {
       setIsConnecting(false);
     }
-  }, [scenario?.hcp_profile_id, session?.mode, session?.scenario_id, startVoiceSession, sessionRecorder, audioHandler, t, tv, log]);
+  }, [sessionId, session?.mode, session?.scenario_id, startVoiceSession, stopVoiceSession, sessionRecorder, audioHandler, t, tv, log]);
 
   // Auto-start for text mode — no voice connection needed, show avatar immediately
   useEffect(() => {
@@ -371,86 +360,10 @@ export default function UnifiedSession() {
   const handleModeSwitch = useCallback(
     async (newMode: SessionMode) => {
       if (newMode === currentMode) return;
-      if (!availableModes.includes(newMode)) return;
-      log.info("handleModeSwitch: %s -> %s", currentMode, newMode);
-
-      const isCurrentVoice = currentMode !== "text";
-      const isNewVoice = newMode !== "text";
-
-      // Switching TO text from voice/avatar: disconnect voice
-      if (isCurrentVoice && !isNewVoice) {
-        try {
-          await stopVoiceSession();
-        } catch {
-          // Non-fatal: voice may already be disconnected
-        }
-        setCurrentMode("text");
-        return;
-      }
-
-      // Switching FROM text TO voice/avatar: start voice connection
-      if (!isCurrentVoice && isNewVoice) {
-        setIsConnecting(true);
-        try {
-          const hcpProfileId = scenario?.hcp_profile_id ?? "";
-          const result = await startVoiceSession({
-            hcpProfileId,
-            systemPrompt: "",
-            avatarEnabled: isDigitalHumanMode(newMode),
-            onMicDenied: () => toast.error(t("micDenied")),
-            onAudioWorkletFailed: () => toast.error(tv("error.audioWorkletFailed")),
-            onAvatarFailed: () => {
-              log.error("Avatar WebRTC failed during mode switch");
-              toast.error(tv("error.avatarFailed"));
-              // Fall back to voice-only
-              setCurrentMode("voice_realtime_model");
-            },
-            onConnectionFailed: (error) => {
-              log.error("Connection failed during mode switch: %o", error);
-              toast.error(tv("error.connectionFailed"));
-              // Stay in text mode
-              setCurrentMode("text");
-            },
-          });
-          if (result) {
-            setCurrentMode(resolveConnectedMode(newMode, result.mode === "agent", result.avatarEnabled));
-          }
-        } finally {
-          setIsConnecting(false);
-        }
-        return;
-      }
-
-      // Switching between voice and digital human requires reconnecting with
-      // the requested avatar setting so Voice cannot accidentally keep avatar on.
-      setIsConnecting(true);
-      try {
-        await stopVoiceSession();
-        const hcpProfileId = scenario?.hcp_profile_id ?? "";
-        const result = await startVoiceSession({
-          hcpProfileId,
-          systemPrompt: "",
-          avatarEnabled: isDigitalHumanMode(newMode),
-          onMicDenied: () => toast.error(t("micDenied")),
-          onAudioWorkletFailed: () => toast.error(tv("error.audioWorkletFailed")),
-          onAvatarFailed: () => {
-            log.error("Avatar WebRTC failed during mode switch");
-            toast.error(tv("error.avatarFailed"));
-            setCurrentMode("voice_realtime_model");
-          },
-          onConnectionFailed: (error) => {
-            log.error("Connection failed during mode switch: %o", error);
-            toast.error(tv("error.connectionFailed"));
-          },
-        });
-        if (result) {
-          setCurrentMode(resolveConnectedMode(newMode, result.mode === "agent", result.avatarEnabled));
-        }
-      } finally {
-        setIsConnecting(false);
-      }
+      log.warn("Rejected unsupported client-side mode switch: %s -> %s", currentMode, newMode);
+      toast.error("训练模式由服务端会话固定；当前暂不支持会话内切换。 ");
     },
-    [currentMode, availableModes, scenario?.hcp_profile_id, startVoiceSession, stopVoiceSession, t, tv, log],
+    [currentMode, log],
   );
 
   // End session handler

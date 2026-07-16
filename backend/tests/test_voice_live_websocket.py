@@ -1906,6 +1906,7 @@ class TestForwardAzureToClient:
         assert event_counts["a2c:session.avatar.connecting"] == 1
         assert event_counts["a2c:session.avatar.ready"] == 1
         assert event_counts["a2c:response.text.delta"] == 1
+        ws.close.assert_awaited_once_with(code=1000, reason="azure_stream_ended")
 
     async def test_handles_connection_closed(self):
         """_forward_azure_to_client handles ConnectionClosed gracefully."""
@@ -1932,6 +1933,8 @@ class TestForwardAzureToClient:
             session_log,
             {},
         )
+
+        ws.close.assert_awaited_once_with(code=1000, reason="azure_stream_ended")
 
     async def test_handles_generic_exception(self):
         """_forward_azure_to_client handles generic exceptions gracefully."""
@@ -1979,6 +1982,7 @@ class TestSendError:
         sent = json.loads(ws.send_text.call_args[0][0])
         assert sent["type"] == "error"
         assert sent["error"]["message"] == "test error message"
+        ws.close.assert_awaited_once_with(code=1011, reason="voice_live_error")
 
     async def test_send_error_suppresses_exception(self):
         """_send_error suppresses exceptions when WebSocket is closed."""

@@ -92,6 +92,7 @@ const mockStartSession = vi.fn().mockResolvedValue({
   model: "gpt-4o-realtime",
   mode: "model",
 });
+const mockStopSession = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("@/hooks/use-voice-live", () => ({
   useVoiceLive: () => mockVoiceLive,
@@ -125,7 +126,7 @@ vi.mock("@/hooks/use-audio-player", () => ({
 vi.mock("@/hooks/use-voice-session-lifecycle", () => ({
   useVoiceSessionLifecycle: () => ({
     startSession: mockStartSession,
-    stopSession: vi.fn().mockResolvedValue(undefined),
+    stopSession: mockStopSession,
     isBusy: false,
   }),
 }));
@@ -170,17 +171,22 @@ vi.mock("@/components/voice/voice-session-header", () => ({
     currentMode,
     availableModes,
     onEndSession,
+    onModeChange,
   }: {
     scenarioTitle: string;
     currentMode: string;
     availableModes?: string[];
     onEndSession: () => void;
+    onModeChange: (mode: "text" | "voice_realtime_model" | "digital_human_realtime_model") => void;
   }) => (
     <header data-testid="voice-session-header">
       <span>{scenarioTitle}</span>
       <span data-testid="current-mode">{currentMode}</span>
       <span data-testid="available-modes">{availableModes?.join(",")}</span>
       <button data-testid="end-session-btn" onClick={onEndSession}>End</button>
+      <button data-testid="switch-text" onClick={() => onModeChange("text")}>Text</button>
+      <button data-testid="switch-voice" onClick={() => onModeChange("voice_realtime_model")}>Voice</button>
+      <button data-testid="switch-avatar" onClick={() => onModeChange("digital_human_realtime_model")}>Avatar</button>
     </header>
   ),
 }));
@@ -285,19 +291,17 @@ describe("UnifiedSession", () => {
     expect(screen.getByTestId("start-session-btn")).toBeInTheDocument();
   });
 
-  it("offers text, voice, and digital human modes in the session header", () => {
+  it("offers only the persisted server-owned mode in the session header", () => {
     renderWithProviders();
     expect(screen.getByTestId("available-modes")).toHaveTextContent(
-      "text,voice_realtime_model,digital_human_realtime_model",
+      "voice_realtime_model",
     );
   });
 
-  it("does not offer digital human when the HCP Voice Live instance has avatar off", () => {
-    mockScenario.hcp_profile.avatar_enabled = false;
+  it("does not advertise voice or avatar switching for a text session", () => {
+    mockSession.mode = "text";
     renderWithProviders();
-    expect(screen.getByTestId("available-modes")).toHaveTextContent(
-      "text,voice_realtime_model",
-    );
+    expect(screen.getByTestId("available-modes")).toHaveTextContent("text");
   });
 
   it("starts voice mode with avatar disabled", async () => {
@@ -308,8 +312,36 @@ describe("UnifiedSession", () => {
 
     await waitFor(() => {
       expect(mockStartSession).toHaveBeenCalledWith(
-        expect.objectContaining({ avatarEnabled: false }),
+        expect.objectContaining({
+          sessionId: "session-1",
+          avatarEnabled: false,
+        }),
       );
+      expect(mockStartSession.mock.calls[0]![0]).not.toHaveProperty("systemPrompt");
+      expect(mockStartSession.mock.calls[0]![0]).not.toHaveProperty("hcpProfileId");
+    });
+  });
+
+  it("rejects a client-only text to voice switch", async () => {
+    mockSession.mode = "text";
+    renderWithProviders();
+
+    fireEvent.click(screen.getByTestId("switch-voice"));
+
+    await waitFor(() => {
+      expect(mockStartSession).not.toHaveBeenCalled();
+      expect(screen.getByTestId("current-mode")).toHaveTextContent("text");
+    });
+  });
+
+  it("rejects a client-only voice to digital-human switch", async () => {
+    renderWithProviders();
+
+    fireEvent.click(screen.getByTestId("switch-avatar"));
+
+    await waitFor(() => {
+      expect(mockStartSession).not.toHaveBeenCalled();
+      expect(screen.getByTestId("current-mode")).toHaveTextContent("voice_realtime_model");
     });
   });
 
@@ -335,6 +367,35 @@ describe("UnifiedSession", () => {
     fireEvent.click(screen.getByTestId("start-session-btn"));
     await waitFor(() => {
       expect(screen.queryByTestId("start-session-btn")).not.toBeInTheDocument();
+    });
+  });
+
+  it("restores the start button when connection fails so the user can retry", async () => {
+    mockStartSession.mockResolvedValueOnce(null);
+    renderWithProviders();
+
+    fireEvent.click(screen.getByTestId("start-session-btn"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("start-session-btn")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId("start-session-btn"));
+    await waitFor(() => expect(mockStartSession).toHaveBeenCalledTimes(2));
+  });
+
+  it("fails closed when a session model path unexpectedly returns Agent mode", async () => {
+    mockStartSession.mockResolvedValueOnce({
+      avatarEnabled: false,
+      model: "",
+      mode: "agent",
+    });
+    renderWithProviders();
+
+    fireEvent.click(screen.getByTestId("start-session-btn"));
+
+    await waitFor(() => {
+      expect(mockStopSession).toHaveBeenCalled();
+      expect(screen.getByTestId("start-session-btn")).toBeInTheDocument();
     });
   });
 

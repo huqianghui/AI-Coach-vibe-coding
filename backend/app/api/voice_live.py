@@ -354,7 +354,7 @@ async def voice_live_websocket(
     logger.info("WS connect: user=%s, sid=%s", user.id, sid)
     ws_start = time.monotonic()
     try:
-        await handle_voice_live_websocket(ws, db)
+        await handle_voice_live_websocket(ws, db, user.id)
     finally:
         duration = round(time.monotonic() - ws_start, 1)
         logger.info(
