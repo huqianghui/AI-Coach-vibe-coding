@@ -44,10 +44,9 @@ class AzureOpenAIAdapter(BaseCoachingAdapter):
 
         Returns True if client is ready, False otherwise.
         """
-        if self._client_initialized:
-            return self._client is not None
+        if self._client is not None:
+            return True
 
-        self._client_initialized = True
         try:
             from app.services.azure_auth import get_azure_openai_client
 
@@ -56,12 +55,15 @@ class AzureOpenAIAdapter(BaseCoachingAdapter):
                 api_key=self._api_key,
                 api_version=self._api_version,
             )
+            self._client_initialized = True
             return True
         except ImportError:
             self._client = None
+            self._client_initialized = False
             return False
         except RuntimeError:
             self._client = None
+            self._client_initialized = False
             return False
 
     def _token_limit_kwargs(self, limit: int) -> dict:

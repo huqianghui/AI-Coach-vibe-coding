@@ -75,13 +75,13 @@ export default function UserReportsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="print-content space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-medium text-foreground">
           {t("pageTitle")}
         </h1>
-        <div className="flex gap-2">
+        <div className="no-print flex gap-2">
           <Button
             variant="outline"
             size="sm"
@@ -105,7 +105,7 @@ export default function UserReportsPage() {
       </div>
 
       {/* Compact summary bar */}
-      <div className="flex flex-wrap items-center gap-6 rounded-lg border border-border bg-card px-6 py-4">
+      <div className="print-avoid-break flex flex-wrap items-center gap-6 rounded-lg border border-border bg-card px-6 py-4">
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">{t("totalSessions")}:</span>
           <span className="text-lg font-semibold text-foreground">{dashStats?.total_sessions ?? 0}</span>
@@ -134,7 +134,7 @@ export default function UserReportsPage() {
       {/* Charts grid */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Performance Trend */}
-        <Card className="bg-card">
+        <Card className="print-avoid-break bg-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base font-medium">
               <TrendingUp className="size-5 text-primary" />
@@ -153,7 +153,7 @@ export default function UserReportsPage() {
         </Card>
 
         {/* Skill Radar */}
-        <Card className="bg-card">
+        <Card className="print-avoid-break bg-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base font-medium">
               <Target className="size-5 text-primary" />
@@ -178,7 +178,7 @@ export default function UserReportsPage() {
 
       {/* Recommendations */}
       {recommendations && recommendations.length > 0 && (
-        <Card className="bg-card">
+        <Card className="print-avoid-break bg-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base font-medium">
               <Award className="size-5 text-primary" />

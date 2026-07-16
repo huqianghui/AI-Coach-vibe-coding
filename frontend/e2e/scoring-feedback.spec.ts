@@ -115,8 +115,14 @@ test.describe("Scoring & Feedback (Phase 2)", () => {
       await expect(dashboardButton.first()).toBeVisible();
     }
     if (exportCount > 0) {
-      // Export PDF should be disabled (not yet implemented)
-      await expect(exportButton.first()).toBeDisabled();
+      await expect(exportButton.first()).toBeEnabled();
+
+      const feedbackScrollArea = page.getByTestId("feedback-scroll-area");
+      if (await feedbackScrollArea.count()) {
+        await page.emulateMedia({ media: "print" });
+        await expect(feedbackScrollArea).toHaveCSS("max-height", "none");
+        await expect(feedbackScrollArea).toHaveCSS("overflow", "visible");
+      }
     }
   });
 

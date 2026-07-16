@@ -42,6 +42,8 @@ class MessageResponse(BaseModel):
     role: str
     content: str
     message_index: int
+    speaker_id: str | None = None
+    speaker_name: str = ""
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

@@ -301,6 +301,32 @@ describe("ScoringFeedback", () => {
     expect(mockPrint).toHaveBeenCalled();
   });
 
+  it("marks feedback and transcript scroll regions for full print expansion", () => {
+    messagesData = [
+      { id: "msg-1", session_id: "session-1", role: "user", content: "Hello", message_index: 0, created_at: "2026-03-20T10:01:00Z" },
+    ];
+    const { container } = renderPage();
+
+    expect(container.querySelector(".print-content")).toBeInTheDocument();
+    expect(screen.getByTestId("feedback-scroll-area")).toHaveClass("print-expand");
+    expect(screen.getByTestId("transcript-scroll-area")).toHaveClass("print-expand");
+  });
+
+  it("expands a collapsed transcript before printing", async () => {
+    messagesData = [
+      { id: "msg-1", session_id: "session-1", role: "user", content: "Hello", message_index: 0, created_at: "2026-03-20T10:01:00Z" },
+    ];
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByText("transcript.title"));
+    expect(screen.queryByTestId("chat-bubble")).not.toBeInTheDocument();
+
+    await user.click(screen.getByText("exportPdf"));
+    expect(screen.getByTestId("chat-bubble")).toBeInTheDocument();
+    expect(mockPrint).toHaveBeenCalledOnce();
+  });
+
   it("renders report section when report data is available", () => {
     reportData = {
       improvements: ["focus on communication", "handle objections better"],
@@ -397,12 +423,20 @@ describe("ScoringFeedback", () => {
   it("displays correct speaker labels in chat bubbles", () => {
     messagesData = [
       { id: "msg-1", session_id: "session-1", role: "user", content: "Test message", message_index: 0, created_at: "2026-03-20T10:01:00Z" },
-      { id: "msg-2", session_id: "session-1", role: "assistant", content: "Response", message_index: 1, created_at: "2026-03-20T10:01:30Z" },
+      { id: "msg-2", session_id: "session-1", role: "assistant", content: "Response", message_index: 1, speaker_id: "hcp-1", speaker_name: "Dr. Chen", created_at: "2026-03-20T10:01:30Z" },
     ];
     renderPage();
     const speakers = screen.getAllByTestId("chat-speaker");
     expect(speakers[0]).toHaveTextContent("transcript.mrLabel");
-    expect(speakers[1]).toHaveTextContent("transcript.hcpLabel");
+    expect(speakers[1]).toHaveTextContent("Dr. Chen");
+  });
+
+  it("falls back to the generic HCP label when speaker attribution is unavailable", () => {
+    messagesData = [
+      { id: "msg-1", session_id: "session-1", role: "assistant", content: "Response", message_index: 0, speaker_name: "", created_at: "2026-03-20T10:01:30Z" },
+    ];
+    renderPage();
+    expect(screen.getByTestId("chat-speaker")).toHaveTextContent("transcript.hcpLabel");
   });
 
   it("toggles conversation history visibility when header is clicked", async () => {

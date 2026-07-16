@@ -204,7 +204,7 @@ export function ConferenceStage({
               disabled={isAvatarConnecting || disabled}
               className="shadow-lg"
             >
-              {isAvatarConnecting ? "连接中..." : "连接数字人"}
+              {isAvatarConnecting ? "数字人连接中" : "连接数字人"}
             </Button>
           </div>
         )}

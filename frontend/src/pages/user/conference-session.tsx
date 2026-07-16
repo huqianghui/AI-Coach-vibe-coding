@@ -160,6 +160,7 @@ export default function ConferenceSession() {
   const [avatarConnectionState, setAvatarConnectionState] =
     useState<VoiceConnectionState>("disconnected");
   const [isAvatarConnected, setIsAvatarConnected] = useState(false);
+  const [isAvatarSwitching, setIsAvatarSwitching] = useState(false);
   const [showEndDialog, setShowEndDialog] = useState(false);
   const [keyTopics, setKeyTopics] = useState<
     Array<{ message: string; delivered: boolean }>
@@ -358,6 +359,7 @@ export default function ConferenceSession() {
       }
     }
 
+    setIsAvatarSwitching(true);
     if (connectedAvatarHcpIdRef.current && connectedAvatarHcpIdRef.current !== avatarHcp.hcpProfileId) {
       setIsAvatarConnected(false);
       avatarStream.disconnect();
@@ -416,6 +418,7 @@ export default function ConferenceSession() {
       if (avatarConnectionPromiseRef.current === connectionPromise) {
         avatarConnectionPromiseRef.current = null;
       }
+      setIsAvatarSwitching(false);
     }
   }, [activeAvatarHcp, avatarStream, isDigitalHumanMode, t, voiceLive]);
 
@@ -822,7 +825,9 @@ export default function ConferenceSession() {
           audienceHcps={audienceHcps}
           avatarVideoRef={avatarVideoRef}
           isAvatarConnected={isAvatarConnected}
-          isAvatarConnecting={avatarConnectionState === "connecting"}
+          isAvatarConnecting={
+            isAvatarSwitching || avatarConnectionState === "connecting"
+          }
           avatarAudioState={voiceLive.audioState}
           avatarCharacter={activeAvatarCharacter}
           avatarStyle={activeAvatarStyle}

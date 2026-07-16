@@ -64,6 +64,22 @@ class TestCreateProfileEndpoint:
         assert data["expertise_areas"] == ["immunotherapy"]
         assert "id" in data
 
+    async def test_admin_can_create_cautious_profile(self, client):
+        """The API accepts the cautious personality exposed by the editor."""
+        _, token = await _create_admin_and_token()
+        response = await client.post(
+            "/api/v1/hcp-profiles",
+            json={
+                "name": "Dr. Cautious",
+                "specialty": "Oncology",
+                "personality_type": "cautious",
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 201
+        assert response.json()["personality_type"] == "cautious"
+
     async def test_non_admin_gets_403(self, client):
         user_id, token = await _create_user_and_token()
         response = await client.post(
@@ -180,6 +196,24 @@ class TestUpdateProfileEndpoint:
         data = response.json()
         assert data["name"] == "Dr. Updated"
         assert data["personality_type"] == "analytical"
+
+    async def test_updates_profile_to_cautious(self, client):
+        """The update schema uses the same personality values as creation."""
+        user_id, token = await _create_admin_and_token()
+        create_resp = await client.post(
+            "/api/v1/hcp-profiles",
+            json={"name": "Dr. Careful", "specialty": "Onc", "created_by": user_id},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        response = await client.put(
+            f"/api/v1/hcp-profiles/{create_resp.json()['id']}",
+            json={"personality_type": "cautious"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["personality_type"] == "cautious"
 
 
 class TestDeleteProfileEndpoint:

@@ -299,6 +299,55 @@
 
 /* Print styles for PDF export via window.print() */
 @media print {
-  nav, aside, header, footer, .no-print { display: none !important; }
-  main { margin: 0 !important; padding: 0 !important; }
+  @page {
+    size: auto;
+    margin: 12mm;
+  }
+
+  html,
+  body,
+  #root,
+  main,
+  .print-content {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  nav,
+  aside,
+  header,
+  footer,
+  .action-bar,
+  .no-print {
+    display: none !important;
+  }
+
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+
+  .print-expand,
+  .print-expand [data-radix-scroll-area-viewport] {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .print-expand [data-radix-scroll-area-scrollbar],
+  .print-expand [data-radix-scroll-area-corner] {
+    display: none !important;
+  }
+
+  .print-avoid-break,
+  .print-avoid-break-children > *,
+  .recharts-wrapper,
+  .recharts-responsive-container {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
 }

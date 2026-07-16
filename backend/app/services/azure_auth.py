@@ -132,37 +132,36 @@ async def get_azure_openai_client(
     """
     from openai import AsyncAzureOpenAI
 
-    # 1. Try AAD token via get_bearer_token_provider
+    # 1. Use a refreshing AAD token provider. Passing a one-time azure_ad_token
+    # makes long-running processes fail with 401 as soon as that token expires.
     try:
-        from azure.identity.aio import DefaultAzureCredential as AsyncDefaultAzureCredential
+        from azure.identity import get_bearer_token_provider
 
-        credential = AsyncDefaultAzureCredential()
-        # Verify we can actually get a token (probes az login / MI availability)
-        token = await credential.get_token(COGNITIVE_SERVICES_SCOPE)
-        if token and token.token:
-            logger.debug("azure_auth: creating AsyncAzureOpenAI with AAD token for %s", endpoint)
-            # Use ad_token directly (simpler than token provider for async)
+        credential = _get_credential_sync()
+        if credential is not None:
+            token_provider = get_bearer_token_provider(
+                credential,
+                COGNITIVE_SERVICES_SCOPE,
+            )
+            # Probe once so API-key fallback still works when AAD is unavailable.
+            token_provider()
+            logger.debug(
+                "azure_auth: creating AsyncAzureOpenAI with refreshing AAD token for %s",
+                endpoint,
+            )
             kwargs: dict[str, Any] = {
                 "azure_endpoint": endpoint,
-                "azure_ad_token": token.token,
+                "azure_ad_token_provider": token_provider,
                 "api_version": api_version,
             }
             if timeout is not None:
                 kwargs["timeout"] = timeout
-            # Close the credential after getting token
-            await credential.close()
             return AsyncAzureOpenAI(**kwargs)
-        await credential.close()
     except Exception as exc:
         logger.debug(
             "azure_auth: DefaultAzureCredential unavailable (%s), falling back to API Key",
             exc,
         )
-        # Ensure credential is closed on error
-        try:
-            await credential.close()  # type: ignore[possibly-undefined]
-        except Exception:
-            pass
 
     # 2. Fallback to API Key
     if api_key:

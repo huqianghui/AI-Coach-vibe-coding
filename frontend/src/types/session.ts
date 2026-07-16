@@ -30,6 +30,8 @@ export interface SessionMessage {
   role: "user" | "assistant";
   content: string;
   message_index: number;
+  speaker_id?: string | null;
+  speaker_name?: string;
   created_at: string;
 }
 

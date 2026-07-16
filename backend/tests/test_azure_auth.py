@@ -104,20 +104,17 @@ class TestGetAzureOpenAIClient:
     """Tests for get_azure_openai_client."""
 
     async def test_uses_aad_token_when_available(self):
-        """Should create client with azure_ad_token when AAD works."""
-        mock_token = MagicMock()
-        mock_token.token = "aad-token-123"
-
-        mock_cred = AsyncMock()
-        mock_cred.get_token = AsyncMock(return_value=mock_token)
-        mock_cred.close = AsyncMock()
+        """Should create client with a refreshing AAD token provider when AAD works."""
+        mock_cred = MagicMock()
+        token_provider = MagicMock(return_value="aad-token-123")
 
         mock_client = MagicMock()
         with (
             patch(
-                "azure.identity.aio.DefaultAzureCredential",
+                "app.services.azure_auth._get_credential_sync",
                 return_value=mock_cred,
             ),
+            patch("azure.identity.get_bearer_token_provider", return_value=token_provider),
             patch("openai.AsyncAzureOpenAI", return_value=mock_client) as mock_cls,
         ):
             result = await get_azure_openai_client(
@@ -125,23 +122,23 @@ class TestGetAzureOpenAIClient:
                 api_key="fallback-key",
             )
             assert result is mock_client
-            # Verify it used azure_ad_token, not api_key
             call_kwargs = mock_cls.call_args.kwargs
-            assert call_kwargs["azure_ad_token"] == "aad-token-123"
+            assert call_kwargs["azure_ad_token_provider"] is token_provider
             assert "api_key" not in call_kwargs
+            token_provider.assert_called_once_with()
 
     async def test_falls_back_to_api_key(self):
         """Should create client with api_key when AAD fails."""
-        mock_cred = AsyncMock()
-        mock_cred.get_token = AsyncMock(side_effect=Exception("no az login"))
-        mock_cred.close = AsyncMock()
+        mock_cred = MagicMock()
+        token_provider = MagicMock(side_effect=Exception("no az login"))
 
         mock_client = MagicMock()
         with (
             patch(
-                "azure.identity.aio.DefaultAzureCredential",
+                "app.services.azure_auth._get_credential_sync",
                 return_value=mock_cred,
             ),
+            patch("azure.identity.get_bearer_token_provider", return_value=token_provider),
             patch("openai.AsyncAzureOpenAI", return_value=mock_client) as mock_cls,
         ):
             result = await get_azure_openai_client(
@@ -151,17 +148,15 @@ class TestGetAzureOpenAIClient:
             assert result is mock_client
             call_kwargs = mock_cls.call_args.kwargs
             assert call_kwargs["api_key"] == "my-api-key"
-            assert "azure_ad_token" not in call_kwargs
+            assert "azure_ad_token_provider" not in call_kwargs
 
     async def test_raises_when_no_credentials(self):
         """Should raise RuntimeError when neither AAD nor key available."""
-        mock_cred = AsyncMock()
-        mock_cred.get_token = AsyncMock(side_effect=Exception("no cred"))
-        mock_cred.close = AsyncMock()
+        token_provider = MagicMock(side_effect=Exception("no cred"))
 
-        with patch(
-            "azure.identity.aio.DefaultAzureCredential",
-            return_value=mock_cred,
+        with (
+            patch("app.services.azure_auth._get_credential_sync", return_value=MagicMock()),
+            patch("azure.identity.get_bearer_token_provider", return_value=token_provider),
         ):
             with pytest.raises(RuntimeError, match="No Azure credentials available"):
                 await get_azure_openai_client(
@@ -171,19 +166,15 @@ class TestGetAzureOpenAIClient:
 
     async def test_passes_api_version(self):
         """Should pass api_version to the client."""
-        mock_token = MagicMock()
-        mock_token.token = "token"
-
-        mock_cred = AsyncMock()
-        mock_cred.get_token = AsyncMock(return_value=mock_token)
-        mock_cred.close = AsyncMock()
+        token_provider = MagicMock(return_value="token")
 
         mock_client = MagicMock()
         with (
             patch(
-                "azure.identity.aio.DefaultAzureCredential",
-                return_value=mock_cred,
+                "app.services.azure_auth._get_credential_sync",
+                return_value=MagicMock(),
             ),
+            patch("azure.identity.get_bearer_token_provider", return_value=token_provider),
             patch("openai.AsyncAzureOpenAI", return_value=mock_client) as mock_cls,
         ):
             await get_azure_openai_client(
@@ -195,19 +186,15 @@ class TestGetAzureOpenAIClient:
 
     async def test_passes_timeout(self):
         """Should pass timeout to the client when specified."""
-        mock_token = MagicMock()
-        mock_token.token = "token"
-
-        mock_cred = AsyncMock()
-        mock_cred.get_token = AsyncMock(return_value=mock_token)
-        mock_cred.close = AsyncMock()
+        token_provider = MagicMock(return_value="token")
 
         mock_client = MagicMock()
         with (
             patch(
-                "azure.identity.aio.DefaultAzureCredential",
-                return_value=mock_cred,
+                "app.services.azure_auth._get_credential_sync",
+                return_value=MagicMock(),
             ),
+            patch("azure.identity.get_bearer_token_provider", return_value=token_provider),
             patch("openai.AsyncAzureOpenAI", return_value=mock_client) as mock_cls,
         ):
             await get_azure_openai_client(
@@ -219,19 +206,15 @@ class TestGetAzureOpenAIClient:
 
     async def test_no_timeout_by_default(self):
         """Should not pass timeout when not specified."""
-        mock_token = MagicMock()
-        mock_token.token = "token"
-
-        mock_cred = AsyncMock()
-        mock_cred.get_token = AsyncMock(return_value=mock_token)
-        mock_cred.close = AsyncMock()
+        token_provider = MagicMock(return_value="token")
 
         mock_client = MagicMock()
         with (
             patch(
-                "azure.identity.aio.DefaultAzureCredential",
-                return_value=mock_cred,
+                "app.services.azure_auth._get_credential_sync",
+                return_value=MagicMock(),
             ),
+            patch("azure.identity.get_bearer_token_provider", return_value=token_provider),
             patch("openai.AsyncAzureOpenAI", return_value=mock_client) as mock_cls,
         ):
             await get_azure_openai_client(

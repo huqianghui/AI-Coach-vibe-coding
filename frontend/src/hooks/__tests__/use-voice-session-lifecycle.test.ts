@@ -69,7 +69,19 @@ describe("useVoiceSessionLifecycle", () => {
 
   it("prevents reentrancy — double startSession results in single init", async () => {
     deps.voiceLive.connect.mockImplementation(
-      () => new Promise((resolve) => setTimeout(() => resolve({ avatarEnabled: false, model: "gpt-4o", mode: "model", iceServers: [] }), 100)),
+      () =>
+        new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                avatarEnabled: false,
+                model: "gpt-4o",
+                mode: "model",
+                iceServers: [],
+              }),
+            100,
+          ),
+        ),
     );
 
     const { result } = renderHook(() =>
@@ -145,7 +157,12 @@ describe("useVoiceSessionLifecycle", () => {
 
     // Resolve the connect
     await act(async () => {
-      resolveFn!({ avatarEnabled: false, model: "gpt-4o", mode: "model", iceServers: [] });
+      resolveFn!({
+        avatarEnabled: false,
+        model: "gpt-4o",
+        mode: "model",
+        iceServers: [],
+      });
       await startPromise!;
     });
 
@@ -205,26 +222,12 @@ describe("useVoiceSessionLifecycle", () => {
 
     expect(onAvatarFailed).toHaveBeenCalledTimes(1);
     // Session should still succeed (voice-only mode)
-    expect(sessionResult).toEqual({ avatarEnabled: false, model: "gpt-4o", mode: "model" });
-    expect(deps.audioHandler.startRecording).toHaveBeenCalledTimes(1);
-  });
-
-  it("passes avatarEnabled override into voiceLive.connect", async () => {
-    const { result } = renderHook(() =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      useVoiceSessionLifecycle(deps as any),
-    );
-
-    await act(async () => {
-      await result.current.startSession({ avatarEnabled: false });
+    expect(sessionResult).toEqual({
+      avatarEnabled: false,
+      model: "gpt-4o",
+      mode: "model",
     });
-
-    expect(deps.voiceLive.connect).toHaveBeenCalledWith(
-      undefined,
-      undefined,
-      undefined,
-      false,
-    );
+    expect(deps.audioHandler.startRecording).toHaveBeenCalledTimes(1);
   });
 
   it("calls onAudioWorkletFailed when initialize throws non-NotAllowedError", async () => {
@@ -320,6 +323,27 @@ describe("useVoiceSessionLifecycle", () => {
       "You are a doctor",
       "vl-456",
       undefined,
+    );
+  });
+
+  it("forwards enableAvatar to voiceLive.connect when client picks voice-only mode", async () => {
+    const { result } = renderHook(() =>
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      useVoiceSessionLifecycle(deps as any),
+    );
+
+    await act(async () => {
+      await result.current.startSession({
+        hcpProfileId: "hcp-123",
+        enableAvatar: false,
+      });
+    });
+
+    expect(deps.voiceLive.connect).toHaveBeenCalledWith(
+      "hcp-123",
+      undefined,
+      undefined,
+      false,
     );
   });
 

@@ -43,6 +43,31 @@ test.describe("Admin HCP Profiles Management", () => {
     await expect(page.getByText("DT").first()).toBeVisible({ timeout: 3000 });
   });
 
+  test("creates and saves a cautious HCP profile", async ({ page }) => {
+    const profileName = `Dr. Cautious ${Date.now()}`;
+    await page.getByRole("button", { name: /create|new|add/i }).first().click();
+
+    await page.locator('input[name="name"]').fill(profileName);
+    await page.locator('input[name="specialty"]').fill("Oncology");
+
+    const personalityDropdown = page
+      .getByText(/personality type/i)
+      .locator("..")
+      .locator("button[role='combobox']");
+    await personalityDropdown.click();
+    await page.getByRole("option", { name: /cautious/i }).click();
+
+    const createResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/v1/hcp-profiles") &&
+        response.request().method() === "POST",
+    );
+    await page.getByRole("button", { name: /save/i }).first().click();
+
+    expect((await createResponse).status()).toBe(201);
+    await expect(page.getByText(profileName).first()).toBeVisible();
+  });
+
   test("personality sliders are interactive in editor", async ({ page }) => {
     // Click the create new button to open the editor
     const createButton = page.getByRole("button", { name: /create|new|add/i });

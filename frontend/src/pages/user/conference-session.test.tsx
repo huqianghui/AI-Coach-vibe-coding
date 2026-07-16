@@ -786,6 +786,74 @@ describe("ConferenceSession", () => {
     });
   });
 
+  it("shows connecting status while switching to a later HCP avatar", async () => {
+    let resolveDisconnect: (() => void) | undefined;
+    mockSearchParams = new URLSearchParams("id=cs-1&inputMode=audio");
+    mockSessionData = {
+      ...mockSessionData,
+      mode: "digital_human_realtime_model",
+      audienceConfig: JSON.stringify([
+        {
+          id: "aud-1",
+          hcp_profile_id: "hp-1",
+          name: "Dr. Zhang Wei",
+          role: "moderator",
+          voice_live_enabled: true,
+          avatar_enabled: true,
+        },
+        {
+          id: "aud-2",
+          hcp_profile_id: "hp-2",
+          name: "Dr. Chen Jun",
+          role: "audience",
+          voice_live_enabled: true,
+          avatar_enabled: true,
+        },
+      ]),
+    };
+
+    renderConferenceSession();
+
+    await act(async () => {
+      await (capturedConferenceStageProps.onAvatarConnectClick as () => Promise<void>)();
+    });
+
+    mockVoiceLiveDisconnect.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveDisconnect = resolve;
+        }),
+    );
+
+    act(() => {
+      capturedCallbacks.onSpeakerText?.({
+        speaker_id: "hp-2",
+        speaker_name: "Dr. Chen Jun",
+        content: "请问治疗数据如何？",
+      });
+    });
+
+    await waitFor(() => {
+      expect(mockVoiceLiveDisconnect).toHaveBeenCalled();
+      expect(capturedConferenceStageProps.isAvatarConnected).toBe(false);
+      expect(capturedConferenceStageProps.isAvatarConnecting).toBe(true);
+    });
+
+    await act(async () => {
+      resolveDisconnect?.();
+    });
+
+    await waitFor(() => {
+      expect(mockVoiceLiveConnect).toHaveBeenCalledWith("hp-2", "", undefined, true);
+      expect(capturedConferenceStageProps.isAvatarConnected).toBe(true);
+      expect(capturedConferenceStageProps.isAvatarConnecting).toBe(false);
+    });
+
+    act(() => {
+      (capturedVoiceLiveOptions.onResponseDone as () => void)?.();
+    });
+  });
+
   it("queues HCP speech until the avatar stream is connected", async () => {
     let resolveAvatarConnect: (() => void) | undefined;
     mockAvatarStreamConnect.mockImplementationOnce(

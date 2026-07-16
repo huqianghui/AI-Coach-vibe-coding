@@ -189,19 +189,38 @@ class TestAzureOpenAIAdapterStreaming:
     async def test_execute_without_openai_client(self):
         """Execute yields ERROR when client is None (init failed)."""
         adapter = _make_adapter()
-        # Simulate failed initialization (no client available)
-        adapter._client = None
-        adapter._client_initialized = True
 
         request = CoachRequest(session_id="test-4", message="hello")
         events = []
-        async for event in adapter.execute(request):
-            events.append(event)
+        with patch(
+            "app.services.azure_auth.get_azure_openai_client",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("no credentials"),
+        ):
+            async for event in adapter.execute(request):
+                events.append(event)
 
         assert len(events) == 2
         assert events[0].type == CoachEventType.ERROR
         assert "not installed" in events[0].content or "credentials" in events[0].content
         assert events[1].type == CoachEventType.DONE
+
+    async def test_client_initialization_retries_after_transient_failure(self):
+        """A temporary credential failure does not disable the adapter for the process lifetime."""
+        adapter = _make_adapter(api_key="")
+        mock_client = _make_mock_client([_MockChunk("Recovered")])
+
+        with patch(
+            "app.services.azure_auth.get_azure_openai_client",
+            new_callable=AsyncMock,
+            side_effect=[RuntimeError("credential temporarily unavailable"), mock_client],
+        ) as get_client:
+            assert await adapter._ensure_client() is False
+            assert adapter._client_initialized is False
+            assert await adapter._ensure_client() is True
+
+        assert get_client.await_count == 2
+        assert adapter._client is mock_client
 
     async def test_execute_streaming_params(self):
         """Execute passes correct streaming parameters to API."""
