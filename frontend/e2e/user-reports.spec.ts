@@ -42,6 +42,16 @@ test.describe("User Reports Page", () => {
     await expect(page.getByText(/Export Excel/i)).toBeVisible();
   });
 
+  test("uses a print-safe layout for PDF export", async ({ page }) => {
+    const report = page.locator(".print-content");
+    await expect(report).toBeVisible();
+
+    await page.emulateMedia({ media: "print" });
+    await expect(report).toHaveCSS("max-height", "none");
+    await expect(report).toHaveCSS("overflow", "visible");
+    expect(await report.locator(".print-avoid-break").count()).toBeGreaterThan(0);
+  });
+
   test("page renders fully without errors", async ({ page }) => {
     const body = page.locator("body");
     await expect(body).toBeVisible();

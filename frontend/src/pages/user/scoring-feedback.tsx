@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { flushSync } from "react-dom";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { MessageSquare, ChevronDown, ChevronUp } from "lucide-react";
@@ -90,18 +91,13 @@ export default function ScoringFeedback() {
     dimension: d.dimension,
     score: d.score,
   }));
+  const handlePrint = () => {
+    flushSync(() => setShowTranscript(true));
+    window.print();
+  };
 
   return (
-    <div className="space-y-6">
-      {/* Print stylesheet */}
-      <style>{`
-        @media print {
-          nav, .sidebar, header, footer, .action-bar { display: none !important; }
-          .space-y-6 { padding: 0 !important; }
-          .recharts-wrapper { break-inside: avoid; }
-          button { display: none !important; }
-        }
-      `}</style>
+    <div className="print-content space-y-6">
 
       <h1 className="text-2xl font-medium text-foreground">
         {t("title")}
@@ -119,7 +115,7 @@ export default function ScoringFeedback() {
       )}
 
       {/* Top section: Circular progress + Score summary */}
-      <div className="flex items-center gap-8 rounded-lg border border-border bg-card p-6">
+      <div className="print-avoid-break flex items-center gap-8 rounded-lg border border-border bg-card p-6">
         {/* Circular progress ring */}
         <div className="relative flex-shrink-0">
           <svg width="120" height="120" viewBox="0 0 120 120">
@@ -180,17 +176,17 @@ export default function ScoringFeedback() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Left: Radar chart + Dimension bars */}
         <div className="space-y-6">
-          <div className="rounded-lg border border-border bg-card p-4">
+          <div className="print-avoid-break rounded-lg border border-border bg-card p-4">
             <RadarChart currentScores={currentScores} previousScores={previousScores} />
           </div>
-          <div className="rounded-lg border border-border bg-card p-4">
+          <div className="print-avoid-break rounded-lg border border-border bg-card p-4">
             <DimensionBars details={contentDetails} />
           </div>
         </div>
 
         {/* Right: Feedback cards */}
-        <ScrollArea className="max-h-[600px]">
-          <div className="space-y-4">
+        <ScrollArea className="print-expand max-h-[600px]" data-testid="feedback-scroll-area">
+          <div className="print-avoid-break-children space-y-4">
             {contentDetails.map((detail) => (
               <FeedbackCard key={detail.dimension} detail={detail} />
             ))}
@@ -211,7 +207,7 @@ export default function ScoringFeedback() {
 
       {/* Report: Improvement priorities and key messages */}
       {report && (
-        <div className="rounded-lg border border-border bg-card p-6">
+        <div className="print-avoid-break rounded-lg border border-border bg-card p-6">
           <h2 className="mb-4 text-xl font-medium text-foreground">{t("report.improvementTitle")}</h2>
           <ReportSection
             improvements={report.improvements}
@@ -243,8 +239,11 @@ export default function ScoringFeedback() {
             )}
           </button>
           {showTranscript && (
-            <div className="mt-4 max-h-[500px] overflow-y-auto">
-              <div className="space-y-3">
+            <div
+              className="print-expand mt-4 max-h-[500px] overflow-y-auto"
+              data-testid="transcript-scroll-area"
+            >
+              <div className="print-avoid-break-children space-y-3">
                 {messages.map((msg) => (
                   <ChatBubble
                     key={msg.id}
@@ -254,7 +253,7 @@ export default function ScoringFeedback() {
                     speakerName={
                       msg.role === "user"
                         ? t("transcript.mrLabel")
-                        : t("transcript.hcpLabel")
+                        : msg.speaker_name || t("transcript.hcpLabel")
                     }
                   />
                 ))}
@@ -282,7 +281,7 @@ export default function ScoringFeedback() {
         >
           {t("tryAgain")}
         </Button>
-        <Button variant="outline" onClick={() => window.print()} className="transition-colors duration-150">
+        <Button variant="outline" onClick={handlePrint} className="transition-colors duration-150">
           {t("exportPdf")}
         </Button>
         <Button variant="outline" disabled className="transition-colors duration-150">

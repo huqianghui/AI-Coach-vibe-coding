@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { userEvent } from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import UserReportsPage from "./reports";
@@ -173,6 +174,18 @@ describe("UserReportsPage", () => {
     renderReportsPage();
     expect(screen.getByText("exportPdf")).toBeInTheDocument();
     expect(screen.getByText("exportExcel")).toBeInTheDocument();
+  });
+
+  it("prints the complete report from a print-safe root", async () => {
+    const print = vi.fn();
+    Object.defineProperty(window, "print", { value: print, writable: true });
+    const { container } = renderReportsPage();
+
+    expect(container.querySelector(".print-content")).toBeInTheDocument();
+    expect(container.querySelectorAll(".print-avoid-break").length).toBeGreaterThan(0);
+
+    await userEvent.setup().click(screen.getByText("exportPdf"));
+    expect(print).toHaveBeenCalledOnce();
   });
 
   it("renders compact summary bar instead of stat cards", () => {
