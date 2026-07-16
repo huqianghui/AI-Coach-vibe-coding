@@ -7,6 +7,7 @@ that appear in the Portal 'Knowledge' section (not 'Tools').
 
 import logging
 import uuid
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +16,96 @@ from app.models.hcp_knowledge_config import HcpKnowledgeConfig
 from app.schemas.knowledge_base import KnowledgeConfigCreate
 
 logger = logging.getLogger(__name__)
+
+SEARCH_API_VERSION = "2026-05-01-preview"
+SEARCH_TOKEN_SCOPE = "https://search.azure.com/.default"
+
+
+def _get_field(obj: Any, *names: str, default: Any = "") -> Any:
+    """Read a field from SDK model or dict response, trying several possible names."""
+    for name in names:
+        if isinstance(obj, dict) and name in obj:
+            return obj[name]
+        if hasattr(obj, name):
+            value = getattr(obj, name)
+            if value is not None:
+                return value
+    return default
+
+
+def _extract_api_key(credentials: Any) -> str:
+    """Extract an API key from possible Foundry connection credential shapes."""
+    if not credentials:
+        return ""
+
+    for name in ("api_key", "apiKey", "key"):
+        value = _get_field(credentials, name)
+        if value:
+            return str(value)
+
+    keys = _get_field(credentials, "keys", default=None)
+    if isinstance(keys, dict):
+        for value in keys.values():
+            if value:
+                return str(value)
+    if isinstance(keys, list):
+        for item in keys:
+            value = _get_field(item, "value", "key", "apiKey")
+            if value:
+                return str(value)
+
+    return ""
+
+
+async def _search_auth_headers(search_key: str) -> dict[str, str]:
+    """Build Search data-plane auth headers, preferring API key only when present."""
+    if search_key:
+        return {"api-key": search_key}
+
+    from app.services.azure_auth import get_bearer_token
+
+    token = await get_bearer_token(SEARCH_TOKEN_SCOPE)
+    if not token:
+        raise RuntimeError(
+            "Azure AI Search connection uses Entra ID but backend Managed Identity "
+            "could not acquire a Search token."
+        )
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def _get_knowledgebases(search_endpoint: str, search_key: str) -> list[dict]:
+    """List Foundry IQ knowledgebases from Azure AI Search with Entra ID or API key."""
+    import httpx
+
+    endpoint = search_endpoint.rstrip("/")
+    headers = await _search_auth_headers(search_key)
+
+    async with httpx.AsyncClient(timeout=15) as http:
+        resp = await http.get(
+            f"{endpoint}/knowledgebases",
+            params={"api-version": SEARCH_API_VERSION},
+            headers=headers,
+        )
+
+        if resp.status_code in (401, 403) and search_key:
+            logger.info(
+                "Search knowledgebases API rejected API key auth with %d; retrying with Entra ID",
+                resp.status_code,
+            )
+            resp = await http.get(
+                f"{endpoint}/knowledgebases",
+                params={"api-version": SEARCH_API_VERSION},
+                headers=await _search_auth_headers(""),
+            )
+
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"Foundry IQ knowledgebases API returned {resp.status_code}: {resp.text[:300]}"
+        )
+
+    data = resp.json()
+    value = data.get("value", [])
+    return value if isinstance(value, list) else []
 
 
 async def list_search_connections(db: AsyncSession) -> list[dict]:
@@ -39,15 +130,9 @@ async def list_search_connections(db: AsyncSession) -> list[dict]:
 
         result = []
         for conn in connections:
-            name = getattr(conn, "name", "")
-            if not name and hasattr(conn, "get"):
-                name = conn.get("name", "")
-            target = getattr(conn, "target", "")
-            if not target and hasattr(conn, "get"):
-                target = conn.get("target", "")
-            is_default = getattr(conn, "is_default", False)
-            if hasattr(conn, "get") and not is_default:
-                is_default = conn.get("is_default", False)
+            name = _get_field(conn, "name")
+            target = _get_field(conn, "target")
+            is_default = bool(_get_field(conn, "is_default", "isDefault", default=False))
             result.append({"name": name, "target": target, "is_default": bool(is_default)})
         return result
     except ImportError:
@@ -99,40 +184,24 @@ async def list_indexes(db: AsyncSession, connection_name: str = "") -> list[dict
                 client.connections.get, name=conn_name, include_credentials=True
             )
 
-        search_endpoint = getattr(conn, "target", "").rstrip("/")
-        creds = getattr(conn, "credentials", None)
-        search_key = getattr(creds, "api_key", "") if creds else ""
+        search_endpoint = str(_get_field(conn, "target")).rstrip("/")
+        creds = _get_field(conn, "credentials", default=None)
+        search_key = _extract_api_key(creds)
 
-        if not search_endpoint or not search_key:
-            logger.warning("AI Search connection missing endpoint or key")
+        if not search_endpoint:
+            logger.warning("AI Search connection missing endpoint")
             return []
 
-        # Call Foundry IQ knowledgebases API (same as AI Foundry portal)
-        import httpx
-
-        async with httpx.AsyncClient(timeout=15) as http:
-            resp = await http.get(
-                f"{search_endpoint}/knowledgebases",
-                params={"api-version": "2025-11-01-preview"},
-                headers={"api-key": search_key},
-            )
-            if resp.status_code != 200:
-                logger.warning(
-                    "Foundry IQ knowledgebases API returned %d: %s",
-                    resp.status_code,
-                    resp.text,
-                )
-                return []
-            data = resp.json()
-            return [
-                {
-                    "name": kb.get("name", ""),
-                    "version": kb.get("version", None),
-                    "type": kb.get("type", None),
-                    "description": kb.get("description", kb.get("name", "")),
-                }
-                for kb in data.get("value", [])
-            ]
+        knowledgebases = await _get_knowledgebases(search_endpoint, search_key)
+        return [
+            {
+                "name": kb.get("name", ""),
+                "version": kb.get("version", None),
+                "type": kb.get("type", None),
+                "description": kb.get("description", kb.get("name", "")),
+            }
+            for kb in knowledgebases
+        ]
     except ImportError:
         logger.info("Azure AI Projects SDK not installed, returning empty indexes list")
         return []
@@ -215,14 +284,17 @@ async def resolve_kb_remote_tool_connections(db: AsyncSession) -> dict[str, str]
 
         result: dict[str, str] = {}
         for conn in connections:
-            conn_type = conn.get("type", "") if hasattr(conn, "get") else getattr(conn, "type", "")
+            conn_type = _get_field(conn, "type")
             if conn_type != "RemoteTool":
                 continue
-            metadata = (
-                conn.get("metadata", {}) if hasattr(conn, "get") else getattr(conn, "metadata", {})
-            )
+            metadata = _get_field(conn, "metadata", default={})
             kb_name = metadata.get("knowledgeBaseName", "") if metadata else ""
-            conn_name = conn.get("name", "") if hasattr(conn, "get") else getattr(conn, "name", "")
+            if not kb_name:
+                target = str(_get_field(conn, "target"))
+                marker = "/knowledgebases/"
+                if marker in target:
+                    kb_name = target.split(marker, 1)[1].split("/", 1)[0]
+            conn_name = _get_field(conn, "name")
             if kb_name and conn_name:
                 result[kb_name] = conn_name
 
@@ -278,7 +350,8 @@ def build_search_tools(
     for cfg in enabled:
         search_endpoint = cfg.connection_target.rstrip("/")
         mcp_url = (
-            f"{search_endpoint}/knowledgebases/{cfg.index_name}/mcp?api-version=2025-11-01-preview"
+            f"{search_endpoint}/knowledgebases/{cfg.index_name}/mcp"
+            f"?api-version={SEARCH_API_VERSION}"
         )
 
         # Use RemoteTool connection (CustomKeys) for MCP auth, NOT CognitiveSearch (ApiKey).

@@ -197,7 +197,7 @@ describe("AgentStatusSection", () => {
     expect(screen.getByText("admin:hcp.retrySync")).toBeInTheDocument();
   });
 
-  it("does not show retry button when status is synced", () => {
+  it("shows force re-sync button when status is synced", () => {
     render(
       <AgentStatusSection
         profile={makeProfile({ agent_sync_status: "synced" })}
@@ -205,6 +205,18 @@ describe("AgentStatusSection", () => {
       />,
     );
     expect(screen.queryByText("admin:hcp.retrySync")).not.toBeInTheDocument();
+    expect(screen.getByText("Force re-sync")).toBeInTheDocument();
+  });
+
+  it("does not show retry button when status is pending", () => {
+    render(
+      <AgentStatusSection
+        profile={makeProfile({ agent_sync_status: "pending" })}
+        {...defaultProps}
+      />,
+    );
+    expect(screen.queryByText("admin:hcp.retrySync")).not.toBeInTheDocument();
+    expect(screen.queryByText("Force re-sync")).not.toBeInTheDocument();
   });
 
   it("does not show retry button when isNew is true", () => {
