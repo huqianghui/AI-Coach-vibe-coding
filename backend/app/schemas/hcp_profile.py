@@ -17,7 +17,7 @@ class HcpProfileCreate(BaseModel):
     hospital: str = ""
     title: str = ""
     avatar_url: str = ""
-    personality_type: Literal["friendly", "skeptical", "busy", "analytical", "reserved"] = (
+    personality_type: Literal["friendly", "skeptical", "busy", "analytical", "cautious"] = (
         "friendly"
     )
     emotional_state: int = Field(default=50, ge=0, le=100)
@@ -59,7 +59,7 @@ class HcpProfileUpdate(BaseModel):
     hospital: str | None = None
     title: str | None = None
     avatar_url: str | None = None
-    personality_type: Literal["friendly", "skeptical", "busy", "analytical", "reserved"] | None = (
+    personality_type: Literal["friendly", "skeptical", "busy", "analytical", "cautious"] | None = (
         None
     )
     emotional_state: int | None = Field(default=None, ge=0, le=100)
