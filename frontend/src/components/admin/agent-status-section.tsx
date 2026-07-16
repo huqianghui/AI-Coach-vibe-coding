@@ -122,7 +122,7 @@ export function AgentStatusSection({
 
         {/* Actions */}
         <div className="flex flex-col gap-2 pt-2">
-          {(agentStatus === "failed" || agentStatus === "none") && !isNew && (
+          {!isNew && agentStatus !== "pending" && (
             <Button
               variant="outline"
               size="sm"
@@ -136,7 +136,11 @@ export function AgentStatusSection({
                   retrySyncPending && "animate-spin",
                 )}
               />
-              {retrySyncPending ? "Syncing..." : t("admin:hcp.retrySync")}
+              {retrySyncPending
+                ? "Syncing..."
+                : agentStatus === "synced"
+                  ? "Force re-sync"
+                  : t("admin:hcp.retrySync")}
             </Button>
           )}
           {profile?.agent_id && (

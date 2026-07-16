@@ -134,7 +134,7 @@ class TestBuildSearchTools:
         tool_dict = tool.as_dict()
         assert tool_dict["server_label"] == "knowledge-base-my-index"
         assert "knowledgebases/my-index/mcp" in tool_dict["server_url"]
-        assert "2025-11-01-preview" in tool_dict["server_url"]
+        assert "2026-05-01-preview" in tool_dict["server_url"]
         assert tool_dict["require_approval"] == "never"
         allowed = tool_dict.get("allowed_tools", {})
         assert allowed.get("tool_names") == ["knowledge_base_retrieve"]
@@ -333,6 +333,82 @@ class TestKnowledgeBaseServiceCrud:
         ):
             result = await list_indexes(db_session)
             assert result == []
+
+    @pytest.mark.asyncio
+    async def test_list_indexes_supports_aad_search_connection(self, db_session):
+        """list_indexes can query Foundry IQ with Entra ID when connection has no API key."""
+        from app.services.knowledge_base_service import list_indexes
+
+        fake_conn = MagicMock()
+        fake_conn.target = "https://search.example.com/"
+        fake_conn.credentials = {"type": "AAD"}
+
+        fake_client = MagicMock()
+        fake_client.connections.get.return_value = fake_conn
+
+        with (
+            patch(
+                "app.services.agent_sync_service.get_project_endpoint",
+                new_callable=AsyncMock,
+                return_value=("https://foundry/api/projects/proj", ""),
+            ),
+            patch(
+                "app.services.agent_sync_service._get_project_client",
+                return_value=fake_client,
+            ),
+            patch(
+                "app.services.knowledge_base_service._get_knowledgebases",
+                new_callable=AsyncMock,
+                return_value=[
+                    {
+                        "name": "knowledgebase349",
+                        "version": "1",
+                        "type": "foundryIq",
+                        "description": "test knowledge",
+                    }
+                ],
+            ) as mock_list_kbs,
+        ):
+            result = await list_indexes(db_session, connection_name="search-conn")
+
+        assert result == [
+            {
+                "name": "knowledgebase349",
+                "version": "1",
+                "type": "foundryIq",
+                "description": "test knowledge",
+            }
+        ]
+        mock_list_kbs.assert_awaited_once_with("https://search.example.com", "")
+
+    @pytest.mark.asyncio
+    async def test_resolve_remote_tool_connection_from_metadata(self, db_session):
+        """RemoteTool connection maps KB name to connection name for MCP auth."""
+        from app.services.knowledge_base_service import resolve_kb_remote_tool_connections
+
+        fake_remote = {
+            "type": "RemoteTool",
+            "name": "kb-knowledgebase349-m5hlw",
+            "target": "https://search/knowledgebases/knowledgebase349/mcp",
+            "metadata": {"knowledgeBaseName": "knowledgebase349"},
+        }
+        fake_client = MagicMock()
+        fake_client.connections.list.return_value = [fake_remote]
+
+        with (
+            patch(
+                "app.services.agent_sync_service.get_project_endpoint",
+                new_callable=AsyncMock,
+                return_value=("https://foundry/api/projects/proj", ""),
+            ),
+            patch(
+                "app.services.agent_sync_service._get_project_client",
+                return_value=fake_client,
+            ),
+        ):
+            result = await resolve_kb_remote_tool_connections(db_session)
+
+        assert result == {"knowledgebase349": "kb-knowledgebase349-m5hlw"}
 
 
 # ---------------------------------------------------------------------------
