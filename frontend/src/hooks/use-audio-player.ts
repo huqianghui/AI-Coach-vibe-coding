@@ -41,15 +41,28 @@ export function useAudioPlayer() {
     };
   }, []);
 
+  const chunkCountRef = useRef(0);
+
   /** Decode base64 PCM16 and schedule for gapless playback. */
   const playAudio = useCallback(
     (base64Audio: string) => {
       const { audioCtx, analyser } = ensureAudioPipeline();
+      chunkCountRef.current += 1;
 
       // Resume if suspended (browser autoplay policy)
       if (audioCtx.state === "suspended") {
         log.info("AudioContext suspended, resuming");
         void audioCtx.resume();
+      }
+
+      // Log first chunk and every 50th to verify the playback pipeline.
+      if (chunkCountRef.current === 1 || chunkCountRef.current % 50 === 0) {
+        log.info(
+          "playAudio chunk #%d, ctx.state=%s, base64Len=%d",
+          chunkCountRef.current,
+          audioCtx.state,
+          base64Audio.length,
+        );
       }
 
       // Decode: base64 → bytes → Int16 PCM → Float32 normalized [-1, 1]
@@ -92,7 +105,26 @@ export function useAudioPlayer() {
     }
     analyserRef.current = null;
     nextPlayTimeRef.current = 0;
+    chunkCountRef.current = 0;
   }, []);
 
-  return { playAudio, stopAudio, analyserRef };
+  /**
+   * Pre-create and resume the AudioContext within a user-gesture handler
+   * (e.g. the click that starts a session). This satisfies Chrome's
+   * autoplay policy so that subsequent `playAudio()` calls -- which are
+   * triggered asynchronously by WebSocket events -- can play audio.
+   */
+  const prepare = useCallback(async () => {
+    const { audioCtx } = ensureAudioPipeline();
+    if (audioCtx.state === "suspended") {
+      try {
+        await audioCtx.resume();
+        log.info("AudioContext resumed via user gesture, state=%s", audioCtx.state);
+      } catch (err) {
+        log.warn("AudioContext resume() failed: %o", err);
+      }
+    }
+  }, [ensureAudioPipeline]);
+
+  return { playAudio, stopAudio, prepare, analyserRef };
 }

@@ -325,5 +325,21 @@ describe("ConferenceStage", () => {
 
     expect(onConnect).toHaveBeenCalledTimes(1);
   });
+
+  it("shows a disabled connecting status while the digital human is connecting", () => {
+    render(
+      <ConferenceStage
+        {...defaultProps}
+        digitalHumanEnabled={true}
+        avatarVideoRef={{ current: null }}
+        isAvatarConnected={false}
+        isAvatarConnecting={true}
+        onAvatarConnectClick={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "数字人连接中" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "连接数字人" })).not.toBeInTheDocument();
+  });
 });
 
