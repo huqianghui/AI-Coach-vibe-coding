@@ -184,6 +184,7 @@ class TestLoadConnectionConfig:
         mock_voice_config = {
             "voice_name": "en-US-AvaNeural",
             "voice_type": "azure-standard",
+            "avatar_enabled": False,
             "avatar_character": "lisa",
             "avatar_style": "casual-sitting",
             "avatar_customized": False,
@@ -532,13 +533,24 @@ class TestHandleVoiceLiveWebsocket:
         mock_profile = MagicMock()
         mock_profile.voice_live_enabled = False
 
-        with patch(
-            "app.services.hcp_profile_service.get_hcp_profile",
-            new_callable=AsyncMock,
-            return_value=mock_profile,
+        with (
+            patch(
+                "app.services.hcp_profile_service.get_hcp_profile",
+                new_callable=AsyncMock,
+                return_value=mock_profile,
+            ),
+            patch(
+                "app.services.voice_live_instance_service.resolve_voice_config",
+                return_value={"voice_live_enabled": False},
+            ),
+            patch(
+                "app.services.voice_live_websocket._load_connection_config",
+                new_callable=AsyncMock,
+            ) as load_config,
         ):
             await handle_voice_live_websocket(ws, db)
 
+        load_config.assert_not_awaited()
         calls = ws.send_text.call_args_list
         assert any("not enabled" in str(c) for c in calls)
 
