@@ -31,6 +31,7 @@ from app.utils.exceptions import AppException
 router = APIRouter(prefix="/azure-config", tags=["azure-config"])
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 # Valid service names and their display labels
 SERVICE_DISPLAY_NAMES = {
@@ -90,6 +91,7 @@ async def register_adapter_from_config(
             AzureSTTAdapter(effective_key, effective_region, effective_endpoint),
         )
         settings.default_stt_provider = "azure"
+        logger.info("Registered Azure STT adapter (region=%s)", effective_region)
 
     elif (
         service_name == "azure_speech_tts"
@@ -103,6 +105,7 @@ async def register_adapter_from_config(
             AzureTTSAdapter(effective_key, effective_region, effective_endpoint),
         )
         settings.default_tts_provider = "azure"
+        logger.info("Registered Azure TTS adapter (region=%s)", effective_region)
 
     elif service_name == "azure_avatar" and effective_key:
         from app.services.agents.avatar.azure import AzureAvatarAdapter
@@ -142,8 +145,16 @@ async def register_adapter_from_config(
         )
         registry.register("voice_live", adapter)
 
-
-# --- AI Foundry master config endpoints ---
+    else:
+        logger.warning(
+            "Skipped adapter registration for %s: conditions not met "
+            "(region=%s, key_set=%s, endpoint_set=%s, deployment=%s)",
+            service_name,
+            bool(effective_region),
+            bool(effective_key),
+            bool(effective_endpoint),
+            bool(effective_deployment),
+        )
 
 
 @router.get("/ai-foundry", response_model=ServiceConfigResponse)
