@@ -207,8 +207,7 @@ async def stream_transcription(
     azure_stt_adapter = registry.get("stt", "azure")
     speech_key = getattr(azure_stt_adapter, "_key", settings.azure_speech_key)
     speech_region = getattr(azure_stt_adapter, "_region", settings.azure_speech_region)
-    speech_endpoint = getattr(azure_stt_adapter, "_endpoint", "")
-    if not speech_region or not (speech_key or speech_endpoint):
+    if not speech_region:
         await _send_stream_error(
             ws,
             "AZURE_SPEECH_NOT_CONFIGURED",

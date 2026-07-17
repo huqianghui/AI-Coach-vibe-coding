@@ -65,6 +65,16 @@ async def health_deep(db: AsyncSession = Depends(get_db)):
     except Exception as e:
         checks["azure_foundry"] = {"status": "error", "detail": str(e)[:200]}
 
+    # 4. Active providers
+    from app.config import get_settings
+
+    settings = get_settings()
+    checks["active_providers"] = {
+        "llm": settings.default_llm_provider,
+        "stt": settings.default_stt_provider,
+        "tts": settings.default_tts_provider,
+    }
+
     # Overall status
     has_error = any(c.get("status") == "error" for c in checks.values())
     overall = "degraded" if has_error else "healthy"

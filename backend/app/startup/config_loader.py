@@ -50,20 +50,40 @@ async def load_service_configs() -> None:
                 )
             )
             configs = result.scalars().all()
+            registered = 0
             for cfg in configs:
-                api_key = await config_service.get_decrypted_key(session, cfg.service_name)
-                await register_adapter_from_config(
-                    cfg.service_name,
-                    cfg.endpoint,
-                    api_key,
-                    cfg.model_or_deployment,
-                    cfg.region,
-                    master_endpoint=master_endpoint,
-                    master_key=master_key,
-                    master_region=master_region,
-                    master_model=master_model,
-                )
+                try:
+                    api_key = await config_service.get_decrypted_key(session, cfg.service_name)
+                    await register_adapter_from_config(
+                        cfg.service_name,
+                        cfg.endpoint,
+                        api_key,
+                        cfg.model_or_deployment,
+                        cfg.region,
+                        master_endpoint=master_endpoint,
+                        master_key=master_key,
+                        master_region=master_region,
+                        master_model=master_model,
+                    )
+                    registered += 1
+                except Exception:
+                    logger.warning(
+                        "Failed to register adapter for %s, skipping",
+                        cfg.service_name,
+                        exc_info=True,
+                    )
 
-            logger.info("Service configs loaded (%d active)", len(configs))
+            from app.config import get_settings
+
+            settings = get_settings()
+            logger.info(
+                "Service configs loaded (%d active, %d registered, llm_provider=%s)",
+                len(configs),
+                registered,
+                settings.default_llm_provider,
+            )
     except Exception:
-        logger.warning("Service config loading skipped (table may not exist yet)")
+        logger.warning(
+            "Service config loading skipped (table may not exist yet)",
+            exc_info=True,
+        )

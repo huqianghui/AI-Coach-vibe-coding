@@ -144,8 +144,12 @@ class AzureTTSAdapter(BaseTTSAdapter):
             return speechsdk.SpeechConfig(subscription=self._key, region=self._region)
 
         credential = get_token_credential_sync()
-        if credential is not None and self._endpoint:
-            return speechsdk.SpeechConfig(token_credential=credential, endpoint=self._endpoint)
+        if credential is not None:
+            endpoint = (
+                self._endpoint
+                or f"wss://{self._region}.tts.speech.microsoft.com/cognitiveservices/websocket/v2"
+            )
+            return speechsdk.SpeechConfig(token_credential=credential, endpoint=endpoint)
 
         raise RuntimeError("Azure Speech requires Managed Identity with an endpoint or an API key.")
 

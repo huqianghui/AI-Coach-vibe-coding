@@ -30,6 +30,12 @@ export function ScenarioPanel({
 }: ScenarioPanelProps) {
   const { t } = useTranslation("coach");
 
+  // Extract product and area from tags (format: "product:X", "area:Y")
+  const product = scenario.tags?.find((t) => t.startsWith("product:"))?.split(":", 2)[1] ?? "";
+  const area =
+    scenario.tags?.find((t) => t.startsWith("area:") || t.startsWith("therapeutic_area:"))
+      ?.split(":", 2)[1] ?? "";
+
   const hcpInitials = scenario.hcp_profile?.name
     ? scenario.hcp_profile.name
         .split(" ")
@@ -83,11 +89,11 @@ export function ScenarioPanel({
           <CardContent className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-muted-foreground">Product</span>
-              <span className="font-medium text-foreground">{scenario.product}</span>
+              <span className="font-medium text-foreground">{product || "—"}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Area</span>
-              <span className="font-medium text-foreground">{scenario.therapeutic_area}</span>
+              <span className="font-medium text-foreground">{area || "—"}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Difficulty</span>

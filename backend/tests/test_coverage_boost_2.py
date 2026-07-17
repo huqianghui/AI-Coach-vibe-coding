@@ -921,9 +921,16 @@ class TestConnectionTester:
     async def test_ai_foundry_endpoint_no_key(self):
         from app.services.connection_tester import test_ai_foundry_endpoint
 
-        ok, msg = await test_ai_foundry_endpoint("https://test.cognitiveservices.azure.com", "")
-        assert ok is False
-        assert "key" in msg.lower()
+        # When no key is provided and DefaultAzureCredential also fails,
+        # the function should return False with a key/credential message.
+        with patch(
+            "app.services.connection_tester._get_bearer_token",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            ok, msg = await test_ai_foundry_endpoint("https://test.cognitiveservices.azure.com", "")
+            assert ok is False
+            assert "key" in msg.lower() or "credential" in msg.lower()
 
     async def test_ai_foundry_endpoint_with_model_delegates(self):
         from app.services.connection_tester import test_ai_foundry_endpoint
@@ -1391,11 +1398,16 @@ class TestConnectionTester:
     async def test_azure_voice_live_no_key(self):
         from app.services.connection_tester import test_azure_voice_live
 
-        ok, msg = await test_azure_voice_live(
-            "https://test.cognitiveservices.azure.com", "", "swedencentral"
-        )
-        assert ok is False
-        assert "key" in msg.lower()
+        with patch(
+            "app.services.connection_tester._get_bearer_token",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            ok, msg = await test_azure_voice_live(
+                "https://test.cognitiveservices.azure.com", "", "swedencentral"
+            )
+            assert ok is False
+            assert "key" in msg.lower() or "credential" in msg.lower()
 
     async def test_azure_voice_live_success(self):
         from app.services.connection_tester import test_azure_voice_live

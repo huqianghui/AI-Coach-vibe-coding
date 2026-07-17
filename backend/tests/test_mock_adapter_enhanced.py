@@ -54,6 +54,14 @@ class TestDeterminePhase:
         assert adapter._determine_phase("Nice to meet you") == "opening"
         assert adapter._determine_phase("I'd like to introduce") == "opening"
 
+    async def test_chinese_opening_indicators(self):
+        adapter = MockCoachingAdapter()
+        assert adapter._determine_phase("你好") == "opening"
+        assert adapter._determine_phase("您好，医生") == "opening"
+        assert adapter._determine_phase("早上好") == "opening"
+        assert adapter._determine_phase("下午好") == "opening"
+        assert adapter._determine_phase("很高兴认识您") == "opening"
+
     async def test_closing_indicators(self):
         adapter = MockCoachingAdapter()
         assert adapter._determine_phase("Thank you for your time") == "closing"
@@ -61,10 +69,18 @@ class TestDeterminePhase:
         assert adapter._determine_phase("To conclude our discussion") == "closing"
         assert adapter._determine_phase("Before I go, any questions?") == "closing"
 
+    async def test_chinese_closing_indicators(self):
+        adapter = MockCoachingAdapter()
+        assert adapter._determine_phase("感谢您的时间") == "closing"
+        assert adapter._determine_phase("总结一下") == "closing"
+        assert adapter._determine_phase("就到这里吧") == "closing"
+        assert adapter._determine_phase("还有其他问题吗") == "closing"
+
     async def test_middle_default(self):
         adapter = MockCoachingAdapter()
         assert adapter._determine_phase("What about the safety data?") == "middle"
         assert adapter._determine_phase("Can you tell me more?") == "middle"
+        assert adapter._determine_phase("安全性数据怎么样？") == "middle"
 
 
 class TestSelectResponse:
@@ -85,9 +101,8 @@ class TestSelectResponse:
         random.seed(42)
         response = adapter._select_response("friendly", "opening", "TestDrug")
         assert "{product}" not in response
-        # Should contain the product name or be a generic response
         # The friendly opening templates all contain {product}
-        assert "TestDrug" in response or "curious" in response
+        assert "TestDrug" in response
 
     async def test_unknown_personality_falls_back_to_friendly(self):
         adapter = MockCoachingAdapter()
