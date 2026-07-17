@@ -58,6 +58,7 @@ build/
 figma-make/
 .playwright-mcp/
 backend/storage/materials/
+learn/
 
 # Reference sample code repos (not part of this project)
 Voice-Live-Agent-With-Avadar-sample-code/

@@ -475,6 +475,11 @@ async def test_sync_agent_for_profile_creates_when_no_agent_id():
             "app.services.agent_sync_service.update_agent",
             new_callable=AsyncMock,
         ) as mock_update,
+        patch(
+            "app.services.knowledge_base_service.get_knowledge_configs",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
     ):
         result = await sync_agent_for_profile(mock_db, mock_profile)
 
@@ -536,6 +541,11 @@ async def test_sync_agent_for_profile_updates_when_agent_id_exists():
                 "model": "gpt-4o",
             },
         ) as mock_update,
+        patch(
+            "app.services.knowledge_base_service.get_knowledge_configs",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
     ):
         result = await sync_agent_for_profile(mock_db, mock_profile)
 
@@ -590,6 +600,11 @@ async def test_sync_agent_for_profile_no_master_config():
                 "model": default_model,
             },
         ) as mock_create,
+        patch(
+            "app.services.knowledge_base_service.get_knowledge_configs",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
     ):
         result = await sync_agent_for_profile(mock_db, mock_profile)
 
@@ -709,10 +724,17 @@ async def test_three_profiles_sync_to_agents():
         mock_profile.recognition_language = "auto"
         mock_profile.to_prompt_dict.return_value = profile_data["prompt_data"]
 
-        with patch(
-            "app.services.agent_sync_service.create_agent",
-            new_callable=AsyncMock,
-            side_effect=make_create_agent_side_effect(),
+        with (
+            patch(
+                "app.services.agent_sync_service.create_agent",
+                new_callable=AsyncMock,
+                side_effect=make_create_agent_side_effect(),
+            ),
+            patch(
+                "app.services.knowledge_base_service.get_knowledge_configs",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
         ):
             result = await sync_agent_for_profile(
                 mock_db,
@@ -812,6 +834,11 @@ async def test_three_profiles_mixed_sync_scenarios():
                 },
             ],
         ) as mock_update,
+        patch(
+            "app.services.knowledge_base_service.get_knowledge_configs",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
     ):
         r1 = await sync_agent_for_profile(mock_db, p1, prefetched_model="gpt-4o")
         r2 = await sync_agent_for_profile(mock_db, p2, prefetched_model="gpt-4o")
@@ -1796,6 +1823,11 @@ async def test_sync_agent_for_profile_stores_agent_version():
             "app.services.agent_sync_service.get_agent_latest_version",
             new_callable=AsyncMock,
             return_value="3",
+        ),
+        patch(
+            "app.services.knowledge_base_service.get_knowledge_configs",
+            new_callable=AsyncMock,
+            return_value=[],
         ),
     ):
         result = await sync_agent_for_profile(mock_db, mock_profile, prefetched_model="gpt-4o")

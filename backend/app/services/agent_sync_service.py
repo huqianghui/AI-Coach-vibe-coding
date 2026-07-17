@@ -754,19 +754,28 @@ async def sync_agent_for_profile(
     # Build Voice Live metadata if enabled on the profile
     vl_metadata = build_voice_live_metadata(profile)
 
-    # Build knowledge base tools from KB configs (Phase 17)
-    # Resolve RemoteTool connections for MCP auth (403 fix: must use RemoteTool
+    # Build knowledge base tools from KB configs (Phase 17).
+    # resolve_kb_remote_tool_connections() finds-or-creates the RemoteTool
+    # connection required for MCP auth (403 fix: must use RemoteTool
     # connection, not CognitiveSearch connection, for correct credentials type).
+    # IMPORTANT: this is intentionally NOT wrapped in a broad try/except.
+    # A KB that fails to get an authenticated connection must fail the whole
+    # sync (propagating up to hcp_profile_service / _trigger_agent_resync,
+    # which set agent_sync_status="failed") rather than silently producing an
+    # unauthenticated MCPTool that gets reported as a "synced" agent.
     kb_tools: list = []
-    try:
-        from app.services import knowledge_base_service
+    from app.services import knowledge_base_service
 
-        kb_configs = await knowledge_base_service.get_knowledge_configs(db, profile.id)
-        if kb_configs:
-            rt_map = await knowledge_base_service.resolve_kb_remote_tool_connections(db)
-            kb_tools = knowledge_base_service.build_search_tools(kb_configs, rt_map)
-    except Exception as e:
-        logger.warning("Failed to build KB tools for profile %s: %s", profile.id, e)
+    kb_configs = await knowledge_base_service.get_knowledge_configs(db, profile.id)
+    if kb_configs:
+        rt_map = await knowledge_base_service.resolve_kb_remote_tool_connections(db, kb_configs)
+        kb_tools = knowledge_base_service.build_search_tools(kb_configs, rt_map)
+        enabled_count = sum(1 for cfg in kb_configs if cfg.is_enabled)
+        if len(kb_tools) != enabled_count:
+            raise RuntimeError(
+                f"Failed to build authenticated MCP tools for all Knowledge Bases "
+                f"({len(kb_tools)}/{enabled_count})."
+            )
 
     if profile.agent_id:
         result = await update_agent(
