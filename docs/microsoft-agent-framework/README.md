@@ -20,6 +20,7 @@
 | 09 | [Agent API 版本演进](./09-agent-api-version-evolution.md) | API 版本变迁时间线、`2025-05-01` 废弃原因、新一代 Agent Service (1.0/preview) 差异、metadata 支持现状 | 全体开发 |
 | 07 | [Azure Agent API 操作指南](./07-agent-skill-creation-guide.md) | Agent 命名规则（63字符/字母数字+连字符）、SDK 创建流程、Meta Skill Agent 架构与同步、常见陷阱 | 后端开发 / Agent |
 | 08 | [Agent Skills 规范与平台实现](./08-agent-skills-specification.md) | SKILL.md 完整格式、目录结构、渐进式加载、Python SDK 用法、AI Coach 实现对照（含 name vs display_name）、命名规则与 sanitize 函数、安全实践 | 全体开发 |
+| 10 | [Agent Skills Foundry 上传与 Toolbox 挂载](./10-agent-skills-foundry-upload-and-toolbox.md) | Skills API 上传（inline/ZIP）、版本管理、Toolbox skill_reference 挂载、Agent 消费模式实测 | 后端开发 / Agent |
 
 > **注意**：`tests/` 目录下的 `test_voice_live_auth_modes.py` 和 `test_agent_conversation.py`
 > 是 SDK 1.1.0 时期的早期探索代码，使用了 `session.agent` 字段（服务端不接受）和错误的 API 版本。
