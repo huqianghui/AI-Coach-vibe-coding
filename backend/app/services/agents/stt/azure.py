@@ -72,7 +72,7 @@ class AzureSTTAdapter(BaseSTTAdapter):
 
     async def is_available(self) -> bool:
         """Check if Azure Speech can be addressed with key or Entra auth."""
-        return bool(self._region)
+        return bool(self._region and (self._key or self._endpoint))
 
     def _create_speech_config(self, speechsdk):
         """Create SpeechConfig with API key fallback after Entra token credential."""
