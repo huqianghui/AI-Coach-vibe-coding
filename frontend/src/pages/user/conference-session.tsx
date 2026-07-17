@@ -711,6 +711,14 @@ export default function ConferenceSession() {
   useEffect(() => {
     if (speechError) {
       toast.error(speechError);
+      // Auto-fallback to text mode on configuration errors to prevent infinite retry
+      if (
+        speechError.includes("未配置") ||
+        speechError.includes("not configured") ||
+        speechError.includes("连接失败")
+      ) {
+        setInputMode("text");
+      }
     }
   }, [speechError]);
 
