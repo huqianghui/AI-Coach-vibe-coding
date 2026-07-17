@@ -415,13 +415,16 @@ export default function UnifiedSession() {
         isFinal: true,
         timestamp: Date.now(),
       };
-      handleTranscript(userSegment);
 
-      // If voice is connected, send via voice-live (text injection)
+      // If voice is connected, send via voice-live (text injection).
+      // handleTranscript persists the transcript for voice sessions.
       if (voiceLive.connectionState === "connected") {
+        handleTranscript(userSegment);
         await voiceLive.sendTextMessage(text);
       } else {
-        // Fallback to SSE text mode
+        // SSE text mode: backend POST /message already saves the user message,
+        // so only add to local UI without persisting (avoids duplicate save).
+        setTranscripts((prev) => [...prev, userSegment]);
         await sendSSEMessage(sessionId, text);
       }
     },

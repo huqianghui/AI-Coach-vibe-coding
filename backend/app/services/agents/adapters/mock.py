@@ -14,100 +14,97 @@ from app.services.agents.base import (
 PERSONALITY_TEMPLATES: dict[str, dict[str, list[str]]] = {
     "skeptical": {
         "opening": [
-            "I'm quite busy today. What about {product}?",
-            ("I've heard about {product} before, but I'm not convinced by what I've seen so far."),
-            "I'm not easily persuaded by marketing materials. Go ahead.",
+            "我今天很忙。{product}怎么样？",
+            "我之前听说过{product}，但目前看到的东西还不够说服我。",
+            "我不容易被市场材料说服。请讲吧。",
         ],
         "middle": [
-            "That's an interesting claim. Do you have hard data?",
-            "I've seen similar claims. What makes {product} different?",
-            "My patients do well on current treatments. Why switch?",
-            "Numbers look good on paper. What about real-world data?",
-            "I'd need head-to-head comparison data first.",
+            "这个说法很有意思。你有硬数据吗？",
+            "我见过类似的说法。{product}有什么不同？",
+            "我的患者目前治疗效果很好。为什么要换？",
+            "数据在纸面上看起来不错。真实世界数据呢？",
+            "我需要先看头对头比较数据。",
         ],
         "closing": [
-            "I'll look at the data, but I remain skeptical.",
-            "Send me the published studies. I'll review them.",
-            (
-                "I appreciate your thoroughness, but I need "
-                "more evidence before changing my approach."
-            ),
+            "我会看看数据，但我仍然持怀疑态度。",
+            "把发表的研究发给我。我会审查的。",
+            "感谢您的认真介绍，但我需要更多证据才会改变我的做法。",
         ],
     },
     "friendly": {
         "opening": [
-            "Hello! I've been curious about {product} actually.",
-            ("Welcome! I enjoy learning about new options. Tell me about {product}."),
-            "Nice to meet you. I'm open to hearing about {product}.",
+            "你好！其实我一直对{product}很好奇。",
+            "欢迎！我喜欢了解新的选择。跟我说说{product}吧。",
+            "很高兴认识你。我愿意听听{product}的情况。",
         ],
         "middle": [
-            "Interesting! Tell me more about the clinical trials.",
-            "How does {product} compare to what I'm currently using?",
-            "My patients could benefit. What about the safety profile?",
-            "Good point. Some patients struggle with current options.",
-            "The efficacy data sounds promising. Long-term outcomes?",
+            "有意思！跟我多说说临床试验的情况。",
+            "{product}跟我目前在用的相比怎么样？",
+            "我的患者可能会受益。安全性怎么样？",
+            "说得好。有些患者确实在现有方案上有困难。",
+            "疗效数据听起来很有前景。长期结果呢？",
         ],
         "closing": [
-            ("Thank you. I'm quite interested in trying {product} with some patients."),
-            ("I'll consider {product} for my next suitable patient. Leave me some materials?"),
-            "Very informative. I look forward to learning more.",
+            "谢谢。我很有兴趣在一些患者身上试试{product}。",
+            "我会考虑在下一个合适的患者上使用{product}。能留些资料吗？",
+            "非常有收获。期待了解更多。",
         ],
     },
     "busy": {
         "opening": [
-            "I only have a few minutes. What about {product}?",
-            "Make it quick. What's {product}?",
-            "I'm between patients. Be brief about {product}.",
+            "我只有几分钟时间。{product}怎么样？",
+            "说快点。{product}是什么？",
+            "我在两个患者之间。关于{product}请简短说。",
         ],
         "middle": [
-            "Get to the point.",
-            "And the bottom line is?",
-            "Quickly, what's the key benefit?",
-            "I don't have time for details. Summary?",
-            "Next point, please.",
+            "说重点。",
+            "那底线是什么？",
+            "快说，关键好处是什么？",
+            "我没时间听细节。总结一下？",
+            "下一个要点，请。",
         ],
         "closing": [
-            "Alright, I need to go. Leave the materials.",
-            "Got it. I'll look at it later.",
-            "Time's up. Send me an email with the key points.",
+            "好的，我得走了。把资料留下。",
+            "知道了。我以后再看。",
+            "时间到了。把要点发邮件给我。",
         ],
     },
     "analytical": {
         "opening": [
-            "Let's discuss {product} from a data-driven perspective.",
-            ("I focus on evidence-based medicine. Tell me about {product}."),
-            "I want the numbers behind {product}. What do trials show?",
+            "让我们从数据驱动的角度来讨论{product}。",
+            "我注重循证医学。跟我说说{product}吧。",
+            "我想了解{product}背后的数字。临床试验显示什么？",
         ],
         "middle": [
-            "What was the p-value for the primary endpoint?",
-            "Can you share the NNT compared to standard of care?",
-            "What about confidence intervals? Clinically meaningful?",
-            "Study design: double-blind, randomized?",
-            "How does the effect size compare with existing options?",
+            "主要终点的P值是多少？",
+            "跟标准治疗相比，NNT是多少？",
+            "置信区间呢？有临床意义吗？",
+            "研究设计：双盲、随机对照？",
+            "效应量跟现有选择比怎么样？",
         ],
         "closing": [
-            "Statistically interesting. I'll review the publications.",
-            "Send me study protocols and results for my analysis.",
-            "Good data. Let me review before making conclusions.",
+            "统计学上很有意思。我会审查文献的。",
+            "把研究方案和结果发给我分析。",
+            "数据不错。让我在得出结论之前再看看。",
         ],
     },
     "cautious": {
         "opening": [
-            "I'm careful about new treatments. What about safety?",
-            ("Patient safety is my top priority. Let's discuss {product}'s risks."),
-            "Tell me about {product}'s adverse events first.",
+            "我对新疗法很谨慎。安全性怎么样？",
+            "患者安全是我的首要考虑。我们来讨论{product}的风险。",
+            "先跟我说说{product}的不良反应。",
         ],
         "middle": [
-            "What about drug interactions? My patients take many meds.",
-            "Any post-marketing safety signals I should know about?",
-            "I'm concerned about switching stable patients.",
-            "Long-term safety data? These patients need years of care.",
-            "Are there any contraindications I should be aware of?",
+            "药物相互作用怎么样？我的患者吃很多药。",
+            "有什么上市后安全信号我应该知道的吗？",
+            "我担心给稳定的患者换药。",
+            "长期安全性数据呢？这些患者需要多年的治疗。",
+            "有什么禁忌症我需要注意的吗？",
         ],
         "closing": [
-            "I'll start cautiously with lower-risk patients.",
-            "I need to think carefully. Patient safety comes first.",
-            ("I'll review the safety data before considering changes to my practice."),
+            "我会先从低风险患者谨慎开始。",
+            "我需要仔细考虑。患者安全第一。",
+            "我会在考虑改变我的实践之前先审查安全性数据。",
         ],
     },
 }
@@ -115,7 +112,7 @@ PERSONALITY_TEMPLATES: dict[str, dict[str, list[str]]] = {
 # Coaching hint templates
 COACHING_HINTS: list[dict[str, str]] = [
     {
-        "content": "Reference specific clinical trial data.",
+        "content": "Try to provide more detailed responses with supporting data.",
         "dimension": "scientific_info",
     },
     {
@@ -223,6 +220,14 @@ class MockCoachingAdapter(BaseCoachingAdapter):
             "introduce",
             "i'd like to talk",
             "i'm here to discuss",
+            "你好",
+            "您好",
+            "早上好",
+            "下午好",
+            "很高兴认识",
+            "初次见面",
+            "我来介绍",
+            "我想跟您聊聊",
         ]
         closing_indicators = [
             "thank you for your time",
@@ -233,6 +238,13 @@ class MockCoachingAdapter(BaseCoachingAdapter):
             "last question",
             "wrap up",
             "anything else",
+            "感谢您的时间",
+            "总结一下",
+            "最后",
+            "总的来说",
+            "我先告辞",
+            "还有其他",
+            "就到这里",
         ]
 
         if any(ind in lower_msg for ind in opening_indicators):
