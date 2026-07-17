@@ -72,7 +72,7 @@ class AzureSTTAdapter(BaseSTTAdapter):
 
     async def is_available(self) -> bool:
         """Check if Azure Speech can be addressed with key or Entra auth."""
-        return bool(self._region and (self._key or self._endpoint))
+        return bool(self._region)
 
     def _create_speech_config(self, speechsdk):
         """Create SpeechConfig with API key fallback after Entra token credential."""
@@ -80,8 +80,12 @@ class AzureSTTAdapter(BaseSTTAdapter):
             return speechsdk.SpeechConfig(subscription=self._key, region=self._region)
 
         credential = get_token_credential_sync()
-        if credential is not None and self._endpoint:
-            return speechsdk.SpeechConfig(token_credential=credential, endpoint=self._endpoint)
+        if credential is not None:
+            endpoint = (
+                self._endpoint
+                or f"wss://{self._region}.stt.speech.microsoft.com/speech/universal/v2"
+            )
+            return speechsdk.SpeechConfig(token_credential=credential, endpoint=endpoint)
 
         raise RuntimeError("Azure Speech requires Managed Identity with an endpoint or an API key.")
 

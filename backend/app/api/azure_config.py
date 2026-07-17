@@ -79,11 +79,7 @@ async def register_adapter_from_config(
         registry.register("llm", adapter)
         settings.default_llm_provider = "azure_openai"
 
-    elif (
-        service_name == "azure_speech_stt"
-        and effective_region
-        and (effective_key or effective_endpoint)
-    ):
+    elif service_name == "azure_speech_stt" and effective_region:
         from app.services.agents.stt.azure import AzureSTTAdapter
 
         registry.register(
@@ -93,11 +89,7 @@ async def register_adapter_from_config(
         settings.default_stt_provider = "azure"
         logger.info("Registered Azure STT adapter (region=%s)", effective_region)
 
-    elif (
-        service_name == "azure_speech_tts"
-        and effective_region
-        and (effective_key or effective_endpoint)
-    ):
+    elif service_name == "azure_speech_tts" and effective_region:
         from app.services.agents.tts.azure import AzureTTSAdapter
 
         registry.register(
