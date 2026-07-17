@@ -317,10 +317,11 @@ None yet.
 |---|-------------|------|--------|-----------|
 | 260325-9wy | Add comprehensive tests for Phase 3: backend pytest 95%+ coverage, frontend logic tests with vitest, E2E Playwright tests for rubric CRUD, scoring flow, session history | 2026-03-24 | dccf83a | [260325-9wy-add-comprehensive-tests-for-phase-3-back](./quick/260325-9wy-add-comprehensive-tests-for-phase-3-back/) |
 | 260520-njr | Fix scoring engine LLM role confusion and add post-validation rule enforcement | 2026-05-20 | d00ca2a | [260520-njr-fix-scoring-engine-llm-role-confusion-an](./quick/260520-njr-fix-scoring-engine-llm-role-confusion-an/) |
+| 260717-x5f | Skills API Foundry upload POC test + doc 10 (Skills 上传/Toolbox skill_reference 挂载实测：API Key 403 AuthenticationTypeDisabled、Entra ID 405) | 2026-07-18 | 347fcc5 | [260717-x5f-docs-microsoft-agent-framework-agent-ski](./quick/260717-x5f-docs-microsoft-agent-framework-agent-ski/) |
 
 ## Session Continuity
 
-Last activity: 2026-07-01
+Last activity: 2026-07-18
 Last session: 2026-07-01T08:45:45.630Z
 Stopped at: Completed 27-08-PLAN.md
 Resume file: None
