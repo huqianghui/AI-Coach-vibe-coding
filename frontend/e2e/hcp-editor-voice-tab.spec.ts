@@ -246,6 +246,103 @@ test.describe("HCP Editor: Voice & Avatar Tab", () => {
     const count = await placeholder.count();
     expect(count).toBeGreaterThanOrEqual(0);
   });
+
+  // Issue #86: RemoteTool connection find-or-create (ARM PUT, authType=
+  // ProjectManagedIdentity) is a backend-only concern, triggered internally by
+  // add_knowledge_config() -> _trigger_agent_resync() *after* this POST responds.
+  // It is covered by backend pytest (backend/tests/test_knowledge_base.py:
+  // TestKnowledgeBaseServiceCrud — reuse-by-metadata, reuse-by-target,
+  // create-when-missing, creation-failure-propagation, multi-KB mapping) and
+  // is intentionally NOT re-verified here: E2E must not perform real Azure ARM
+  // calls, and the browser-facing request/response contract for adding a KB
+  // (asserted below) is unaffected by which RemoteTool connection the backend
+  // ultimately resolves or creates.
+  test("admin can attach a Foundry IQ knowledge base to the HCP", async ({
+    page,
+  }) => {
+    let submittedConfig: Record<string, string> | undefined;
+    const configs: Array<Record<string, unknown>> = [];
+
+    await page.route("**/api/v1/knowledge-base/connections", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          {
+            name: "search-connection",
+            target: "https://search.example.com",
+            is_default: true,
+          },
+        ]),
+      }),
+    );
+    await page.route("**/api/v1/knowledge-base/indexes", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify([
+          {
+            name: "medical-kb",
+            version: "1",
+            type: "foundryIq",
+            description: "Medical knowledge",
+          },
+        ]),
+      }),
+    );
+    await page.route("**/api/v1/knowledge-base/hcp/*/configs", async (route) => {
+      if (route.request().method() === "POST") {
+        submittedConfig = route.request().postDataJSON() as Record<string, string>;
+        configs.push({
+          id: "kb-config-e2e",
+          hcp_profile_id: "hcp-e2e",
+          ...submittedConfig,
+          server_label: "knowledge-base-medical-kb",
+          is_enabled: true,
+          created_at: "2026-07-17T00:00:00Z",
+        });
+        await route.fulfill({
+          status: 201,
+          contentType: "application/json",
+          body: JSON.stringify(configs[0]),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(configs),
+      });
+    });
+
+    await page.reload();
+    await page.waitForSelector("[role='tab']", { timeout: 10000 });
+    await page.getByRole("tab", { name: /voice.*avatar/i }).click();
+    await page.getByText(/knowledge.*tools/i).first().click();
+    await page.getByRole("button", { name: /^add$/i }).click();
+
+    const dialog = page.getByRole("dialog");
+    const selects = dialog.getByRole("combobox");
+    await selects.nth(0).click();
+    await page.getByRole("option", { name: /search-connection/i }).click();
+    await selects.nth(1).click();
+    await page.getByRole("option", { name: "medical-kb" }).click();
+    await dialog.getByRole("button", { name: /^connect$/i }).click();
+
+    await expect(page.getByText("medical-kb").first()).toBeVisible();
+    expect(submittedConfig).toEqual({
+      connection_name: "search-connection",
+      connection_target: "https://search.example.com",
+      index_name: "medical-kb",
+    });
+
+    // No error toast/message should appear for a successful add — regression
+    // guard for Issue #86 (a KB add must not silently surface as an error to
+    // the admin, nor should the request path itself ever need to know about
+    // RemoteTool connection resolution).
+    const errorToast = page.getByText(/failed to add|error adding|could not add/i);
+    await expect(errorToast).toHaveCount(0);
+  });
 });
 
 // ─── Phase 15: Agent Config Center — Additional Gaps ─────────────────────

@@ -179,8 +179,11 @@ class TestBuildSearchTools:
         result = build_search_tools([cfg])
         assert len(result) == 1
         tool_dict = result[0].as_dict()
-        # Without RemoteTool map, project_connection_id should be None
-        # (relies on Portal auto-URL-matching, like Portal v31)
+        # build_search_tools is a pure builder: without a remote_tool_map entry
+        # for this KB, project_connection_id is omitted. It never assumes the
+        # Portal auto-created/auto-matched a RemoteTool connection — callers
+        # must use resolve_kb_remote_tool_connections() upstream to find-or-
+        # create one (see Issue #86), or this indicates an error condition.
         assert tool_dict.get("project_connection_id") is None
 
     def test_missing_kb_in_remote_tool_map_sets_none(self):
@@ -409,6 +412,293 @@ class TestKnowledgeBaseServiceCrud:
             result = await resolve_kb_remote_tool_connections(db_session)
 
         assert result == {"knowledgebase349": "kb-knowledgebase349-m5hlw"}
+
+    @pytest.mark.asyncio
+    async def test_resolve_reuses_metadata_match_without_creating(
+        self, db_session, sample_kb_config
+    ):
+        """An existing metadata match is reused without an ARM create call."""
+        from app.services.knowledge_base_service import resolve_kb_remote_tool_connections
+
+        fake_client = MagicMock()
+        fake_client.connections.list.return_value = [
+            {
+                "type": "RemoteTool",
+                "name": "existing-remote-tool",
+                "target": "https://other.example.com/mcp",
+                "metadata": {"knowledgeBaseName": sample_kb_config.index_name},
+            }
+        ]
+
+        with (
+            patch(
+                "app.services.agent_sync_service.get_project_endpoint",
+                new_callable=AsyncMock,
+                return_value=("https://foundry/api/projects/proj", ""),
+            ),
+            patch(
+                "app.services.agent_sync_service._get_project_client",
+                return_value=fake_client,
+            ),
+            patch(
+                "app.services.knowledge_base_service._create_remote_tool_connection",
+                new_callable=AsyncMock,
+            ) as create_connection,
+        ):
+            result = await resolve_kb_remote_tool_connections(db_session, [sample_kb_config])
+
+        assert result == {sample_kb_config.index_name: "existing-remote-tool"}
+        create_connection.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_resolve_reuses_normalized_target_match(self, db_session, sample_kb_config):
+        """A Portal-created connection without metadata is matched by MCP target."""
+        from app.services.knowledge_base_service import resolve_kb_remote_tool_connections
+
+        fake_client = MagicMock()
+        fake_client.connections.list.return_value = [
+            {
+                "type": "RemoteTool",
+                "name": "portal-remote-tool",
+                "target": (
+                    "HTTPS://SEARCH.EXAMPLE.COM/knowledgebases/medical-index/mcp/"
+                    "?api-version=older-preview"
+                ),
+                "metadata": {},
+            }
+        ]
+
+        with (
+            patch(
+                "app.services.agent_sync_service.get_project_endpoint",
+                new_callable=AsyncMock,
+                return_value=("https://foundry/api/projects/proj", ""),
+            ),
+            patch(
+                "app.services.agent_sync_service._get_project_client",
+                return_value=fake_client,
+            ),
+            patch(
+                "app.services.knowledge_base_service._create_remote_tool_connection",
+                new_callable=AsyncMock,
+            ) as create_connection,
+        ):
+            result = await resolve_kb_remote_tool_connections(db_session, [sample_kb_config])
+
+        assert result == {sample_kb_config.index_name: "portal-remote-tool"}
+        create_connection.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_resolve_creates_missing_connection_once(self, db_session, sample_kb_config):
+        """Duplicate configs for one KB share one newly created RemoteTool."""
+        from app.services.knowledge_base_service import resolve_kb_remote_tool_connections
+
+        duplicate = MagicMock(spec=HcpKnowledgeConfig)
+        duplicate.is_enabled = True
+        duplicate.index_name = sample_kb_config.index_name
+        duplicate.connection_target = sample_kb_config.connection_target
+
+        fake_client = MagicMock()
+        fake_client.connections.list.return_value = []
+
+        with (
+            patch(
+                "app.services.agent_sync_service.get_project_endpoint",
+                new_callable=AsyncMock,
+                return_value=("https://foundry/api/projects/proj", ""),
+            ),
+            patch(
+                "app.services.agent_sync_service._get_project_client",
+                return_value=fake_client,
+            ),
+            patch(
+                "app.services.knowledge_base_service._create_remote_tool_connection",
+                new_callable=AsyncMock,
+                return_value="created-remote-tool",
+            ) as create_connection,
+        ):
+            result = await resolve_kb_remote_tool_connections(
+                db_session, [sample_kb_config, duplicate]
+            )
+
+        assert result == {sample_kb_config.index_name: "created-remote-tool"}
+        create_connection.assert_awaited_once_with(db_session, sample_kb_config)
+
+    @pytest.mark.asyncio
+    async def test_resolve_propagates_connection_creation_failure(
+        self, db_session, sample_kb_config
+    ):
+        """RemoteTool creation failures fail the agent sync path."""
+        from app.services.knowledge_base_service import resolve_kb_remote_tool_connections
+
+        fake_client = MagicMock()
+        fake_client.connections.list.return_value = []
+
+        with (
+            patch(
+                "app.services.agent_sync_service.get_project_endpoint",
+                new_callable=AsyncMock,
+                return_value=("https://foundry/api/projects/proj", ""),
+            ),
+            patch(
+                "app.services.agent_sync_service._get_project_client",
+                return_value=fake_client,
+            ),
+            patch(
+                "app.services.knowledge_base_service._create_remote_tool_connection",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("ARM permission denied"),
+            ),
+            pytest.raises(RuntimeError, match="ARM permission denied"),
+        ):
+            await resolve_kb_remote_tool_connections(db_session, [sample_kb_config])
+
+    @pytest.mark.asyncio
+    async def test_resolve_multiple_kbs_no_duplicate_creation_correct_mapping(
+        self, db_session, sample_hcp
+    ):
+        """Two distinct KBs: one reused, one created; mapping is correct, no dupes."""
+        from app.services.knowledge_base_service import resolve_kb_remote_tool_connections
+
+        existing_cfg = HcpKnowledgeConfig(
+            hcp_profile_id=sample_hcp.id,
+            connection_name="conn-a",
+            connection_target="https://search.example.com",
+            index_name="already-connected-kb",
+            server_label="knowledge-base-already-connected-kb",
+            is_enabled=True,
+        )
+        missing_cfg = HcpKnowledgeConfig(
+            hcp_profile_id=sample_hcp.id,
+            connection_name="conn-b",
+            connection_target="https://search.example.com",
+            index_name="brand-new-kb",
+            server_label="knowledge-base-brand-new-kb",
+            is_enabled=True,
+        )
+        db_session.add_all([existing_cfg, missing_cfg])
+        await db_session.flush()
+
+        fake_client = MagicMock()
+        fake_client.connections.list.return_value = [
+            {
+                "type": "RemoteTool",
+                "name": "existing-remote-tool",
+                "target": "https://search.example.com/knowledgebases/already-connected-kb/mcp",
+                "metadata": {"knowledgeBaseName": "already-connected-kb"},
+            }
+        ]
+
+        with (
+            patch(
+                "app.services.agent_sync_service.get_project_endpoint",
+                new_callable=AsyncMock,
+                return_value=("https://foundry/api/projects/proj", ""),
+            ),
+            patch(
+                "app.services.agent_sync_service._get_project_client",
+                return_value=fake_client,
+            ),
+            patch(
+                "app.services.knowledge_base_service._create_remote_tool_connection",
+                new_callable=AsyncMock,
+                return_value="kb-brand-new-kb-created",
+            ) as create_connection,
+        ):
+            result = await resolve_kb_remote_tool_connections(
+                db_session, [existing_cfg, missing_cfg]
+            )
+
+        assert result == {
+            "already-connected-kb": "existing-remote-tool",
+            "brand-new-kb": "kb-brand-new-kb-created",
+        }
+        create_connection.assert_awaited_once_with(db_session, missing_cfg)
+
+    @pytest.mark.asyncio
+    async def test_trigger_agent_resync_marks_synced_on_success(self, db_session, sample_hcp):
+        """_trigger_agent_resync marks the profile synced when sync succeeds."""
+        from app.services.knowledge_base_service import _trigger_agent_resync
+
+        sample_hcp.agent_sync_status = "none"
+        sample_hcp.agent_id = "existing-agent"
+        await db_session.flush()
+
+        with patch(
+            "app.services.agent_sync_service.sync_agent_for_profile",
+            new_callable=AsyncMock,
+            return_value={"id": "agent-kb-1", "version": "2"},
+        ):
+            await _trigger_agent_resync(db_session, sample_hcp.id)
+
+        await db_session.refresh(sample_hcp)
+        assert sample_hcp.agent_sync_status == "synced"
+        assert sample_hcp.agent_sync_error == ""
+        assert sample_hcp.agent_id == "agent-kb-1"
+
+    @pytest.mark.asyncio
+    async def test_trigger_agent_resync_marks_failed_on_remote_tool_error(
+        self, db_session, sample_hcp
+    ):
+        """A RemoteTool creation/sync failure marks agent_sync_status=failed with a
+        diagnosable error, instead of leaving a stale 'synced' status in place."""
+        from app.services.knowledge_base_service import _trigger_agent_resync
+
+        sample_hcp.agent_sync_status = "synced"
+        sample_hcp.agent_id = "agent-kb-1"
+        await db_session.flush()
+
+        with patch(
+            "app.services.agent_sync_service.sync_agent_for_profile",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("Cannot create RemoteTool connection: ARM permission denied"),
+        ):
+            await _trigger_agent_resync(db_session, sample_hcp.id)
+
+        await db_session.refresh(sample_hcp)
+        assert sample_hcp.agent_sync_status == "failed"
+        assert "ARM permission denied" in sample_hcp.agent_sync_error
+
+    @pytest.mark.asyncio
+    async def test_create_remote_tool_uses_project_identity(self, db_session, sample_kb_config):
+        """ARM creation uses a stable name and project managed identity auth."""
+        from app.services.knowledge_base_service import _create_remote_tool_connection
+
+        response = MagicMock(status_code=201, text="")
+        http = AsyncMock()
+        http.put.return_value = response
+        client_context = AsyncMock()
+        client_context.__aenter__.return_value = http
+
+        with (
+            patch(
+                "app.services.agent_sync_service.get_portal_url_components",
+                new_callable=AsyncMock,
+                return_value={
+                    "subscription_id": "sub-id",
+                    "resource_group": "rg",
+                    "resource_name": "foundry",
+                    "project_name": "project",
+                },
+            ),
+            patch(
+                "app.services.azure_auth.get_bearer_token",
+                new_callable=AsyncMock,
+                return_value="arm-token",
+            ),
+            patch("httpx.AsyncClient", return_value=client_context),
+        ):
+            connection_name = await _create_remote_tool_connection(db_session, sample_kb_config)
+
+        assert connection_name.startswith("kb-medical-index-")
+        _, kwargs = http.put.await_args
+        assert kwargs["json"]["properties"]["category"] == "RemoteTool"
+        assert kwargs["json"]["properties"]["authType"] == "ProjectManagedIdentity"
+        assert kwargs["json"]["properties"]["audience"] == "https://search.azure.com/"
+        assert (
+            kwargs["json"]["properties"]["metadata"]["knowledgeBaseName"]
+            == sample_kb_config.index_name
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -897,6 +1187,37 @@ class TestKbAgentSyncIntegration:
         assert "knowledgebases/omada-product-parameters-kb/mcp" in tool_dict["server_url"]
         assert "ai-search-southeast-asia.search.windows.net" in tool_dict["server_url"]
         assert tool_dict["require_approval"] == "never"
+
+    @pytest.mark.asyncio
+    async def test_sync_agent_for_profile_propagates_kb_resolution_failure(
+        self, db_session, sample_hcp
+    ):
+        """sync_agent_for_profile must NOT swallow RemoteTool resolution/creation
+        failures (Issue #86 regression guard). Previously this was wrapped in a
+        broad try/except that logged a warning and continued, producing an
+        unauthenticated MCPTool that got reported as a "synced" agent. Now the
+        failure must propagate so the caller (hcp_profile_service /
+        _trigger_agent_resync) can mark agent_sync_status="failed"."""
+        from app.services.agent_sync_service import sync_agent_for_profile
+
+        cfg = HcpKnowledgeConfig(
+            hcp_profile_id=sample_hcp.id,
+            connection_name="propagate-conn",
+            connection_target="https://search.propagate.com",
+            index_name="propagate-kb",
+            server_label="knowledge-base-propagate-kb",
+            is_enabled=True,
+        )
+        db_session.add(cfg)
+        await db_session.flush()
+
+        with patch(
+            "app.services.knowledge_base_service.resolve_kb_remote_tool_connections",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("ARM create failed: 403 Forbidden"),
+        ):
+            with pytest.raises(RuntimeError, match="ARM create failed"):
+                await sync_agent_for_profile(db_session, sample_hcp, prefetched_model="gpt-4o")
 
     @pytest.mark.asyncio
     @patch("app.services.knowledge_base_service._trigger_agent_resync", new_callable=AsyncMock)
