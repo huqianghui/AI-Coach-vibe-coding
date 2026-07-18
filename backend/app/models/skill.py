@@ -50,6 +50,12 @@ class Skill(Base, TimestampMixin):
     conversion_error: Mapped[str] = mapped_column(Text, default="")
     conversion_job_id: Mapped[str | None] = mapped_column(String(36), default=None)
 
+    # Foundry Skill sync (Phase 28: D-01, D-03, D-06)
+    foundry_skill_name: Mapped[str] = mapped_column(String(64), default="")
+    foundry_sync_status: Mapped[str] = mapped_column(String(20), default="none")  # none|pending|synced|failed
+    foundry_sync_error: Mapped[str] = mapped_column(Text, default="")
+    foundry_cloud_version: Mapped[str] = mapped_column(String(20), default="")
+
     # Relationships
     versions = relationship(
         "SkillVersion",
