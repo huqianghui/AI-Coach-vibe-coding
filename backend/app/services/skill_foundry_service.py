@@ -198,7 +198,21 @@ async def delete_skill_from_foundry(db: AsyncSession, skill: Skill) -> None:
                 "delete_skill_from_foundry: skill %s already gone from Foundry (404)", skill.id
             )
         else:
-            logger.warning("delete_skill_from_foundry failed for skill %s: %s", skill.id, e)
+            # WR-03: non-404 failure (network blip, throttling, auth hiccup) means the
+            # Foundry-side entity may still exist after this call. The local record is
+            # reset below regardless (no retry route exists once a skill is archived --
+            # /foundry-sync is restricted to status == "published"), so this MUST be
+            # ERROR-level (not WARNING) to be visible in alerting/monitoring: it is the
+            # only remaining signal that a cloud entity may now be orphaned with no
+            # local reference to it.
+            logger.error(
+                "delete_skill_from_foundry: non-404 failure for skill %s (foundry_skill_name=%s) "
+                "-- local Foundry tracking fields will be reset regardless, cloud entity may be "
+                "orphaned: %s",
+                skill.id,
+                skill.foundry_skill_name,
+                e,
+            )
     finally:
         skill.foundry_skill_name = ""
         skill.foundry_cloud_version = ""
