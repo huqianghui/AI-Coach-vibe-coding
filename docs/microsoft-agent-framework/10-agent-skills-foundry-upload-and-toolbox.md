@@ -13,10 +13,11 @@
 4. **Agent 消费 Toolbox 内 Skill = 未验证（被上游 Toolbox 挂载阻塞，SKIP）**
 5. **本地校验（frontmatter 规则、ZIP 打包结构）= 100% 通过** — SKILL.md 命名规则、长度限制、ZIP 根目录布局均符合 doc 08 §3.3 规范
 6. **清理 = 无需清理** — 由于没有任何云端资源被成功创建，`cleanup()` 空跑（no-op），未在 Foundry 项目留下任何遗留资源
+7. **重要修正（见第 11 节）**：以上结论仅适用于本节讨论的 Agents API 路径（`project.beta.skills`）。第二条独立路径 —— Responses API 路径（`openai/v1`, `client.skills`）—— 在同一 Foundry 资源上，Skill 上传与版本管理经 Entra ID 认证**实测可行**，并非"Skills API 全面被阻塞"。
 
 ## 1. 概述
 
-本文档覆盖 Azure AI Foundry 的 **Skills REST/SDK API**（`project.beta.skills` / `project.beta.toolboxes`，云端 Skill 注册与 Toolbox 挂载）实测结果。
+本文档覆盖 Azure AI Foundry 的 **Skills REST/SDK API**（`project.beta.skills` / `project.beta.toolboxes`，云端 Skill 注册与 Toolbox 挂载）实测结果。第 3-10 节为 **Agents API 路径**的实测结果；第 11 节记录了一条独立的第二路径 —— **Responses API 路径**（`openai/v1`, `client.skills`）—— 并给出两条路径的对比结论。
 
 **本文档不重复 doc 08 的 SKILL.md 格式规范和渐进式加载章节**，doc 08 讲的是 SKILL.md 文件格式本身以及 `agent_framework` 库的本地 `SkillsProvider`（本地加载 Skill 内容，不涉及云端上传）。本文档只讲：把一个符合 doc 08 格式的 Skill **上传到 Azure AI Foundry 云端**、把它**版本化管理**、把它**挂载到 Toolbox**、以及 **Agent 如何消费挂载了 Skill 的 Toolbox** —— 这是一条与 doc 08 完全不同、此前项目内从未实测过的 API 路径。
 
@@ -164,3 +165,164 @@ Exit code: 1
 ```
 
 无任何测试资源遗留在 Foundry 项目中（`_created_skills`/`_created_toolboxes`/`_created_agents` 均为空，`cleanup()` 空跑）。
+
+## 11. Responses API 路径（openai/v1）
+
+> 本节基于 `docs/microsoft-agent-framework/tests/test_skill_responses_api.py` 的真实运行结果编写。
+> 运行环境：`openai==2.29.0`（`backend/.venv` 已安装），Foundry 资源 `ai-foundary-hu-sweden-central2`，项目 `avarda-demo-prj`，部署模型 `gpt-4o-mini`。
+> 运行命令：`cd backend && .venv/bin/python3 ../docs/microsoft-agent-framework/tests/test_skill_responses_api.py`
+> 同样遵循本项目"结论以实测为准"的文档传统 —— 本节每一条"实测结果"均为脚本实际输出，无任何假设或推测。
+
+### 11.1 概述与端点差异
+
+本节记录的是一条与上文第 3-10 节**完全不同、独立的第二个 Skills API 表面**：Azure OpenAI **Responses API** 的 skills 支持（源自 https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/skills ），与上文的 Agents API（`azure-ai-projects`，`project.beta.skills`/`project.beta.toolboxes`）路径在 SDK、端点、资源形状上均不相同：
+
+| 维度 | 上文 Agents API 路径（第 3-10 节） | 本节 Responses API 路径 |
+|------|------------------------------------|--------------------------|
+| SDK 包 | `azure-ai-projects` | 纯 `openai`（不使用 `azure-ai-projects`） |
+| 端点形式 | `{ENDPOINT}/api/projects/{project}` | `{ENDPOINT}/openai/v1/` |
+| Skill 资源 | `client.beta.skills` | `client.skills`（无 `beta` 前缀） |
+| 挂载目标 | Toolbox（`project.beta.toolboxes`） | Responses API 的 shell 工具 `container_auto` |
+
+用途上，Agents API 路径的 Skill 是为 Agent Toolbox 消费设计的；本节的 Responses API 路径的 Skill 是为 `responses.create()` 请求中的 **shell 工具沙箱环境**（`container_auto`）提供可用技能文件，属于两条完全独立的产品能力线，不能相互替代对方已实测的结论。
+
+### 11.2 SDK/客户端构造
+
+```python
+from openai import OpenAI
+
+endpoint = os.getenv("AZURE_FOUNDRY_ENDPOINT", "").rstrip("/")
+base_url = f"{endpoint}/openai/v1/"
+
+# Attempt 1: API Key 作为 bearer-style api_key
+client = OpenAI(base_url=base_url, api_key=API_KEY)
+
+# Fallback（仅当 Attempt 1 遇到 401/403 时才尝试）：Entra ID
+from azure.identity import DefaultAzureCredential
+
+token = DefaultAzureCredential().get_token("https://ai.azure.com/.default").token
+client_entra = OpenAI(base_url=base_url, api_key=token)
+```
+
+### 11.3 SDK Surface 发现实测结果
+
+| 检查项 | 实测结果 |
+|--------|----------|
+| `openai.__version__` | `2.29.0` |
+| `client.skills` 存在 | **PASS** |
+| `client.skills.versions` 存在 | **PASS** |
+| `client.skills.content` 存在 | **PASS** |
+| `client.containers` 存在 | **PASS** |
+| `client.containers.create()` 含 `skills` kwarg | **PASS** |
+
+本地 SDK 层面确认所有预期资源均已暴露，因此后续网络实测具备意义。
+
+### 11.4 Skill 上传实测结果
+
+| 操作 | 预期 | 实测结果 | 说明 |
+|------|------|----------|------|
+| `client.skills.create(files=("mr-training-creator.zip", zip_bytes, "application/zip"))`（API Key 认证） | 创建成功，返回 `Skill`（`id`/`default_version`/`latest_version`） | **FAIL** — `403 AuthenticationTypeDisabled` | `{"error":{"code":"AuthenticationTypeDisabled","message":"Key based authentication is disabled for this resource."}}` |
+| 同一调用，改用 `DefaultAzureCredential`（Entra ID） | 若 API Key 被拒绝，Entra ID 应可作为标准认证方式生效 | **PASS** | `Skill created: id=skill_6a5ac5436eb08190af323aba375ba68e01c5a41f271b146c, default_version=1, latest_version=1` |
+
+**关键发现**：与第 8 节记录的 Agents API 路径（`beta.skills`）不同 —— 那里 Entra ID 兜底同样失败（`405 Method Not Allowed`）—— 本节 Responses API 路径的 Entra ID 兜底**实测成功**。API Key 在两条路径上都被同一资源级策略（`AuthenticationTypeDisabled`）拒绝，但 Entra ID 只在 Responses API 路径上被接受。
+
+### 11.5 版本管理实测结果
+
+| 时点 | `default_version` | `latest_version` |
+|------|--------------------|--------------------|
+| 上传第二个版本前 | `1` | `1` |
+| `client.skills.versions.create(skill_id, files=...)` 上传第二个版本后 | `1` | `2` |
+
+`latest_version` 在第二次上传后从 `1` 递增为 `2` —— **PASS**。`default_version` 保持为 `1`（未随之改变，符合预期，因为调用时未传 `default=True`）。
+
+### 11.6 Shell 工具挂载（container_auto + skill_reference）实测结果
+
+```python
+tools = [{
+    "type": "shell",
+    "environment": {
+        "type": "container_auto",
+        "skills": [{"type": "skill_reference", "skill_id": skill_id}],
+    },
+}]
+client.responses.create(model="gpt-4o-mini", tools=tools, input="...")
+```
+
+**实测结果：FAIL — `400 invalid_request_error`**
+
+```json
+{
+  "error": {
+    "message": "Tool 'shell' is not supported with gpt-4o-mini-2024-07-18.",
+    "type": "invalid_request_error",
+    "param": "tools",
+    "code": null
+  }
+}
+```
+
+这是一个**模型部署层面的限制，而非 API/认证层面的限制** —— 请求本身被正确路由和鉴权（未出现 401/403/404），只是被拒绝的原因是当前部署的 `gpt-4o-mini` 不在支持 `shell` 工具的模型白名单内。是否有其他部署的模型（例如更新的 `gpt-4.1`/`o` 系列）支持该工具，本次实测未覆盖，留待后续验证。
+
+### 11.7 Inline base64 ZIP Skill 实测结果
+
+```python
+client.containers.create(
+    name="mr-training-creator-inline-poc",
+    skills=[{
+        "type": "inline",
+        "name": "mr-training-creator",       # 必须与 ZIP 内 SKILL.md frontmatter 一致
+        "description": "...",                 # 同上
+        "source": {"type": "base64", "media_type": "application/zip", "data": b64_data},
+    }],
+)
+```
+
+**实测结果：FAIL — `400 invalid_request_error`**
+
+```json
+{
+  "error": {
+    "message": "Inline skill name/description must match the values in SKILL.md/Skills.md front matter.",
+    "type": "invalid_request_error",
+    "param": null,
+    "code": null
+  }
+}
+```
+
+**根因排查**（同一真实 Azure 资源上的补充实测，非正式测试用例计数）：即使 `name`/`description` 逐字取自解析后的 frontmatter 传入，该错误仍**原样复现**；进一步测试发现，无论传入什么 `name`/`description` 值，错误信息都完全相同——这表明问题不在于传入值与 frontmatter 不匹配，而在于服务端**未能从 ZIP 内的 `SKILL.md` 中解析出任何 frontmatter 值**。使用一个仅含单行纯量 `description:`（而非本项目 `mr-training-creator/SKILL.md` 使用的 YAML 折叠块标量 `description: >-`）的最小 SKILL.md 重新测试，**立即成功**（`containers.create()` 返回有效 `container.id`）。
+
+**结论**：该 400 错误是**服务端 SKILL.md-in-ZIP frontmatter 解析器不支持 YAML 折叠块标量（`>-`）语法**导致的，而不是认证或 SDK 层面的问题。同一份 ZIP 结构布局（单一顶层文件夹）本身是被接受的——单独测试根目录布局（无顶层文件夹）会被明确拒绝为 `"All files must be under a single top-level directory"`，证明服务端确实先做了 ZIP 结构校验后才尝试解析 frontmatter。
+
+### 11.8 限制表
+
+| 限制项 | 数值 |
+|--------|------|
+| ZIP 总大小 | ≤ 50MB |
+| ZIP 内文件数 | ≤ 500 |
+| 单文件解压后大小 | ≤ 25MB |
+| SKILL.md 数量 | 必须恰好包含一个 |
+| ZIP 顶层结构 | **必须为单一顶层文件夹**（如 `mr-training-creator/SKILL.md`），与上文第 4 节 Agents API 路径要求的 **ZIP 根目录布局**（`SKILL.md` 直接位于 ZIP 根，无顶层文件夹）**完全相反** —— 两条路径的 ZIP 打包逻辑不可复用，混用会导致 `"All files must be under a single top-level directory"`（本节）或潜在的路径识别问题（Agents API 路径）。 |
+| Inline skill frontmatter 解析 | **实测发现限制**：不支持 YAML 折叠块标量（`description: >-`）描述字段，见 11.7 |
+
+### 11.9 两条路径对比表
+
+| 维度 | Agents API 路径（`project.beta.skills` / `project.beta.toolboxes`） | Responses API 路径（`openai/v1`，`client.skills`） |
+|------|----------------------------------------------------------------------|-------------------------------------------------------|
+| SDK 包 | `azure-ai-projects` | 纯 `openai` |
+| 端点形式 | `{ENDPOINT}/api/projects/{project}` | `{ENDPOINT}/openai/v1/` |
+| 认证结果（本项目资源实测） | API Key **403** `AuthenticationTypeDisabled`；Entra ID **405** `Method Not Allowed`（均失败） | API Key **403** `AuthenticationTypeDisabled`（失败）；Entra ID **成功** |
+| Skill 上传方式 | `skills.create()`（inline）/ `skills.create_from_package()`（ZIP，根目录布局） | `skills.create(files=...)`（ZIP，单一顶层文件夹布局） |
+| 挂载目标 | Toolbox（`skill_reference`），供 Agent 消费 | Responses `shell` 工具的 `container_auto` 环境（`skill_reference`），或 `containers.create()` 的 inline base64 skill |
+| 版本管理支持情况 | 未验证（被上传认证阻塞，SKIP） | **已验证可用** —— `skills.versions.create()` 成功，`latest_version` 从 1 递增到 2 |
+| 是否已被本项目验证可用 | **否** —— 两种认证方式均被拒绝，Skill 上传本身未能成功 | **部分可用** —— Skill 上传/版本管理经 Entra ID 认证已验证可用；Shell 工具挂载受当前部署模型限制（`gpt-4o-mini` 不支持 `shell` 工具）；Inline base64 skill 受服务端 YAML 折叠块标量解析限制 |
+
+### 11.10 结论
+
+在 `avarda-demo-prj`（`ai-foundary-hu-sweden-central2` 资源）上，**Responses API 路径（`openai/v1`, `client.skills`）是 Agents API 路径（`project.beta.skills`）被完全阻塞后的一条可行替代路径，但并非无条件可行**：
+
+1. **Skill 上传与版本管理已被证实可行** —— 通过 Entra ID（`DefaultAzureCredential`）认证，`client.skills.create()` 和 `client.skills.versions.create()` 均实测成功，这与 Agents API 路径下 Entra ID 同样被拒绝（405）的结论**不同**，说明该资源上"Key 认证被禁用"这一策略并未同等地阻断所有 Skills 相关端点。
+2. **Shell 工具挂载暂无法验证是否真正可用** —— 卡在当前部署的 `gpt-4o-mini` 模型不支持 `shell` 工具这一模型层限制，而非 API/认证限制；需要更换支持 `shell` 工具的模型部署后才能进一步验证 `container_auto` + `skill_reference` 的实际挂载效果。
+3. **Inline base64 skill 暂不可用于本项目现有的 `mr-training-creator/SKILL.md`** —— 该文件使用的 YAML 折叠块标量描述字段未被服务端正确解析；若要使用这条子路径，需要将 SKILL.md 的 `description` 字段改为单行纯量或明确验证其他 YAML 标量风格的兼容性（本次实测未覆盖全部 YAML 标量风格组合）。
+
+综合来看，"Skills API 在本资源上完全被阻塞"这一此前基于 Agents API 路径单独得出的结论**需要修正**——它仅适用于 Agents API 路径；Responses API 路径下 Skill 的创建与版本管理是可行的，只是消费侧（shell 工具挂载、inline skill）还各自受到独立的、非认证性质的限制。
