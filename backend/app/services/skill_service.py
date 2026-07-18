@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.skill import VALID_TRANSITIONS, Skill, SkillVersion
 from app.schemas.skill import SkillCreate, SkillUpdate
+from app.services import skill_foundry_service
 from app.utils.exceptions import bad_request, not_found
 
 # ---------------------------------------------------------------------------
@@ -227,6 +228,9 @@ async def delete_skill(db: AsyncSession, skill_id: str) -> None:
     if skill.status not in {"draft", "failed"}:
         bad_request("Cannot delete a skill that is under review, published, or archived")
 
+    # Defensive: covers a skill that was synced then reverted to draft/failed.
+    await skill_foundry_service.delete_skill_from_foundry(db, skill)
+
     # Delete associated resource files from storage
     from app.services.storage import get_storage
 
@@ -250,6 +254,9 @@ async def publish_skill(db: AsyncSession, skill_id: str, user_id: str) -> Skill:
     """Publish a skill: enforce quality gates, create published version snapshot."""
     skill = await get_skill(db, skill_id)
 
+    # Deliberate (WARNING-2): idempotent re-publish does not re-trigger
+    # Foundry sync. Retry a failed/pending sync via POST /{id}/foundry-sync (Plan 28-03,
+    # restricted to published-status skills only per MEDIUM-5).
     # Idempotent: if already published, return as-is
     if skill.status == "published":
         return skill
@@ -305,6 +312,19 @@ async def publish_skill(db: AsyncSession, skill_id: str, user_id: str) -> Skill:
         .options(selectinload(Skill.versions), selectinload(Skill.resources))
         .where(Skill.id == skill_id)
     )
+    skill = result.scalar_one()
+
+    # D-01: register the newly-published skill as a first-class Foundry entity.
+    # Never blocks/fails the local publish (D-06) -- sync_skill_to_foundry has
+    # its own internal try/except and never raises.
+    await skill_foundry_service.sync_skill_to_foundry(db, skill)
+
+    # Re-query once more so the returned object reflects the updated foundry_* columns.
+    result = await db.execute(
+        select(Skill)
+        .options(selectinload(Skill.versions), selectinload(Skill.resources))
+        .where(Skill.id == skill_id)
+    )
     return result.scalar_one()
 
 
@@ -346,6 +366,9 @@ async def archive_skill(db: AsyncSession, skill_id: str, user_id: str) -> Skill:
     skill.status = "archived"
     skill.updated_by = user_id
     await db.flush()
+
+    # D-03: remove the Foundry cloud entity when a skill is archived.
+    await skill_foundry_service.delete_skill_from_foundry(db, skill)
 
     # Re-query with relationships
     result = await db.execute(
