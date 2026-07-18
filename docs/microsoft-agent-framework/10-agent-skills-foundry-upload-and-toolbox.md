@@ -14,6 +14,7 @@
 5. **本地校验（frontmatter 规则、ZIP 打包结构）= 100% 通过** — SKILL.md 命名规则、长度限制、ZIP 根目录布局均符合 doc 08 §3.3 规范
 6. **清理 = 无需清理** — 由于没有任何云端资源被成功创建，`cleanup()` 空跑（no-op），未在 Foundry 项目留下任何遗留资源
 7. **重要修正（见第 11 节）**：以上结论仅适用于本节讨论的 Agents API 路径（`project.beta.skills`）。第二条独立路径 —— Responses API 路径（`openai/v1`, `client.skills`）—— 在同一 Foundry 资源上，Skill 上传与版本管理经 Entra ID 认证**实测可行**，并非"Skills API 全面被阻塞"。
+8. **进一步修正（见第 12 节）**：第 1-4 条结论本身也已被推翻——405 的真正根因是缺失 `Foundry-Features: Skills=V1Preview` 预览头，而非 Entra ID 权限/RBAC 缺失。升级 `azure-ai-projects` 到 `>=2.3.0` 并附加该头后，Entra ID 认证下 Skill inline/ZIP 上传、get/list/download、Toolbox `skill_reference` 挂载、Agent 真实消费 Skill 内容**均实测可行**；唯一仍未打通的是 MCP 端点发现（真实 405 Method Not Allowed，确认为 API 形状缺口，非脚本 bug）。
 
 ## 1. 概述
 
@@ -326,3 +327,129 @@ client.containers.create(
 3. **Inline base64 skill 暂不可用于本项目现有的 `mr-training-creator/SKILL.md`** —— 该文件使用的 YAML 折叠块标量描述字段未被服务端正确解析；若要使用这条子路径，需要将 SKILL.md 的 `description` 字段改为单行纯量或明确验证其他 YAML 标量风格的兼容性（本次实测未覆盖全部 YAML 标量风格组合）。
 
 综合来看，"Skills API 在本资源上完全被阻塞"这一此前基于 Agents API 路径单独得出的结论**需要修正**——它仅适用于 Agents API 路径；Responses API 路径下 Skill 的创建与版本管理是可行的，只是消费侧（shell 工具挂载、inline skill）还各自受到独立的、非认证性质的限制。
+
+## 12. Agents API 路径修复后实测（Foundry-Features 预览头 + Entra ID）
+
+> 本节基于修复后的 `docs/microsoft-agent-framework/tests/test_skill_foundry_upload.py`（quick task 260718-cy6）的真实运行结果编写。
+> 运行环境：`azure-ai-projects==2.3.0`（从 2.1.0 升级，`backend/.venv` 已安装），Foundry 资源 `ai-foundary-hu-sweden-central2`，项目 `avarda-demo-prj`，部署模型 `gpt-4o-mini`。
+> 运行命令：`cd backend && .venv/bin/python3 ../docs/microsoft-agent-framework/tests/test_skill_foundry_upload.py`（脚本路径不变，SDK 已升级）
+> 同样遵循本项目"结论以实测为准"的文档传统 —— 本节每一条"实测结果"均为脚本实际输出，无任何假设或推测。
+
+### 12.1 核心假设与根因
+
+第 3-10 节记录的 405 `Method Not Allowed`（Entra ID 兜底失败）此前被记录为"未进一步排查是权限/RBAC 缺失还是该预览端点在 Entra ID 模式下的请求路径/方法不匹配"。本次修复验证的假设是：**该 405 是缺失必需的 `Foundry-Features: Skills=V1Preview` 预览头导致的，而非真正的认证拒绝**。
+
+补充发现（通过对已升级到 2.3.0 的 SDK 做 `azure.ai.projects.operations._patch` 源码内省得出）：**`azure-ai-projects` 2.3.0 的 `BetaOperations.__init__` 会为 `beta.skills` 等每一个 beta 子操作自动注入对应的 `Foundry-Features` 头**（通过内部 `_OperationMethodHeaderProxy` 包装类，驱动数据来自 `_BETA_OPERATION_FEATURE_HEADERS` 字典，`"skills"` 对应值为 `"Skills=V1Preview"`）。这意味着仅靠升级 SDK 版本本身即可自动获得该头；本次脚本仍额外在每次调用上手动附加该头（双重覆盖），以便在假设验证阶段明确排除"是否是头缺失"这一变量。
+
+假设验证结果（Test 3 实测）：**CONFIRMED** —— 升级 SDK + Entra ID + Foundry-Features 头后，此前的 405 完全消失，inline Skill 创建成功。
+
+### 12.2 SDK 版本差异（2.1.0 -> 2.3.0，实测/内省确认）
+
+| 差异点 | 2.1.0（第 3-10 节使用） | 2.3.0（本节实测使用） |
+|--------|--------------------------|--------------------------|
+| Skill ZIP 上传方法 | `skills.create_from_package(body=zip_bytes)` | `create_from_package` 已移除；改为 `skills.create_from_files(name, CreateSkillVersionFromFilesBody(files=[...]))` |
+| Skill inline 创建 | 直接 `description`/`instructions` kwargs | 需通过 `inline_content=SkillInlineContent(description=..., instructions=..., metadata=...)` |
+| Toolboxes 挂载位置 | `client.beta.toolboxes` | 顶层 `client.toolboxes`（不再在 `beta` 下） |
+| Toolbox 挂载 Skill 方式 | 无 typed kwarg，仅能用 raw dict body | `toolboxes.create_version(..., skills=[ToolboxSkillReference(name=...)])` typed kwarg 已存在 |
+| Foundry-Features 头 | 需手动附加 | `BetaOperations` 自动为 `beta.*` 调用注入（`toolboxes` 因已移出 `beta`，不再自动注入，需手动附加） |
+
+### 12.3 Inline 上传（Test 3）实测结果
+
+| 操作 | 预期 | 实测结果 | 说明 |
+|------|------|----------|------|
+| API Key 认证快速重新确认（`beta.skills.get()`） | 仍应被拒绝（无新变化） | **确认仍被拒绝** — `403 AuthenticationTypeDisabled`：`Key based authentication is disabled for this resource.` | 与第 8 节结论一致，本次未深入排查 |
+| `client.beta.skills.create(name="mr-training-creator-inline-poc", inline_content=SkillInlineContent(...), headers={"Foundry-Features": "Skills=V1Preview"})`（Entra ID） | 创建成功 | **PASS** | `name=mr-training-creator-inline-poc, fields=['id', 'skill_id', 'name', 'version', 'description', 'created_at', 'object']` |
+
+**假设验证结果：CONFIRMED** —— 此前的 405 `Method Not Allowed` 消失，Entra ID + Foundry-Features 头组合下 inline Skill 创建成功。
+
+### 12.4 ZIP 包上传（Test 4，`create_from_files`）实测结果
+
+| 操作 | 预期 | 实测结果 | 说明 |
+|------|------|----------|------|
+| `client.beta.skills.create_from_files("mr-training-creator", CreateSkillVersionFromFilesBody(files=[("mr-training-creator.zip", zip_bytes, "application/zip")]))`（Entra ID + Foundry-Features 头，使用原始含 YAML 折叠块标量 `description: >-` 的真实 SKILL.md） | 创建成功 | **PASS**（首次尝试即成功，未触发 A/B 单行 description 回退） | `name=mr-training-creator, fields=['id', 'skill_id', 'name', 'version', 'description', 'created_at', 'object']` |
+
+**重要发现**：与第 11.7 节记录的 Responses API 路径不同 —— 那里同样的 YAML 折叠块标量 `description: >-` 会导致服务端 frontmatter 解析失败（`400 invalid_request_error`）—— 本节 Agents API 路径的 ZIP 上传对同一份真实 `mr-training-creator/SKILL.md`（含 `description: >-`）**未复现该问题，首次尝试即成功**，因此脚本设计的单行 description A/B 回退分支**未被触发**。这表明两条独立路径各自的 SKILL.md-in-ZIP frontmatter 解析器实现不同，Responses API 路径的折叠块标量限制**不能类推到** Agents API 路径。
+
+### 12.5 Get / List / Download 往返实测（Test 5）
+
+| 操作 | 实测结果 |
+|------|----------|
+| `skills.list(limit=50)` | **PASS** — 返回 3 个 Skill（含本次创建的 2 个 + 之前遗留的其他 Skill） |
+| `skills.get('mr-training-creator-inline-poc')` | **PASS** — `name=mr-training-creator-inline-poc` |
+| `list()` 包含 `'mr-training-creator-inline-poc'` | **PASS** |
+| `skills.download('mr-training-creator-inline-poc')` | **PASS** — 978 字节，`SKILL.md` 存在，frontmatter `name` 一致 |
+| `skills.get('mr-training-creator')` | **PASS** — `name=mr-training-creator` |
+| `list()` 包含 `'mr-training-creator'` | **PASS** |
+| `skills.download('mr-training-creator')` | **PASS** — 4473 字节，`SKILL.md` 存在，frontmatter `name` 一致 |
+
+### 12.6 Toolbox Version + Skill 挂载实测（Test 6）
+
+| 操作 | 预期 | 实测结果 | 说明 |
+|------|------|----------|------|
+| 定位 `toolboxes` 操作面 | 确认在 2.3.0 中的实际位置 | **`client.toolboxes`（顶层，非 `client.beta.toolboxes`）** | 与第 12.2 节 SDK 差异表一致 |
+| `toolboxes.create_version(name=..., tools=[], skills=[ToolboxSkillReference(name="mr-training-creator")])`（typed kwarg，Foundry-Features 头手动附加） | 创建成功 | **PASS**（typed kwarg 一次性成功，未触发 raw dict 回退） | `name=mr-training-toolbox-poc, version=1` |
+| `create_version()` 响应体是否含 `skills` 字段 | 应回显 | **PASS** — `[{'type': 'skill_reference', 'name': 'mr-training-creator'}]` |
+| `toolboxes.get_version(name, version)` 是否回显 `skills` 字段 | 应回显 | **PASS** — 同上 |
+
+**重要修正**：第 6 节记录的"`toolboxes.create_version()` 没有 typed 的 `skills` kwarg，仅能用 raw dict body"这一结论**已被 2.3.0 版本推翻** —— 该版本的签名中已存在 `skills: Optional[list[ToolboxSkill]]` typed kwarg，本次实测直接用 typed `ToolboxSkillReference(name=...)` 一次性成功挂载。
+
+### 12.7 MCP 端点发现实测（Test 7）
+
+| 步骤 | 实测结果 |
+|------|----------|
+| 检查 `ToolboxVersionObject.as_dict()` 字段是否含 endpoint/url/mcp 相关字段 | **未找到** — 完整字段列表：`['metadata', 'id', 'name', 'version', 'description', 'created_at', 'tools', 'skills', 'object']` |
+| `GET {PROJECT_ENDPOINT}/toolboxes/{name}/mcp`（无 `api-version` 参数） | `400 BadRequest` — `"Missing required query parameter: api-version"` |
+| 同上，附加 `api-version=v1`（从 SDK `client._config.api_version` 内省得出） | `405 Method Not Allowed`（空响应体） |
+| `GET {PROJECT_ENDPOINT}/toolboxes/{name}/versions/{version}/mcp?api-version=v1` | `405 Method Not Allowed`（空响应体） |
+
+**结果：FAIL（真实的、非脚本 bug 的发现）** —— 两个约定路径在补上必需的 `api-version` 查询参数后均返回 `405 Method Not Allowed`（空响应体），说明该路由前缀在服务端确实存在（否则应为 404），但 `GET .../mcp`（无论是否带版本号段）并非该资源/SDK 版本上正确的 MCP 端点访问方式。本次实测未能进一步确定正确的 MCP 端点形状（可能需要 `POST`、不同路径段、或该功能在本资源上尚未对外暴露）——按计划要求"不发明或软化结果"，此项保留为真实的 FAIL，而非编造一个"成功"的端点。
+
+### 12.8 Agent 消费 Skill 内容验收测试实测（Test 8）
+
+| 步骤 | 实测结果 |
+|------|----------|
+| 从 Azure 下载真实 Skill 内容（`skills.download('mr-training-creator')`，因 Test 7 MCP 路径未打通，走直接下载分支） | **PASS** — 1467 字符 |
+| `client.agents.create_version(agent_name="poc-toolbox-consumer-agent", definition=PromptAgentDefinition(model="gpt-4o-mini", instructions=f"...{skill_markdown_body}"))` | **PASS** — `name=poc-toolbox-consumer-agent, version=1` |
+| `client.get_openai_client().responses.create(..., extra_body={"agent_reference": {...}})` 真实调用一次 | **PASS** |
+| 真实回复文本 | `"I am a Skill Creator agent for the AI Coach MR Training platform, responsible for analyzing medical representative training materials to create structured coaching skills that enhance product knowledge and communication effectiveness."` |
+| 回复文本是否体现 Skill 内容（检测关键词：`mr training`/`skill creator`/`training skill`/`medical representative`） | **PASS** — 命中 `"skill creator"` / `"medical representative"` |
+
+这是本次修复带来的**关键新增证据**：不仅 Skill 上传、Toolbox 挂载在 API 层面成功，Agent 在真实一次调用中确实读取并复述了从 Azure 下载的真实 Skill 内容 —— 证明 Skill 内容确实"到达"了模型，而不仅仅是 API 调用返回了 200。
+
+### 12.9 清理实测结果
+
+| 步骤 | 实测结果 |
+|------|----------|
+| `client.agents.delete(agent_name="poc-toolbox-consumer-agent")` | **PASS** |
+| `toolboxes.delete_version("mr-training-toolbox-poc", 1)` | **PASS** |
+| `toolboxes.delete("mr-training-toolbox-poc")`（紧接上一步之后） | **`404 not_found`** —— `Toolbox 'mr-training-toolbox-poc' not found` |
+| `skills.delete("mr-training-creator-inline-poc")` | **PASS** |
+| `skills.delete("mr-training-creator")` | **PASS** |
+
+**真实发现**：在该资源上，删除 Toolbox 的唯一版本后，Toolbox 本身似乎已被级联删除 —— 紧随其后的 `toolboxes.delete()` 返回 `404 not_found`。脚本已更新为将此情况识别为"已被级联删除"（非清理失败）而非误报为 FAIL。**最终验证**：运行结束后对 `avarda-demo-prj` 做 `skills.list()` / `toolboxes.list()` / `agents.list()` 全量检查，未发现任何本次运行创建的 POC 资源残留。
+
+### 12.10 完整终端输出摘要（最终修复后运行）
+
+```
+Test 1: Validate Skill Frontmatter                  [PASS]
+Test 2: Package Skill as ZIP                        [PASS]
+Test 3: Foundry-Features Hypothesis + Inline Upload  [PASS]  405 消失，Entra ID + 头 生效
+Test 4: ZIP Upload (create_from_files)               [PASS]  首次尝试成功，未触发 A/B 回退
+Test 5: Get/List/Download Roundtrip                  [PASS]
+Test 6: Toolbox Version + Skill Mount                [PASS]  typed skills kwarg 一次性成功
+Test 7: MCP Endpoint Discovery                       [FAIL]  405 Method Not Allowed（真实 API 形状缺口，非脚本 bug）
+Test 8: Agent Consumes Skill (Acceptance)            [PASS]  真实回复文本证实 Skill 内容到达模型
+
+Total: 7 passed, 1 failed, 0 skipped
+Exit code: 1（因 Test 7 FAIL）
+```
+
+清理后校验：`skills.list()`/`toolboxes.list()`/`agents.list()` 均确认无本次运行创建的资源残留。
+
+### 12.11 结论
+
+1. **第 3-10 节记录的"Skills inline/ZIP 上传、Toolbox 挂载、Agent 消费 Toolbox 均不可行"结论已被本次修复推翻，仅适用于旧的 `azure-ai-projects==2.1.0` + 缺失 Foundry-Features 头组合**。真正的根因是缺失预览头，而不是 Entra ID 权限/RBAC 缺失，也不是该功能在本资源上被禁用。
+2. **升级到 `azure-ai-projects>=2.3.0` 并使用 Entra ID 认证后，Skill inline/ZIP 上传、get/list/download、Toolbox `skill_reference` 挂载、Agent 真实消费 Skill 内容均实测可行**，形成了一条完整、端到端可用的 Agents API 路径。
+3. **与 Responses API 路径（第 11 节）的关键差异**：Agents API 路径下相同的、含 YAML 折叠块标量 `description: >-` 的真实 `mr-training-creator/SKILL.md` 在 ZIP 上传时**未复现** Responses API 路径记录的 frontmatter 解析 bug —— 说明两条路径的服务端实现是独立的，其中一条路径的已知限制不能类推到另一条。
+4. **唯一仍未打通的环节是 MCP 端点发现**（Test 7）——本次实测确认存在某个与 `.../mcp` 路径前缀相关的路由（因为返回了 400 参数缺失提示，而非 404），但补上 `api-version` 参数后返回 405，说明访问方式（HTTP 方法或路径形状）仍不正确，且本次实测未能进一步确定正确形状。这不影响 Agent 消费 Skill 内容的可行性，因为 Test 8 证实了通过直接 `skills.download()` 拿到 Skill 内容并拼入 Agent instructions 是一条实测可行的替代路径。
+5. **`backend/pyproject.toml` 的 `azure-ai-projects` 版本约束已更新为 `>=2.3.0`**，以匹配本次实测使用的、且已验证可用的 SDK 版本。
