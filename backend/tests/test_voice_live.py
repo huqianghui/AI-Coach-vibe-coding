@@ -144,7 +144,12 @@ class TestConnectionTester:
         assert success is False
         assert "Endpoint must use HTTPS" in message
 
-    async def test_connection_tester_voice_live_no_key(self):
+    @patch(
+        "app.services.connection_tester._get_bearer_token",
+        new_callable=AsyncMock,
+        return_value=None,
+    )
+    async def test_connection_tester_voice_live_no_key(self, mock_get_bearer):
         success, message = await _test_azure_voice_live(
             endpoint="https://test.openai.azure.com",
             api_key="",
@@ -189,7 +194,12 @@ class TestConnectionTester:
         assert success is True
         assert "valid" in message.lower()
 
-    async def test_connection_tester_dispatch_voice_live(self):
+    @patch(
+        "app.services.connection_tester._get_bearer_token",
+        new_callable=AsyncMock,
+        return_value=None,
+    )
+    async def test_connection_tester_dispatch_voice_live(self, mock_get_bearer):
         """test_service_connection dispatches azure_voice_live correctly."""
         success, message = await _test_service_connection(
             service_name="azure_voice_live",
