@@ -728,10 +728,12 @@ Plans:
 
 ### Phase 28: 需要上传资料转成sop的skill，就需要注册到ai foundary里面去。在培训过程中，就是把skill给hcp和用户进行对话。
 
-**Goal:** [To be planned]
-**Requirements**: TBD
-**Depends on:** Phase 27
-**Plans:** 0 plans
+**Goal:** Register upload-material-derived SOP Skills (Phase 19 output) as first-class Azure AI Foundry entities on publish, and mount them into the HCP agent's toolbox at training-session time so the agent can consume skill content in dialog with the trainee -- across both text chat and Voice Live, with non-blocking failure degradation at every step.
+**Requirements**: D-01, D-02, D-03, D-04, D-05, D-06, D-07
+**Depends on:** Phase 19, Phase 24
+**Plans:** 3 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 28 to break down)
+- [ ] 28-01-PLAN.md -- Foundry skill registration: Skill model sync columns + migration, Entra-ID-only skill_foundry_service.py, wired into publish/archive/delete lifecycle hooks (D-01, D-03, D-06)
+- [ ] 28-02-PLAN.md -- Session-time skill consumption abstraction: Toolbox mount + MCP probe + download fallback + local-degrade chain, wired into session_service.py for both text and Voice Live via focus_instruction (D-02, D-04, D-05, D-06)
+- [ ] 28-03-PLAN.md -- Foundry sync status API + admin UI: schema/routes for manual retry and portal-url discovery, SkillFoundryStatusSection component mirroring the HCP agent sync UI, wired into the Skill editor (D-06, D-07)
