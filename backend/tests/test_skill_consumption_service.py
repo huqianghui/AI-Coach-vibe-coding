@@ -13,9 +13,11 @@ import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy import select
 
 from app.models.hcp_profile import HcpProfile
 from app.models.scenario import Scenario
+from app.models.session import CoachingSession
 from app.models.skill import Skill
 from app.models.user import User
 from app.services.skill_manager import SkillContent
@@ -782,3 +784,133 @@ class TestScenarioPinIsStale:
 
         scenario = Scenario(skill_version_id="some-version-id")
         assert _scenario_pin_is_stale(scenario) is True
+
+
+# ---------------------------------------------------------------------------
+# Task 2: session_service.py wiring (D-02/D-04/D-05/D-06 end-to-end + HIGH-1)
+# ---------------------------------------------------------------------------
+
+
+async def _seed_active_scenario(user_id: str, hcp_id: str, skill_id: str) -> str:
+    async with TestSessionLocal() as session:
+        scenario = Scenario(
+            name="Active consumption scenario",
+            hcp_profile_id=hcp_id,
+            skill_id=skill_id,
+            status="active",
+            created_by=user_id,
+            rubric_id="test-rubric-id",
+        )
+        session.add(scenario)
+        await session.commit()
+        await session.refresh(scenario)
+        return scenario.id
+
+
+class TestSessionServiceWiring:
+    async def test_create_session_uses_cloud_content_for_focus_instruction(self):
+        """create_session() must source skill content through
+        get_skill_content_for_session() rather than load_skill_for_scenario()
+        directly, so Foundry-sourced content flows into focus_instruction."""
+        from app.services.session_service import create_session
+
+        user_id = await _seed_user()
+        hcp_id = await _seed_hcp_profile(user_id)
+        skill_id = await _seed_skill(user_id)
+        scenario_id = await _seed_active_scenario(user_id, hcp_id, skill_id)
+
+        cloud_content = SkillContent(
+            name="Cloud Skill",
+            description="",
+            content="1. Greet the HCP\n2. Present data",
+            version_id="3",
+            token_estimate=5,
+        )
+
+        with patch(
+            "app.services.skill_consumption_service.get_skill_content_for_session",
+            new=AsyncMock(return_value=cloud_content),
+        ):
+            async with TestSessionLocal() as session:
+                created = await create_session(session, scenario_id, user_id)
+
+        assert created.focus_instruction
+        assert "Greet the HCP" in created.focus_instruction
+
+    async def test_create_session_no_cloud_content_leaves_focus_instruction_none(self):
+        """Regression: a scenario whose skill has no resolvable content (cloud
+        chain unavailable and local fallback also empty) must not crash --
+        focus_instruction stays None, matching pre-existing no-skill behavior."""
+        from app.services.session_service import create_session
+
+        user_id = await _seed_user()
+        hcp_id = await _seed_hcp_profile(user_id)
+        skill_id = await _seed_skill(user_id)
+        scenario_id = await _seed_active_scenario(user_id, hcp_id, skill_id)
+
+        with patch(
+            "app.services.skill_consumption_service.get_skill_content_for_session",
+            new=AsyncMock(return_value=None),
+        ):
+            async with TestSessionLocal() as session:
+                created = await create_session(session, scenario_id, user_id)
+
+        assert created.focus_instruction is None
+
+    async def test_update_sop_progress_calls_cloud_chain_at_most_once_high1(self):
+        """End-to-end HIGH-1 proof from the real call sites: create_session()
+        plus two subsequent update_sop_progress() calls against the same
+        synced, unpinned skill must trigger download_and_extract_skill_content
+        at most once total -- get_skill_content_for_session's own TTL cache
+        absorbs the repeats; update_sop_progress adds no caching of its own."""
+        from app.services.session_service import create_session, update_sop_progress
+
+        user_id = await _seed_user()
+        hcp_id = await _seed_hcp_profile(user_id)
+        skill_id = await _seed_skill(
+            user_id,
+            content="1. Greet the HCP\n2. Present data",
+            foundry_sync_status="synced",
+            foundry_skill_name="wiring-test-skill-abcd1234",
+            foundry_cloud_version="1",
+        )
+        scenario_id = await _seed_active_scenario(user_id, hcp_id, skill_id)
+
+        downloaded = SkillContent(
+            name="Cloud",
+            description="",
+            content="1. Greet the HCP\n2. Present data",
+            version_id="1",
+            token_estimate=5,
+        )
+
+        with (
+            patch(
+                "app.services.skill_consumption_service.mount_skill_toolbox",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.skill_consumption_service._try_mcp_fetch",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "app.services.skill_consumption_service.download_and_extract_skill_content",
+                new=AsyncMock(return_value=downloaded),
+            ) as mock_download,
+        ):
+            async with TestSessionLocal() as session:
+                created = await create_session(session, scenario_id, user_id)
+                session_id = created.id
+                await session.commit()
+
+            for _ in range(2):
+                async with TestSessionLocal() as session:
+                    result = await session.execute(
+                        select(CoachingSession).where(CoachingSession.id == session_id)
+                    )
+                    coaching_session = result.scalar_one()
+                    await update_sop_progress(
+                        session, coaching_session, [{"role": "user", "content": "hi"}]
+                    )
+
+        mock_download.assert_called_once()
