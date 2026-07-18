@@ -725,3 +725,13 @@ Plans:
   6. Admin can create a brand-new prompt from the list UI (not limited to optimizing existing ones) and view the text content of any historical version
 
 **UI hint**: yes
+
+### Phase 28: 需要上传资料转成sop的skill，就需要注册到ai foundary里面去。在培训过程中，就是把skill给hcp和用户进行对话。
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 27
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 28 to break down)

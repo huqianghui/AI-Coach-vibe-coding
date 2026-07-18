@@ -310,6 +310,7 @@ None yet.
 - Phase 25 added: Refactor user training pages — fix data display, scoring logic, and dashboard/reports deduplication
 - Phase 26 added: Scoring Architecture Refactor — LLM primary for content (5 dimensions), CU for voice only (4 dimensions), remove mock fallback
 - Phase 26 added: Add voice-live-webrtc transport option as alternative to WebSocket (preview feature, dropdown selector, preserve existing WS default)
+- Phase 28 added: 上传资料转成 SOP Skill 并注册到 AI Foundry；培训过程中将 Skill 挂给 HCP Agent 与用户对话
 
 ### Quick Tasks Completed
 
