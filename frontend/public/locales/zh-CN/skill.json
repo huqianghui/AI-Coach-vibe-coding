@@ -220,5 +220,21 @@
     "errors": {
       "startFailed": "启动模拟测试失败"
     }
+  },
+  "foundry": {
+    "title": "AI Foundry 同步",
+    "statusSynced": "已同步至 Foundry",
+    "statusPending": "同步等待中",
+    "statusFailed": "同步失败",
+    "statusNone": "未同步",
+    "cloudNameLabel": "Foundry 技能名称",
+    "cloudVersionLabel": "Foundry 版本",
+    "errorLabel": "错误",
+    "retryButton": "重试同步",
+    "retryingButton": "正在同步...",
+    "portalButton": "在 Azure 门户中查看",
+    "retrySuccess": "Foundry 同步已重试",
+    "retryError": "Foundry 同步失败：{{error}}",
+    "archivedNote": "已归档的技能会从 Foundry 中移除。恢复并重新发布后可再次同步。"
   }
 }

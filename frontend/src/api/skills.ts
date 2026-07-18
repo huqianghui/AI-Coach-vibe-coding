@@ -3,6 +3,7 @@ import type {
   PaginatedSkills,
   Skill,
   SkillCreate,
+  SkillFoundryPortalUrlResponse,
   SkillResource,
   SkillUpdate,
   StructureCheckResult,
@@ -80,6 +81,20 @@ export async function restoreSkill(id: string): Promise<Skill> {
 
 export async function createNewVersion(id: string): Promise<Skill> {
   const { data } = await apiClient.post<Skill>(`/skills/${id}/new-version`);
+  return data;
+}
+
+export async function retryFoundrySync(id: string): Promise<Skill> {
+  const { data } = await apiClient.post<Skill>(`/skills/${id}/foundry-sync`);
+  return data;
+}
+
+export async function getSkillFoundryPortalUrl(
+  id: string,
+): Promise<SkillFoundryPortalUrlResponse> {
+  const { data } = await apiClient.get<SkillFoundryPortalUrlResponse>(
+    `/skills/${id}/foundry-portal-url`,
+  );
   return data;
 }
 

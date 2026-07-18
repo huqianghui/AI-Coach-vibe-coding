@@ -18,6 +18,7 @@ import {
   regenerateSop,
   restoreSkill,
   retryConversion,
+  retryFoundrySync,
   startConversion,
   updateSkill,
   uploadAndConvert,
@@ -194,6 +195,17 @@ export function useCreateNewVersion() {
     mutationFn: (id: string) => createNewVersion(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: skillKeys.all });
+    },
+  });
+}
+
+export function useRetryFoundrySync() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => retryFoundrySync(id),
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: skillKeys.detail(id) });
+      queryClient.invalidateQueries({ queryKey: skillKeys.lists() });
     },
   });
 }

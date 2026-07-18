@@ -46,6 +46,10 @@ export interface SkillListItem {
   created_by: string;
   created_at: string;
   updated_at: string;
+  foundry_skill_name: string;
+  foundry_sync_status: "none" | "pending" | "synced" | "failed";
+  foundry_cloud_version: string;
+  foundry_sync_error: string;
 }
 
 export interface SourceMaterialInfo {
@@ -149,4 +153,10 @@ export interface PaginatedSkills {
   page: number;
   page_size: number;
   total_pages: number;
+}
+
+export interface SkillFoundryPortalUrlResponse {
+  url: string;
+  skill_name: string;
+  foundry_version: string;
 }

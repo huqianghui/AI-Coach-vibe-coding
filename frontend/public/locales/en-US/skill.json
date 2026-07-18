@@ -220,5 +220,21 @@
     "errors": {
       "startFailed": "Failed to start simulation"
     }
+  },
+  "foundry": {
+    "title": "AI Foundry Sync",
+    "statusSynced": "Foundry Synced",
+    "statusPending": "Sync Pending",
+    "statusFailed": "Sync Failed",
+    "statusNone": "Not Synced",
+    "cloudNameLabel": "Foundry Skill Name",
+    "cloudVersionLabel": "Foundry Version",
+    "errorLabel": "Error",
+    "retryButton": "Retry Sync",
+    "retryingButton": "Syncing...",
+    "portalButton": "View in Azure Portal",
+    "retrySuccess": "Foundry sync retried",
+    "retryError": "Foundry sync failed: {{error}}",
+    "archivedNote": "Archived skills are removed from Foundry. Restore and publish again to re-sync."
   }
 }
