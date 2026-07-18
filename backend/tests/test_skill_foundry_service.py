@@ -575,3 +575,186 @@ async def test_get_skill_portal_url_fallback_when_components_missing():
         result = await get_skill_portal_url(mock_db, skill)
 
     assert result == "https://ai.azure.com"
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle hooks (Task 3): publish_skill/archive_skill/delete_skill wiring
+# in skill_service.py -- exercised against a real in-memory SQLite session
+# (tests/conftest.py db_session fixture) with skill_foundry_service's
+# sync/delete functions patched, per skill_service.skill_foundry_service.
+# ---------------------------------------------------------------------------
+
+
+async def _seed_admin_user(db_session) -> str:
+    """Create a test admin user and return the user_id."""
+    from app.models.user import User
+    from app.services.auth import get_password_hash
+
+    user = User(
+        username="foundry_lifecycle_admin",
+        email="foundry_lifecycle_admin@test.com",
+        hashed_password=get_password_hash("pass"),
+        full_name="Foundry Lifecycle Admin",
+        role="admin",
+    )
+    db_session.add(user)
+    await db_session.flush()
+    return user.id
+
+
+async def _create_publishable_skill(db_session, user_id: str) -> Skill:
+    """Create a skill and advance it through draft -> review with quality gates
+    set so that publish_skill() will succeed."""
+    import json
+
+    from app.schemas.skill import SkillCreate, SkillUpdate
+    from app.services import skill_service
+    from app.services.skill_validation_service import _compute_content_hash
+
+    data = SkillCreate(
+        name="Foundry Lifecycle Test Skill",
+        description="Skill used to test Foundry sync lifecycle hooks",
+        product="TestProduct",
+        content="# Foundry Lifecycle Test Skill\nSome content for testing.",
+    )
+    skill = await skill_service.create_skill(db_session, data, user_id)
+    await skill_service.update_skill(db_session, skill.id, SkillUpdate(status="review"), user_id)
+    skill = await skill_service.get_skill(db_session, skill.id)
+
+    skill.structure_check_passed = True
+    skill.quality_score = 80
+    skill.quality_verdict = "PASS"
+    skill.quality_details = json.dumps({"content_hash": _compute_content_hash(skill.content or "")})
+    await db_session.flush()
+
+    return skill
+
+
+@pytest.mark.asyncio
+async def test_publish_skill_calls_sync_skill_to_foundry_once(db_session):
+    from app.services import skill_service
+
+    user_id = await _seed_admin_user(db_session)
+    skill = await _create_publishable_skill(db_session, user_id)
+
+    mock_sync = AsyncMock()
+    with patch("app.services.skill_service.skill_foundry_service.sync_skill_to_foundry", mock_sync):
+        published = await skill_service.publish_skill(db_session, skill.id, user_id)
+
+    assert published.status == "published"
+    mock_sync.assert_awaited_once()
+    call_args = mock_sync.await_args
+    assert call_args.args[0] is db_session
+    assert call_args.args[1].id == skill.id
+
+
+@pytest.mark.asyncio
+async def test_publish_skill_succeeds_even_when_sync_fails_internally(db_session):
+    """D-06: publish must never be blocked by a Foundry sync failure. Since
+    sync_skill_to_foundry's own contract is to never raise (Task 2), this mock
+    simulates the REAL internal-failure behavior (sets foundry_sync_status
+    without raising) to prove publish_skill() does not depend on sync success."""
+    from app.services import skill_service
+
+    user_id = await _seed_admin_user(db_session)
+    skill = await _create_publishable_skill(db_session, user_id)
+
+    async def _simulate_internal_failure(db, target_skill):
+        target_skill.foundry_sync_status = "failed"
+        target_skill.foundry_sync_error = "simulated Foundry outage"
+
+    with patch(
+        "app.services.skill_service.skill_foundry_service.sync_skill_to_foundry",
+        AsyncMock(side_effect=_simulate_internal_failure),
+    ):
+        published = await skill_service.publish_skill(db_session, skill.id, user_id)
+
+    assert published.status == "published"
+
+
+@pytest.mark.asyncio
+async def test_publish_skill_idempotent_second_call_does_not_resync(db_session):
+    """WARNING-2 regression guard: calling publish_skill() again on an already
+    published skill hits the existing idempotent early return and must NOT
+    re-trigger sync_skill_to_foundry."""
+    from app.services import skill_service
+
+    user_id = await _seed_admin_user(db_session)
+    skill = await _create_publishable_skill(db_session, user_id)
+
+    mock_sync = AsyncMock()
+    with patch("app.services.skill_service.skill_foundry_service.sync_skill_to_foundry", mock_sync):
+        await skill_service.publish_skill(db_session, skill.id, user_id)
+        await skill_service.publish_skill(db_session, skill.id, user_id)
+
+    assert mock_sync.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_archive_skill_calls_delete_skill_from_foundry_once(db_session):
+    from app.services import skill_service
+
+    user_id = await _seed_admin_user(db_session)
+    skill = await _create_publishable_skill(db_session, user_id)
+
+    with patch(
+        "app.services.skill_service.skill_foundry_service.sync_skill_to_foundry", AsyncMock()
+    ):
+        published = await skill_service.publish_skill(db_session, skill.id, user_id)
+
+    mock_delete = AsyncMock()
+    with patch("app.services.skill_service.skill_foundry_service.delete_skill_from_foundry", mock_delete):
+        archived = await skill_service.archive_skill(db_session, published.id, user_id)
+
+    assert archived.status == "archived"
+    mock_delete.assert_awaited_once()
+    call_args = mock_delete.await_args
+    assert call_args.args[0] is db_session
+    assert call_args.args[1].id == published.id
+
+
+@pytest.mark.asyncio
+async def test_delete_skill_calls_delete_skill_from_foundry_once(db_session):
+    from app.schemas.skill import SkillCreate
+    from app.services import skill_service
+
+    user_id = await _seed_admin_user(db_session)
+    data = SkillCreate(name="Deletable Draft Skill", content="draft content")
+    skill = await skill_service.create_skill(db_session, data, user_id)
+
+    mock_delete = AsyncMock()
+    with patch("app.services.skill_service.skill_foundry_service.delete_skill_from_foundry", mock_delete):
+        await skill_service.delete_skill(db_session, skill.id)
+
+    mock_delete.assert_awaited_once()
+    call_args = mock_delete.await_args
+    assert call_args.args[0] is db_session
+    assert call_args.args[1].id == skill.id
+
+
+@pytest.mark.asyncio
+async def test_restore_skill_does_not_call_any_foundry_function(db_session):
+    from app.services import skill_service
+
+    user_id = await _seed_admin_user(db_session)
+    skill = await _create_publishable_skill(db_session, user_id)
+
+    with patch(
+        "app.services.skill_service.skill_foundry_service.sync_skill_to_foundry", AsyncMock()
+    ):
+        published = await skill_service.publish_skill(db_session, skill.id, user_id)
+
+    mock_sync = AsyncMock()
+    mock_delete = AsyncMock()
+    with (
+        patch("app.services.skill_service.skill_foundry_service.sync_skill_to_foundry", mock_sync),
+        patch("app.services.skill_service.skill_foundry_service.delete_skill_from_foundry", mock_delete),
+    ):
+        await skill_service.archive_skill(db_session, published.id, user_id)
+        restored = await skill_service.restore_skill(db_session, published.id, user_id)
+
+    assert restored.status == "draft"
+    mock_sync.assert_not_awaited()
+    # delete_skill_from_foundry was called once by the preceding archive_skill call,
+    # but restore_skill itself must not trigger any additional Foundry call.
+    assert mock_delete.await_count == 1
