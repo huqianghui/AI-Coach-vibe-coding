@@ -99,4 +99,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-02 after Phase 12 completion — Voice Realtime API & Agent Mode Integration (per-HCP digital persona with voice/avatar/conversation config, auto-mode selection with fallback chain, tabbed HCP editor, token broker per-HCP settings)*
+*Last updated: 2026-07-18 after Phase 28 completion — SOP Skill → AI Foundry Skill → HCP consumption (publish/archive/delete lifecycle syncs skills to Azure AI Foundry via Entra ID, HCP agent mounts skills at session time with Toolbox → MCP → download → local degradation chain, admin Settings tab with sync status/retry/portal link)*
