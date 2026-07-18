@@ -352,11 +352,12 @@ class TestLoadConnectionConfig:
         # avatar_character comes from azure_avatar config model_or_deployment
         assert cfg["avatar_character"] == "Lisa-casual-sitting"
 
-    async def test_avatar_disabled_when_inactive(self, seeded_db):
-        """Avatar disabled when azure_avatar config is inactive."""
+    async def test_avatar_enabled_even_when_avatar_config_inactive(self, seeded_db):
+        """Avatar stays enabled even when azure_avatar config is inactive -- avatar is
+        a Voice Live session modality, not gated by the separate azure_avatar config row."""
         cfg = await _load_connection_config(seeded_db)
 
-        assert cfg["avatar_enabled"] is False
+        assert cfg["avatar_enabled"] is True
 
     async def test_hcp_profile_overrides_voice_settings(self, hcp_profile_with_agent):
         """HCP profile overrides voice/avatar settings in model mode."""
@@ -621,6 +622,23 @@ def _install_mock_sdk() -> tuple[MagicMock, MagicMock, MagicMock]:
     creds_mod = types.ModuleType("azure.core.credentials")
     creds_mod.AzureKeyCredential = MagicMock(name="AzureKeyCredential")
 
+    # --- azure.identity.aio module (stub for classic-agent DefaultAzureCredential path) ---
+    identity_aio_mod = types.ModuleType("azure.identity.aio")
+
+    class _FakeDefaultAzureCredential:
+        async def get_token(self, *scopes):
+            class _FakeToken:
+                token = "fake-mock-sdk-token"
+
+            return _FakeToken()
+
+        async def close(self):
+            pass
+
+    identity_aio_mod.DefaultAzureCredential = _FakeDefaultAzureCredential
+
+    azure_identity = types.ModuleType("azure.identity")
+
     # --- Parent packages (Python needs these for `from X.Y.Z import ...`) ---
     azure_pkg = types.ModuleType("azure")
     azure_ai = types.ModuleType("azure.ai")
@@ -635,6 +653,8 @@ def _install_mock_sdk() -> tuple[MagicMock, MagicMock, MagicMock]:
     sys.modules["azure.ai.voicelive.models"] = models_mod
     sys.modules["azure.core"] = azure_core
     sys.modules["azure.core.credentials"] = creds_mod
+    sys.modules["azure.identity"] = azure_identity
+    sys.modules["azure.identity.aio"] = identity_aio_mod
 
     return mock_connect_fn, aio_mod, models_mod
 
@@ -703,7 +723,7 @@ class TestHandleVoiceLiveWebsocket:
             msg = json.loads(call[0][0])
             if msg.get("type") == "proxy.connected":
                 proxy_connected_sent = True
-                assert msg["avatar_enabled"] is False
+                assert msg["avatar_enabled"] is True
                 assert msg["model"] == "gpt-4o"
                 break
         assert proxy_connected_sent, "proxy.connected message was not sent"
@@ -1298,10 +1318,12 @@ class TestDualModeWebsocketHandler:
         mock_connect_fn.assert_called_once()
         call_kwargs = mock_connect_fn.call_args[1]
         assert call_kwargs["agent_name"] == "asst_agent_mode_test"
-        assert call_kwargs["project_name"] == "default"
+        # project_name resolves from the seeded_db master config's default_project
+        # (real value from .env), not a hardcoded literal
+        assert call_kwargs["project_name"] == REAL_FOUNDRY_PROJECT
         assert "model" not in call_kwargs
         assert "agent_config" not in call_kwargs
-        assert "api_version" not in call_kwargs
+        assert call_kwargs["api_version"] == "2025-05-01-preview"
 
         # proxy.connected should include mode="agent"
         sent_calls = ws.send_text.call_args_list
@@ -1397,7 +1419,9 @@ class TestDualModeWebsocketHandler:
         mock_connect_fn.assert_called_once()
         call_kwargs = mock_connect_fn.call_args[1]
         assert call_kwargs["agent_name"] == "asst_will_fail"  # was agent mode attempt
-        assert call_kwargs["project_name"] == "default"
+        # project_name resolves from the seeded_db master config's default_project
+        # (real value from .env), not a hardcoded literal
+        assert call_kwargs["project_name"] == REAL_FOUNDRY_PROJECT
         assert "model" not in call_kwargs
         assert "agent_config" not in call_kwargs
 
@@ -2353,7 +2377,9 @@ class TestWebSocketHandlerErrorPaths:
         mock_connect_fn.assert_called_once()
         call_kwargs = mock_connect_fn.call_args[1]
         assert call_kwargs["agent_name"] == "asst_old_sdk"
-        assert call_kwargs["project_name"] == "default"
+        # project_name resolves from the seeded_db master config's default_project
+        # (real value from .env), not a hardcoded literal
+        assert call_kwargs["project_name"] == REAL_FOUNDRY_PROJECT
         assert "agent_config" not in call_kwargs
 
         # Should connect successfully instead of sending an old SDK-version error.
@@ -2412,9 +2438,9 @@ class TestRealAzureSessionConfig:
             Modality,
             RequestSession,
         )
-        from azure.core.credentials import AzureKeyCredential
+        from azure.identity.aio import DefaultAzureCredential
 
-        credential = AzureKeyCredential(REAL_FOUNDRY_API_KEY)
+        credential = DefaultAzureCredential()
         model = settings.voice_live_default_model or "gpt-4o"
 
         session_config = RequestSession(
@@ -2454,9 +2480,9 @@ class TestRealAzureSessionConfig:
             Modality,
             RequestSession,
         )
-        from azure.core.credentials import AzureKeyCredential
+        from azure.identity.aio import DefaultAzureCredential
 
-        credential = AzureKeyCredential(REAL_FOUNDRY_API_KEY)
+        credential = DefaultAzureCredential()
         model = settings.voice_live_default_model or "gpt-4o"
 
         session_config = RequestSession(
@@ -2617,9 +2643,9 @@ class TestRealVoiceLiveIntegration:
             Modality,
             RequestSession,
         )
-        from azure.core.credentials import AzureKeyCredential
+        from azure.identity.aio import DefaultAzureCredential
 
-        credential = AzureKeyCredential(REAL_FOUNDRY_API_KEY)
+        credential = DefaultAzureCredential()
         model = settings.voice_live_default_model or "gpt-4o"
 
         session_config = RequestSession(
@@ -2668,9 +2694,9 @@ class TestRealVoiceLiveIntegration:
             Modality,
             RequestSession,
         )
-        from azure.core.credentials import AzureKeyCredential
+        from azure.identity.aio import DefaultAzureCredential
 
-        credential = AzureKeyCredential(REAL_FOUNDRY_API_KEY)
+        credential = DefaultAzureCredential()
         model = settings.voice_live_default_model or "gpt-4o"
 
         session_config = RequestSession(
@@ -2712,9 +2738,9 @@ class TestRealVoiceLiveIntegration:
             Modality,
             RequestSession,
         )
-        from azure.core.credentials import AzureKeyCredential
+        from azure.identity.aio import DefaultAzureCredential
 
-        credential = AzureKeyCredential(REAL_FOUNDRY_API_KEY)
+        credential = DefaultAzureCredential()
         model = settings.voice_live_default_model or "gpt-4o"
 
         session_config = RequestSession(
@@ -3052,14 +3078,62 @@ class TestRealVoiceLiveIntegration:
     # 6. Full handler flow with real DB + real SDK (WebSocket mocked)
     # -------------------------------------------------------------------
 
-    async def test_real_handler_model_mode_proxy_connected(self, seeded_db):
+    async def test_real_handler_model_mode_proxy_connected(self, db_session):
         """Full handler sends proxy.connected with real DB config and real SDK.
 
         Covers TestHandleVoiceLiveWebsocket.test_sends_proxy_connected_on_success
         with real Azure SDK connection instead of mocked SDK.
         WebSocket is still mocked (no real HTTP server).
+
+        Uses a no-key master config (api_key_encrypted="") so config_service's
+        get_effective_key() resolves to "", driving the handler's EXISTING
+        keyless DefaultAzureCredential fallback path -- the only auth path that
+        works on this Foundry resource (key-based auth disabled by policy).
         """
         _ensure_real_azure_modules()
+
+        master = ServiceConfig(
+            service_name="ai_foundry",
+            display_name="Azure AI Foundry",
+            endpoint=REAL_FOUNDRY_ENDPOINT,
+            api_key_encrypted="",
+            model_or_deployment="gpt-4o",
+            region="swedencentral",
+            default_project=REAL_FOUNDRY_PROJECT,
+            is_master=True,
+            is_active=True,
+            updated_by="test-seed",
+        )
+        db_session.add(master)
+
+        voice_live = ServiceConfig(
+            service_name="azure_voice_live",
+            display_name="Azure Voice Live",
+            endpoint="",
+            api_key_encrypted="",
+            model_or_deployment="gpt-4o",
+            region="swedencentral",
+            is_master=False,
+            is_active=True,
+            updated_by="test-seed",
+        )
+        db_session.add(voice_live)
+
+        avatar = ServiceConfig(
+            service_name="azure_avatar",
+            display_name="Azure Avatar",
+            endpoint="",
+            api_key_encrypted="",
+            model_or_deployment="Lisa-casual-sitting",
+            region="",
+            is_master=False,
+            is_active=False,
+            updated_by="test-seed",
+        )
+        db_session.add(avatar)
+
+        await db_session.flush()
+
         session_update = json.dumps(
             {
                 "type": "session.update",
@@ -3069,7 +3143,7 @@ class TestRealVoiceLiveIntegration:
         ws = _make_mock_ws([session_update])
 
         # Use real handler with real DB and real SDK
-        await handle_voice_live_websocket(ws, seeded_db)
+        await handle_voice_live_websocket(ws, db_session)
 
         # Verify proxy.connected was sent
         sent_calls = ws.send_text.call_args_list
@@ -3080,7 +3154,7 @@ class TestRealVoiceLiveIntegration:
                 proxy_connected_sent = True
                 assert msg["mode"] == "model"
                 assert msg["model"] == "gpt-4o"
-                assert msg["avatar_enabled"] is False
+                assert msg["avatar_enabled"] is True
                 break
         assert proxy_connected_sent, "proxy.connected message was not sent"
 
@@ -3143,14 +3217,74 @@ class TestRealVoiceLiveIntegration:
                 assert msg["agent_name"] == "integration-test-agent-hcp"
                 break
 
-    async def test_real_handler_vl_instance_model_mode(self, vl_instance_standalone):
+    async def test_real_handler_vl_instance_model_mode(self, db_session):
         """Full handler uses model mode for standalone VL Instance with real SDK.
 
         Covers TestDualModeWebsocketHandler.test_vl_instance_test_always_model_mode
         with real DB + real SDK.
+
+        Uses its own no-key master config (api_key_encrypted="") instead of the
+        shared vl_instance_standalone fixture (which seeds a real key via
+        seeded_db) so config_service's get_effective_key() resolves to "",
+        driving the handler's EXISTING keyless DefaultAzureCredential fallback --
+        the only auth path that works on this Foundry resource.
         """
         _ensure_real_azure_modules()
-        vl_inst, db = vl_instance_standalone
+
+        master = ServiceConfig(
+            service_name="ai_foundry",
+            display_name="Azure AI Foundry",
+            endpoint=REAL_FOUNDRY_ENDPOINT,
+            api_key_encrypted="",
+            model_or_deployment="gpt-4o",
+            region="swedencentral",
+            default_project=REAL_FOUNDRY_PROJECT,
+            is_master=True,
+            is_active=True,
+            updated_by="test-seed",
+        )
+        db_session.add(master)
+
+        voice_live = ServiceConfig(
+            service_name="azure_voice_live",
+            display_name="Azure Voice Live",
+            endpoint="",
+            api_key_encrypted="",
+            model_or_deployment="gpt-4o",
+            region="swedencentral",
+            is_master=False,
+            is_active=True,
+            updated_by="test-seed",
+        )
+        db_session.add(voice_live)
+
+        avatar = ServiceConfig(
+            service_name="azure_avatar",
+            display_name="Azure Avatar",
+            endpoint="",
+            api_key_encrypted="",
+            model_or_deployment="Lisa-casual-sitting",
+            region="",
+            is_master=False,
+            is_active=False,
+            updated_by="test-seed",
+        )
+        db_session.add(avatar)
+
+        vl_inst = VoiceLiveInstance(
+            name="VL-Standalone-Test",
+            voice_live_model="gpt-4o",
+            voice_name="zh-CN-XiaoxiaoMultilingualNeural",
+            voice_type="azure-standard",
+            avatar_character="lisa",
+            avatar_style="casual-sitting",
+            avatar_enabled=False,
+            model_instruction="You are a helpful AI assistant for testing.",
+            created_by="test-user",
+        )
+        db_session.add(vl_inst)
+        await db_session.flush()
+        await db_session.refresh(vl_inst)
 
         session_update = json.dumps(
             {
@@ -3160,7 +3294,7 @@ class TestRealVoiceLiveIntegration:
         )
         ws = _make_mock_ws([session_update])
 
-        await handle_voice_live_websocket(ws, db)
+        await handle_voice_live_websocket(ws, db_session)
 
         # Verify proxy.connected was sent in model mode
         sent_calls = ws.send_text.call_args_list
