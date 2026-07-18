@@ -102,6 +102,27 @@ def test_build_unique_foundry_name_collision_guard():
     assert name_a != name_b
 
 
+def test_build_unique_foundry_name_all_punctuation_still_valid():
+    """_sanitize_skill_name's own "skill" fallback keeps name_part non-empty here."""
+    from app.services.skill_foundry_service import _build_unique_foundry_name
+
+    result = _build_unique_foundry_name("!!!", "abcd1234-5678-90ab-cdef-1234567890ab")
+    assert result == "skill-abcd1234"
+
+
+def test_build_unique_foundry_name_name_part_empty_after_truncation_uses_skill_fallback():
+    """Defensive branch: if _sanitize_skill_name ever returned a dash-only string
+    (not possible under its own current guarantees, since it always strips
+    boundary dashes), _build_unique_foundry_name must still fall back to "skill"
+    rather than producing an invalid leading-dash name."""
+    from app.services.skill_foundry_service import _build_unique_foundry_name
+
+    with patch("app.services.skill_foundry_service._sanitize_skill_name", return_value="-"):
+        result = _build_unique_foundry_name("whatever", "abcd1234-5678-90ab-cdef-1234567890ab")
+
+    assert result == "skill-abcd1234"
+
+
 def test_build_unique_foundry_name_long_name_truncation_preserves_suffix():
     from app.services.skill_foundry_service import _build_unique_foundry_name
 
