@@ -235,6 +235,7 @@
     "portalButton": "在 Azure 门户中查看",
     "retrySuccess": "Foundry 同步已重试",
     "retryError": "Foundry 同步失败：{{error}}",
-    "archivedNote": "已归档的技能会从 Foundry 中移除。恢复并重新发布后可再次同步。"
+    "archivedNote": "已归档的技能会从 Foundry 中移除。恢复并重新发布后可再次同步。",
+    "notPublishedNote": "仅已发布的技能支持 Foundry 同步。"
   }
 }

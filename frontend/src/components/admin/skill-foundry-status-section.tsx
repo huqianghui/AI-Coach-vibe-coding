@@ -35,6 +35,7 @@ export function SkillFoundryStatusSection({
 
   const foundryStatus = skill?.foundry_sync_status ?? "none";
   const isArchived = skill?.status === "archived";
+  const isPublished = skill?.status === "published";
 
   const STATUS_CONFIG = {
     synced: {
@@ -130,7 +131,7 @@ export function SkillFoundryStatusSection({
             <p className="text-xs text-muted-foreground">
               {t("foundry.archivedNote")}
             </p>
-          ) : (
+          ) : isPublished ? (
             <Button
               variant="outline"
               size="sm"
@@ -148,6 +149,10 @@ export function SkillFoundryStatusSection({
                 ? t("foundry.retryingButton")
                 : t("foundry.retryButton")}
             </Button>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              {t("foundry.notPublishedNote")}
+            </p>
           )}
           {skill?.foundry_skill_name && (
             <Button

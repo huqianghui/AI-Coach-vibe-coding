@@ -235,6 +235,7 @@
     "portalButton": "View in Azure Portal",
     "retrySuccess": "Foundry sync retried",
     "retryError": "Foundry sync failed: {{error}}",
-    "archivedNote": "Archived skills are removed from Foundry. Restore and publish again to re-sync."
+    "archivedNote": "Archived skills are removed from Foundry. Restore and publish again to re-sync.",
+    "notPublishedNote": "Foundry sync is only available for published skills."
   }
 }

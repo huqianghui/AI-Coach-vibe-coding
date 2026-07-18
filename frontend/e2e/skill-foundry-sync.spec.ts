@@ -217,6 +217,47 @@ test.describe("Skill Foundry Sync — Editor Status Section", () => {
     expect(popup.url()).toContain("ai.azure.com/mock-portal");
   });
 
+  test("retry button is hidden for a never-published (draft) skill (WR-02)", async ({
+    page,
+  }) => {
+    const skillId = await createSkillAndOpenEditor(page);
+
+    const draftFixture = buildSkillFixture({
+      id: skillId,
+      status: "draft",
+      foundry_sync_status: "none",
+    });
+
+    await page.route(`**/api/v1/skills/${skillId}`, async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(draftFixture),
+      });
+    });
+
+    const settingsTab = page.locator("[role='tab']").nth(3);
+    await expect(settingsTab).toBeVisible({ timeout: 10000 });
+    await settingsTab.click();
+    await page.waitForTimeout(500);
+
+    const statusBadge = page.getByText(LABEL_NOT_SYNCED);
+    await expect(statusBadge.first()).toBeVisible({ timeout: 5000 });
+
+    // Backend rejects retry-sync with 422 for non-published skills (skills.py
+    // retry_foundry_sync). The button must not be rendered at all so the admin
+    // cannot trigger a request that will always fail.
+    const retryBtn = page.getByRole("button", { name: RETRY_BUTTON_NAME });
+    expect(await retryBtn.count()).toBe(0);
+
+    const notPublishedNote = page.getByText(/foundry sync is only available for published skills/i);
+    await expect(notPublishedNote.first()).toBeVisible({ timeout: 5000 });
+  });
+
   test("no-sync regression: status section renders without error for a never-synced skill", async ({
     page,
   }) => {
