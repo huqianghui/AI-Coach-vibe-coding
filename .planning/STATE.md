@@ -320,10 +320,11 @@ None yet.
 | 260717-x5f | Skills API Foundry upload POC test + doc 10 (Skills 上传/Toolbox skill_reference 挂载实测：API Key 403 AuthenticationTypeDisabled、Entra ID 405) | 2026-07-18 | 347fcc5 | [260717-x5f-docs-microsoft-agent-framework-agent-ski](./quick/260717-x5f-docs-microsoft-agent-framework-agent-ski/) |
 | 260718-b3q | Responses API skills 路径 POC + doc 10 更新（openai/v1：Entra ID 上传成功、版本管理可用；API Key 仍 403；shell tool 需支持该工具的模型部署） | 2026-07-18 | dc4eba0 | [260718-b3q-add-responses-api-skills-path-poc-test-a](./quick/260718-b3q-add-responses-api-skills-path-poc-test-a/) |
 | 260718-cy6 | Agents API Skills+Toolbox 全链路修复实测（Foundry-Features: Skills=V1Preview 头 + Entra ID 解除 405；Skill 上传→Toolbox 挂载→Agent 消费 7 passed；MCP endpoint 发现仍 405）+ doc 10 §12 | 2026-07-18 | a736920 | [260718-cy6-agents-api-skills-toolbox-foundry-featur](./quick/260718-cy6-agents-api-skills-toolbox-foundry-featur/) |
+| 260718-eha | 修复 backend voice_live 17 个失败测试（az login 环境解耦 + 真实测试改 Entra bearer 认证 + 22866fd 重构后过时断言更新；纯测试侧修改，152/152 通过） | 2026-07-18 | fb121fa | [260718-eha-backend-voice-live-17-az-login-entra-bea](./quick/260718-eha-backend-voice-live-17-az-login-entra-bea/) |
 
 ## Session Continuity
 
-Last activity: 2026-07-18 - Completed quick task 260718-cy6: Agents API Skills+Toolbox 全链路修复实测 + doc 10 §12
+Last activity: 2026-07-18 - Completed quick task 260718-eha: 修复 backend voice_live 17 个失败测试（纯测试侧，152/152 通过）
 Last session: 2026-07-01T08:45:45.630Z
 Stopped at: Completed 27-08-PLAN.md
 Resume file: None
