@@ -1013,6 +1013,10 @@ class TestListPublishedSkillsEndpoint:
         mock_item.created_by = "admin-user-id"
         mock_item.created_at = datetime(2026, 1, 1, tzinfo=UTC)
         mock_item.updated_at = datetime(2026, 1, 1, tzinfo=UTC)
+        mock_item.foundry_skill_name = ""
+        mock_item.foundry_sync_status = "none"
+        mock_item.foundry_cloud_version = ""
+        mock_item.foundry_sync_error = ""
 
         mock_svc.get_published_skills = AsyncMock(return_value=([mock_item], 1))
 
@@ -1098,6 +1102,10 @@ class TestGetSkillEndpoint:
         mock_skill.conversion_error = ""
         mock_skill.resources = []
         mock_skill.versions = []
+        mock_skill.foundry_skill_name = ""
+        mock_skill.foundry_sync_status = "none"
+        mock_skill.foundry_cloud_version = ""
+        mock_skill.foundry_sync_error = ""
         mock_svc.get_skill = AsyncMock(return_value=mock_skill)
 
         db = AsyncMock()

@@ -82,6 +82,10 @@ class SkillListOut(BaseModel):
     created_by: str
     created_at: datetime
     updated_at: datetime
+    foundry_skill_name: str
+    foundry_sync_status: str
+    foundry_cloud_version: str
+    foundry_sync_error: str
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -127,3 +131,11 @@ class QualityEvaluationOut(BaseModel):
     dimensions: list[dict]
     summary: str
     top_improvements: list[str]
+
+
+class SkillFoundryPortalUrlResponse(BaseModel):
+    """Response schema for the Skill Foundry portal deep-link."""
+
+    url: str
+    skill_name: str
+    foundry_version: str

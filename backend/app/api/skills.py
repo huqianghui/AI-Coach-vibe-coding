@@ -17,6 +17,7 @@ from app.models.skill import Skill, SkillResource, SkillSourceMaterial
 from app.models.user import User
 from app.schemas.skill import (
     SkillCreate,
+    SkillFoundryPortalUrlResponse,
     SkillListOut,
     SkillOut,
     SkillResourceOut,
@@ -25,6 +26,7 @@ from app.schemas.skill import (
 )
 from app.services import (
     skill_evaluation_service,
+    skill_foundry_service,
     skill_service,
     skill_zip_service,
 )
@@ -549,6 +551,46 @@ async def create_new_version(
     """Create a new draft version from a published skill. Admin only."""
     skill = await skill_service.create_new_version(db, skill_id, user.id)
     return skill
+
+
+@router.post("/{skill_id}/foundry-sync", response_model=SkillOut)
+async def retry_foundry_sync(
+    skill_id: str,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_role("admin")),
+):
+    """Manually retry Foundry sync for a skill. Admin only. D-06.
+
+    Restricted to skill.status == "published" (MEDIUM-5): an "archived" skill's Foundry
+    entity was already deleted by the archive lifecycle hook (Plan 28-01, D-03) -- allowing
+    retry here would silently re-create ("resurrect") a cloud entity the user intentionally
+    removed. A restored skill lands in "draft" (skill_service.restore_skill) and must go
+    through publish_skill() again, which unconditionally re-syncs -- so this guard cannot
+    orphan any reachable skill state.
+    """
+    skill = await skill_service.get_skill(db, skill_id)
+    if skill.status != "published":
+        bad_request("Foundry sync retry is only available for published skills")
+    await skill_foundry_service.sync_skill_to_foundry(db, skill)
+    result = SkillOut.model_validate(skill)
+    result.source_materials = await _get_source_materials(db, skill_id)
+    return result
+
+
+@router.get("/{skill_id}/foundry-portal-url", response_model=SkillFoundryPortalUrlResponse)
+async def get_skill_foundry_portal_url(
+    skill_id: str,
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_role("admin")),
+):
+    """Get the Azure Portal deep-link for this skill's Foundry entity. Admin only. D-07."""
+    skill = await skill_service.get_skill(db, skill_id)
+    url = await skill_foundry_service.get_skill_portal_url(db, skill)
+    return SkillFoundryPortalUrlResponse(
+        url=url,
+        skill_name=skill.foundry_skill_name,
+        foundry_version=skill.foundry_cloud_version,
+    )
 
 
 # ---------------------------------------------------------------------------
