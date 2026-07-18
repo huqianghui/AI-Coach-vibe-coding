@@ -39,6 +39,7 @@ import { PublishGateDialog } from "@/components/shared/publish-gate-dialog";
 import { DryRunButton } from "@/components/shared/dry-run-button";
 import { DryRunProgress as DryRunProgressComponent } from "@/components/shared/dry-run-progress";
 import { DryRunHistoryList } from "@/components/shared/dry-run-history-list";
+import { SkillFoundryStatusSection } from "@/components/admin/skill-foundry-status-section";
 import {
   useSkill,
   useUpdateSkill,
@@ -52,6 +53,7 @@ import {
   useEvaluateQuality,
   useSkillEvaluation,
   usePublishSkill,
+  useRetryFoundrySync,
   skillKeys,
 } from "@/hooks/use-skills";
 import { downloadResource, downloadSkillZip } from "@/api/skills";
@@ -103,6 +105,7 @@ export default function SkillEditorPage() {
   const checkStructureMutation = useCheckStructure();
   const evaluateQualityMutation = useEvaluateQuality();
   const publishMutation = usePublishSkill();
+  const retryFoundrySyncMutation = useRetryFoundrySync();
   const { data: evaluationData, refetch: refetchEvaluation } =
     useSkillEvaluation(id);
 
@@ -288,6 +291,15 @@ export default function SkillEditorPage() {
       onError: () => toast.error(t("errors.conversionFailed")),
     });
   }, [id, retryConversionMutation, t]);
+
+  const handleRetryFoundrySync = useCallback(() => {
+    if (!id) return;
+    retryFoundrySyncMutation.mutate(id, {
+      onSuccess: () => toast.success(t("foundry.retrySuccess")),
+      onError: (err) =>
+        toast.error(t("foundry.retryError", { error: (err as Error).message })),
+    });
+  }, [id, retryFoundrySyncMutation, t]);
 
   const handleResourceUpload = useCallback(
     (files: File[], type: "reference" | "script" | "asset") => {
@@ -915,10 +927,20 @@ export default function SkillEditorPage() {
               {t("editor.saveFirstForResources")}
             </div>
           ) : (
-            <form
-              onSubmit={settingsForm.handleSubmit(handleSettingsSave)}
-              className="max-w-2xl space-y-6"
-            >
+            <>
+              {skill && (
+                <div className="max-w-2xl mb-6">
+                  <SkillFoundryStatusSection
+                    skill={skill}
+                    onRetrySync={handleRetryFoundrySync}
+                    retrySyncPending={retryFoundrySyncMutation.isPending}
+                  />
+                </div>
+              )}
+              <form
+                onSubmit={settingsForm.handleSubmit(handleSettingsSave)}
+                className="max-w-2xl space-y-6"
+              >
               {/* Name */}
               <div className="space-y-2">
                 <Label htmlFor="settings-name">
@@ -1017,7 +1039,8 @@ export default function SkillEditorPage() {
                   {t("editor.saveDraft")}
                 </Button>
               </div>
-            </form>
+              </form>
+            </>
           )}
         </TabsContent>
       </Tabs>
