@@ -1,12 +1,12 @@
 ---
 phase: 28
-status: partial
+status: passed
 source: 28-VERIFICATION.md
 created: 2026-07-18
 tests_total: 1
-tests_passed: 0
+tests_passed: 1
 tests_failed: 0
-tests_pending: 1
+tests_pending: 0
 ---
 
 # Phase 28 Human UAT — SOP Skill → AI Foundry Skill → HCP Consumption
@@ -18,7 +18,7 @@ live Azure AI Foundry project + Entra ID credentials and must be verified by a h
 
 ### 1. D-03 — Foundry version-increment smoke test
 
-**Status:** pending
+**Status:** passed
 
 **What to verify:** Repeated `create_from_files` calls with the same skill name
 cause Azure AI Foundry to increment the skill version server-side (the code in
@@ -37,4 +37,15 @@ re-publishing an updated skill).
    (2), and the skill row's `foundry_cloud_version` reflects the new version.
    No duplicate skill entity is created.
 
-**Result:** _(fill in: pass / fail + notes)_
+**Result:** PASS (2026-07-18, live smoke test against real Foundry project)
+
+Executed `sync_skill_to_foundry` twice for published skill
+`zanubrutinib-training` (id `a7c5e171-05c7-4f35-890e-2623c840e958`) using the
+project's configured Foundry endpoint + `az login` Entra credentials:
+
+- sync #1 → `status=synced`, `foundry_cloud_version=1`, name `zanubrutinib-training-a7c5e171`
+- sync #2 → `status=synced`, `foundry_cloud_version=2`, same entity name, no error
+
+Foundry incremented the version server-side on the second `create_from_files`
+call with the same name; no duplicate skill entity was created. The
+version-increment assumption in `skill_foundry_service.py` is confirmed.
