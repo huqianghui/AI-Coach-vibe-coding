@@ -427,7 +427,8 @@ class TestGetSkillContentForSession:
     async def test_no_skill_id_returns_none(self):
         from app.services.skill_consumption_service import get_skill_content_for_session
 
-        result = await get_skill_content_for_session(AsyncMock(), "nonexistent-scenario")
+        async with TestSessionLocal() as session:
+            result = await get_skill_content_for_session(session, "nonexistent-scenario")
         assert result is None
 
     async def test_scenario_with_pin_never_calls_cloud_chain_medium4(self):
@@ -538,7 +539,11 @@ class TestGetSkillContentForSession:
         scenario_id = await _seed_scenario(user_id, hcp_id, skill_id)
 
         downloaded_content = SkillContent(
-            name="Cloud", description="", content="downloaded body", version_id="1", token_estimate=1
+            name="Cloud",
+            description="",
+            content="downloaded body",
+            version_id="1",
+            token_estimate=1,
         )
 
         async with TestSessionLocal() as session:
@@ -684,7 +689,7 @@ class TestGetSkillContentForSession:
             patch(
                 "app.services.skill_consumption_service.mount_skill_toolbox",
                 new=AsyncMock(return_value="toolbox-name"),
-            ) as mock_mount,
+            ),
             patch(
                 "app.services.skill_consumption_service._try_mcp_fetch",
                 new=AsyncMock(return_value="MCP body v1"),
@@ -734,7 +739,10 @@ class TestContentCacheTTL:
         key = ("skill-1", "1")
         _cache_set(key, SkillContent("N", "D", "C", "v", 1))
 
-        with patch("app.services.skill_consumption_service.time.monotonic", return_value=time.monotonic() + 100000):
+        with patch(
+            "app.services.skill_consumption_service.time.monotonic",
+            return_value=time.monotonic() + 100000,
+        ):
             result = _cache_get(key)
 
         assert result is _CACHE_MISS
