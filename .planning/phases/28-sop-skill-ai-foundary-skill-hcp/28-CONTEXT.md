@@ -62,10 +62,19 @@
 - `docs/microsoft-agent-framework/tests/test_skill_responses_api.py` — Responses API 第二路径实测（对照参考）
 
 ### Skill 规范与工具
-- `docs/microsoft-agent-framework/08-agent-skills-specification.md` — SKILL.md 格式规范、命名规则
-- `docs/microsoft-agent-framework/07-agent-skill-creation-guide.md` — skill 创建指南
+- `docs/microsoft-agent-framework/README.md` — 全目录索引 + 核心实测结论速查（**整个目录都是本 phase 的实测依据，文档 + unit test case 均可直接复用**）
+- `docs/microsoft-agent-framework/08-agent-skills-specification.md` — SKILL.md 格式规范、命名规则、渐进式加载、AI Coach 实现对照
+- `docs/microsoft-agent-framework/07-agent-skill-creation-guide.md` — Agent 命名规则、SDK 创建流程、Meta Skill Agent 架构、常见陷阱
 - `docs/microsoft-agent-framework/06-agent-tools-and-knowledge-grounding.md` — 工具与知识挂载
-- `docs/microsoft-agent-framework/01-azure-authentication-model.md` — 认证模型（Entra ID vs API Key）
+- `docs/microsoft-agent-framework/09-agent-api-version-evolution.md` — API 版本演进、新一代 Agent Service 差异
+
+### 认证与集成策略
+- `docs/microsoft-agent-framework/01-azure-authentication-model.md` — API Key vs Entra ID 决策树
+- `docs/microsoft-agent-framework/02-model-vs-agent-mode.md` — Model/Agent 双模式架构与认证实测
+- `docs/microsoft-agent-framework/03-agent-identity-and-auth-direction.md` — Agent Identity、入站/出站认证
+- `docs/microsoft-agent-framework/04-ai-coach-integration-strategy.md` — 平台集成现状与双模式切换设计
+- `docs/microsoft-agent-framework/05-agent-api-metadata-constraints.md` — Endpoint 构造、512 字符 metadata 限制
+- `docs/microsoft-agent-framework/tests/test_agent_auth_v2.py` — Voice Live 四种认证方式实测（**API Key + Agent 模式可行** —— D-05 Voice Live 挂载研究的起点）
 
 ### 上游 phase 决策
 - `.planning/phases/19-skill-module/19-CONTEXT.md` — skill 包结构、转换管线、SkillManager 注入（降级路径）
