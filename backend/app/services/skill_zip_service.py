@@ -315,29 +315,31 @@ async def import_skill_zip(db: AsyncSession, zip_bytes: bytes, created_by: str =
     return result.scalar_one()
 
 
+def parse_skill_frontmatter(content: str) -> tuple[dict, str]:
+    """Parse SKILL.md content into (frontmatter metadata dict, markdown body).
+
+    Shared by skill ZIP import (_parse_skill_md) and Foundry download-fallback
+    consumption (skill_consumption_service.download_and_extract_skill_content) --
+    do not introduce a second YAML-frontmatter parsing library (see Phase 28 BLOCKER-1).
+    """
+    if content.startswith("---"):
+        parts = content.split("---", 2)
+        if len(parts) >= 3:
+            yaml_str, body = parts[1], parts[2].strip()
+        else:
+            yaml_str, body = "", content
+    else:
+        yaml_str, body = "", content
+    meta = yaml.safe_load(yaml_str) or {} if yaml_str.strip() else {}
+    return meta, body
+
+
 def _parse_skill_md(content: str) -> tuple[str, str, str, str, str, str, str]:
     """Parse SKILL.md content: extract YAML frontmatter + Markdown body.
 
     Returns (name, description, product, therapeutic_area, compatibility, tags, markdown_body).
     """
-    # Split on first "---" block
-    if content.startswith("---"):
-        parts = content.split("---", 2)
-        if len(parts) >= 3:
-            yaml_str = parts[1]
-            body = parts[2].strip()
-        else:
-            yaml_str = ""
-            body = content
-    else:
-        yaml_str = ""
-        body = content
-
-    if yaml_str.strip():
-        meta = yaml.safe_load(yaml_str) or {}
-    else:
-        meta = {}
-
+    meta, body = parse_skill_frontmatter(content)
     return (
         meta.get("name", "Imported Skill"),
         meta.get("description", ""),
