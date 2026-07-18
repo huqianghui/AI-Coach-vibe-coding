@@ -26,14 +26,36 @@
       "Bash(.venv/bin/python3 -m pytest tests/test_voice_live_instance_service.py -x -q --tb=short)",
       "Bash(.venv/bin/ruff check:*)",
       "Bash(.venv/bin/python3 -m pytest tests/test_agent_sync_service.py tests/test_voice_live_instance_service.py -x -q --tb=short)",
-      "mcp__tavily__search"
+      "mcp__tavily__search",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_console_messages",
+      "Bash(npx tsc *)",
+      "Bash(npx playwright *)",
+      "WebFetch(domain:chatgpt.com)",
+      "Bash(.venv/bin/pip show *)",
+      "Bash(.venv/bin/python3 -c \"import azure.ai.projects; print\\(azure.ai.projects.__version__\\)\")",
+      "Bash(/Users/huqianghui/Downloads/1.github/AI-Coach-vibe-coding/backend/.venv/bin/python3 *)",
+      "Skill(gsd:quick)",
+      "Bash(export BACKEND_ENV_DIR=\"/Users/huqianghui/Downloads/1.github/AI-Coach-vibe-coding/backend\")",
+      "Bash(cp __TRACKED_VAR__/.env backend/.env)",
+      "Bash(git check-ignore *)",
+      "Bash(echo \"EXIT_CODE=$?\")",
+      "Bash(az account *)",
+      "Bash(/Users/huqianghui/Downloads/1.github/AI-Coach-vibe-coding/backend/.venv/bin/python3 ../docs/microsoft-agent-framework/tests/test_skill_foundry_upload.py)",
+      "Read(//tmp/**)",
+      "Bash(mkdir -p \"/Users/huqianghui/Downloads/1.github/AI-Coach-vibe-coding/.claude/worktrees/agent-aaf9dba41a956672a/.planning/quick/260717-x5f-docs-microsoft-agent-framework-agent-ski\")",
+      "Bash(git merge *)",
+      "Bash(git worktree *)",
+      "Bash(git branch *)",
+      "Bash(node .claude/get-shit-done/bin/gsd-tools.cjs commit \"docs\\(quick-260717-x5f\\): record Skills API upload POC quick task in STATE.md\" --files .planning/STATE.md .planning/quick/260717-x5f-docs-microsoft-agent-framework-agent-ski/260717-x5f-PLAN.md .planning/quick/260717-x5f-docs-microsoft-agent-framework-agent-ski/260717-x5f-SUMMARY.md)"
     ]
-  },
-  "enabledPlugins": {
-    "superpowers@claude-plugins-official": true
   },
   "statusLine": {
     "type": "command",
     "command": "node .claude/statusline-local.js"
+  },
+  "enabledPlugins": {
+    "superpowers@claude-plugins-official": true
   }
 }

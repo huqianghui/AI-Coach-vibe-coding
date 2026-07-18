@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"sqlite3 /Users/huqianghui/Downloads/1.github/AI-Coach-vibe-coding/backend/ai_coach.db \\\"SELECT sc.product, sc.therapeutic_area, sc.difficulty, sc.key_messages FROM scenarios sc WHERE sc.id...",
-  "error": "Exit code 1\nError: in prepare, no such column: sc.product\n  SELECT sc.product, sc.therapeutic_area, sc.difficulty, sc.key_messages FROM sc\n         ^--- error here",
-  "timestamp": "2026-05-20T08:54:44.342Z",
-  "retry_count": 2
+  "tool_input_preview": "{\"command\":\"sed -n 200,260p /Users/huqianghui/Downloads/1.github/AI-Coach-vibe-coding/backend/app/services/voice_live_service.py; echo ===; git -C /Users/huqianghui/Downloads/1.github/AI-Coach-vibe-co...",
+  "error": "Exit code 1\n        \"agent\" if is_agent else \"model\",\n        voice_live_model,\n        voice_name,\n        avatar_character_val,\n        avatar_style_val,\n        agent_id or \"none\",\n    )\n\n    # SECURITY: Never expose the raw API key to the frontend.\n    # All Voice Live connections go through the backend WebSocket proxy which\n    # reads credentials from DB directly. The token broker only returns metadata.\n    auth_type = \"key\" if voice_live_key else \"bearer\"\n    token_value = \"***configured*...",
+  "timestamp": "2026-07-18T02:21:55.128Z",
+  "retry_count": 1
 }
