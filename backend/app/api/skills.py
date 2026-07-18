@@ -36,6 +36,7 @@ from app.services.skill_service import (
     sanitize_filename,
     validate_file_upload,
 )
+from app.services.skill_text_extractor import extract_text
 from app.services.skill_validation_service import check_skill_structure, to_dict
 from app.services.storage import get_storage
 from app.utils.exceptions import bad_request, not_found
@@ -782,6 +783,12 @@ async def upload_resource(
     }
     content_type = content_type_map.get(ext, file.content_type or "application/octet-stream")
 
+    # WR-01 fix: extract text immediately so ZIP export / Foundry sync doesn't
+    # silently ship a placeholder stub for directly-uploaded PDF/DOCX/PPTX/TXT/MD
+    # resources (only AI-conversion-pipeline resources previously got real text).
+    extracted_text = extract_text(content, safe_filename)
+    extraction_status = "completed" if extracted_text else "failed"
+
     # Create resource record
     resource = SkillResource(
         skill_id=skill_id,
@@ -790,6 +797,8 @@ async def upload_resource(
         storage_path=storage_path,
         content_type=content_type,
         file_size=file_size,
+        text_content=extracted_text,
+        extraction_status=extraction_status,
     )
     db.add(resource)
     await db.flush()
