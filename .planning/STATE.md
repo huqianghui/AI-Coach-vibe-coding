@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-stopped_at: Completed 28-CONTEXT.md (discuss-phase)
-last_updated: "2026-07-18T08:20:40.573Z"
+stopped_at: Completed 28-01-PLAN.md
+last_updated: "2026-07-18T10:18:55.655Z"
 last_activity: 2026-07-18
 progress:
   total_phases: 30
   completed_phases: 25
   total_plans: 143
-  completed_plans: 129
-  percent: 90
+  completed_plans: 130
+  percent: 91
 ---
 
 # Project State
@@ -21,12 +21,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** MRs can practice realistic conversations with AI-powered digital HCPs and receive immediate, multi-dimensional feedback to improve their communication skills -- anytime, without needing a real HCP or trainer.
-**Current focus:** Phase 27 — prompt-optimizer-unified-prompt-management
+**Current focus:** Phase 28 — sop-skill-ai-foundary-skill-hcp
 
 ## Current Position
 
-Phase: 27 (prompt-optimizer-unified-prompt-management) — IN PROGRESS (2/6 plans)
-Plan: 6 of 6 complete (27-01, 27-02 done; next 27-03)
+Phase: 28 (sop-skill-ai-foundary-skill-hcp) — EXECUTING
+Plan: 2 of 4
 Phase: 26 (add-voice-live-webrtc-transport-option-as-alternative-to-web) — COMPLETE (3/3 plans)
 Phase: 24 (Skill Focus + CU Evaluation) — COMPLETE (5/5 plans)
 Phase: 25 (Refactor user training pages) — COMPLETE (2/2 plans)
@@ -132,6 +132,7 @@ Phase: 26 (Scoring Architecture: LLM Content + CU Voice) — COMPLETE (1/1 plan)
 | Phase 27 P06 | 50 | 2 tasks | 15 files |
 | Phase 27 P07 | 30 | 3 tasks | 8 files |
 | Phase 27 P08 | 20 | 2 tasks | 6 files |
+| Phase 28 P01 | 25min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -290,6 +291,9 @@ Recent decisions affecting current work:
 - [Phase 27]: 27-04: prompt management API returns plain newest-first lists (not paginated) and records model='prompt-optimizer' provenance marker on every run
 - [Phase 27]: 27-05: Prompt management admin UI (list+editor, optimize-diff-adopt, version rollback); locale files under public/locales, MessageSquare nav icon
 - [Phase ?]: 27-06: shared PromptOptimizeDialog uses stateless /prompts/optimize; audience prompt wired in scenario-editor.tsx; conference_prompt_version bumps on config change; sidecar as internal Container App with Key Vault secretRef
+- [Phase 28]: [Phase 28-01]: Entra-ID-only Foundry Skills client with module-level cached DefaultAzureCredential; no API-key fallback
+- [Phase 28]: [Phase 28-01]: _build_unique_foundry_name suffixes skill.id[:8] on first sync only (HIGH-2 fix); foundry_skill_name persisted and reused verbatim thereafter
+- [Phase 28]: [Phase 28-01]: publish_skill idempotent re-publish does not re-trigger Foundry sync; retry deferred to Plan 28-03 (WARNING-2)
 
 ### Pending Todos
 
@@ -326,6 +330,6 @@ None yet.
 ## Session Continuity
 
 Last activity: 2026-07-18
-Last session: 2026-07-01T08:45:45.630Z
-Stopped at: Completed 28-CONTEXT.md (discuss-phase)
+Last session: 2026-07-18T10:18:55.651Z
+Stopped at: Completed 28-01-PLAN.md
 Resume file: None

@@ -731,10 +731,10 @@ Plans:
 **Goal:** Register upload-material-derived SOP Skills (Phase 19 output) as first-class Azure AI Foundry entities on publish, and mount them into the HCP agent's toolbox at training-session time so the agent can consume skill content in dialog with the trainee -- across both text chat and Voice Live, with non-blocking failure degradation at every step.
 **Requirements**: D-01, D-02, D-03, D-04, D-05, D-06, D-07
 **Depends on:** Phase 19, Phase 24
-**Plans:** 4 plans
+**Plans:** 1/4 plans executed
 
 Plans:
-- [ ] 28-01-PLAN.md -- Foundry skill registration: Skill model sync columns + migration, Entra-ID-only skill_foundry_service.py, wired into publish/archive/delete lifecycle hooks (D-01, D-03, D-06)
+- [x] 28-01-PLAN.md -- Foundry skill registration: Skill model sync columns + migration, Entra-ID-only skill_foundry_service.py, wired into publish/archive/delete lifecycle hooks (D-01, D-03, D-06)
 - [ ] 28-02-PLAN.md -- Session-time skill consumption abstraction: Toolbox mount + MCP probe + download fallback + local-degrade chain, wired into session_service.py for both text and Voice Live via focus_instruction (D-02, D-04, D-05, D-06)
 - [ ] 28-03-PLAN.md -- Foundry sync status API + admin UI: schema/routes for manual retry and portal-url discovery, SkillFoundryStatusSection component mirroring the HCP agent sync UI, wired into the Skill editor (D-06, D-07)
 - [ ] 28-04-PLAN.md -- Playwright E2E coverage for the Foundry sync admin story: status section rendering, retry flow, portal link, degradation states (D-06, D-07)
