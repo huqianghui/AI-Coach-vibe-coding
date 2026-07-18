@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-stopped_at: Completed 28-01-PLAN.md
-last_updated: "2026-07-18T10:18:55.655Z"
+stopped_at: Completed 28-04-PLAN.md
+last_updated: "2026-07-18T10:49:32.377Z"
 last_activity: 2026-07-18
 progress:
   total_phases: 30
-  completed_phases: 25
+  completed_phases: 26
   total_plans: 143
-  completed_plans: 130
-  percent: 91
+  completed_plans: 133
+  percent: 93
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-24)
 ## Current Position
 
 Phase: 28 (sop-skill-ai-foundary-skill-hcp) — EXECUTING
-Plan: 2 of 4
+Plan: 4 of 4
 Phase: 26 (add-voice-live-webrtc-transport-option-as-alternative-to-web) — COMPLETE (3/3 plans)
 Phase: 24 (Skill Focus + CU Evaluation) — COMPLETE (5/5 plans)
 Phase: 25 (Refactor user training pages) — COMPLETE (2/2 plans)
@@ -133,6 +133,7 @@ Phase: 26 (Scoring Architecture: LLM Content + CU Voice) — COMPLETE (1/1 plan)
 | Phase 27 P07 | 30 | 3 tasks | 8 files |
 | Phase 27 P08 | 20 | 2 tasks | 6 files |
 | Phase 28 P01 | 25min | 3 tasks | 5 files |
+| Phase 28 P04 | 20min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -294,6 +295,7 @@ Recent decisions affecting current work:
 - [Phase 28]: [Phase 28-01]: Entra-ID-only Foundry Skills client with module-level cached DefaultAzureCredential; no API-key fallback
 - [Phase 28]: [Phase 28-01]: _build_unique_foundry_name suffixes skill.id[:8] on first sync only (HIGH-2 fix); foundry_skill_name persisted and reused verbatim thereafter
 - [Phase 28]: [Phase 28-01]: publish_skill idempotent re-publish does not re-trigger Foundry sync; retry deferred to Plan 28-03 (WARNING-2)
+- [Phase 28]: [Phase 28-04]: Shared buildSkillFixture() schema-complete SkillOut mock builder pattern for all mocked GET responses in Skill editor E2E specs (closes LOW-10)
 
 ### Pending Todos
 
@@ -330,6 +332,6 @@ None yet.
 ## Session Continuity
 
 Last activity: 2026-07-18
-Last session: 2026-07-18T10:18:55.651Z
-Stopped at: Completed 28-01-PLAN.md
+Last session: 2026-07-18T10:49:09.459Z
+Stopped at: Completed 28-04-PLAN.md
 Resume file: None
