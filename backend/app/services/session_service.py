@@ -40,12 +40,16 @@ async def create_session(
     ]
 
     # Phase 24: Generate and snapshot Skill Focus instruction (D-03)
+    # Phase 28: Sourced via get_skill_content_for_session (D-02/D-04/D-05/D-06) --
+    # transparently prefers Foundry-synced cloud content, degrading to the
+    # local DB injection this call used before Phase 28 when the skill isn't
+    # synced or every cloud path fails.
     focus_instruction = None
     if scenario.skill_id:
+        from app.services.skill_consumption_service import get_skill_content_for_session
         from app.services.skill_focus_service import compose_focus_instruction, extract_sop_steps
-        from app.services.skill_manager import load_skill_for_scenario
 
-        skill_content = await load_skill_for_scenario(db, scenario_id)
+        skill_content = await get_skill_content_for_session(db, scenario_id)
         if skill_content:
             sop_steps = extract_sop_steps(skill_content.content)
             focus_instruction = compose_focus_instruction(skill_content, 0, sop_steps)
@@ -80,14 +84,17 @@ async def update_sop_progress(
         return None
 
     from app.services import config_service
+    from app.services.skill_consumption_service import get_skill_content_for_session
     from app.services.skill_focus_service import (
         compose_focus_instruction,
         detect_sop_step,
         extract_sop_steps,
     )
-    from app.services.skill_manager import load_skill_for_scenario
 
-    skill_content = await load_skill_for_scenario(db, session.scenario_id)
+    # Phase 28: Sourced via get_skill_content_for_session (D-02/D-04/D-05/D-06).
+    # No per-message caching is added here -- get_skill_content_for_session's
+    # own TTL cache (HIGH-1) already absorbs repeated calls within a session.
+    skill_content = await get_skill_content_for_session(db, session.scenario_id)
     if not skill_content:
         return session.focus_instruction
 
