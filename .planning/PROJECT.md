@@ -99,4 +99,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-18 after Phase 28 completion — SOP Skill → AI Foundry Skill → HCP consumption (publish/archive/delete lifecycle syncs skills to Azure AI Foundry via Entra ID, HCP agent mounts skills at session time with Toolbox → MCP → download → local degradation chain, admin Settings tab with sync status/retry/portal link)*
+*Last updated: 2026-07-20 after Phase 29 completion — Voice Live GA migration (azure-ai-voicelive pinned 1.3.0b1 with explicit GA api-version 2026-07-15, hosted-agent-only connect path with classic asst_* branch and monkey-patch deleted, 14 inline HCP voice/avatar columns dropped in favor of mandatory VoiceLiveInstance, Agent Foundation Model catalog split from Voice Live model catalog, docs/voice-live-avatar unified to 17-file tree, backend/frontend coverage regression gates enforced)*
