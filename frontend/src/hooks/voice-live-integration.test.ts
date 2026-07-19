@@ -288,7 +288,10 @@ describe("Voice Live Token API — Real Backend Integration", () => {
     const firstProfile = profiles.items[0]!;
     const tokenData = await getVoiceLiveToken(accessToken, firstProfile.id);
 
-    // Simulate what the frontend does when constructing RTClient options
+    // Simulate what the frontend does when constructing RTClient options.
+    // GA api-version (D-02) — azure-ai-voicelive SDK 1.3.0, do not revert to a
+    // preview literal (see backend/app/config.py voice_live_api_version).
+    const GA_API_VERSION = "2026-07-15";
     if (tokenData.agent_id) {
       // Agent mode: modelOrAgent should be { agentId, projectName }
       const options = {
@@ -296,19 +299,19 @@ describe("Voice Live Token API — Real Backend Integration", () => {
           agentId: tokenData.agent_id,
           projectName: tokenData.project_name || "",
         },
-        apiVersion: "2025-05-01-preview",
+        apiVersion: GA_API_VERSION,
       };
       expect(options.modelOrAgent.agentId).toBeTruthy();
       expect(typeof options.modelOrAgent.projectName).toBe("string");
-      expect(options.apiVersion).toBe("2025-05-01-preview");
+      expect(options.apiVersion).toBe(GA_API_VERSION);
     } else {
       // Model mode: modelOrAgent should be the model string
       const options = {
         modelOrAgent: tokenData.model,
-        apiVersion: "2025-05-01-preview",
+        apiVersion: GA_API_VERSION,
       };
       expect(typeof options.modelOrAgent).toBe("string");
-      expect(options.apiVersion).toBe("2025-05-01-preview");
+      expect(options.apiVersion).toBe(GA_API_VERSION);
     }
   });
 
