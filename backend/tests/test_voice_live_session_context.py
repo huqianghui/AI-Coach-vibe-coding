@@ -240,10 +240,6 @@ async def test_force_model_mode_keeps_model_endpoint_and_avatar_permission(monke
     )
     settings = SimpleNamespace(
         voice_live_default_model="gpt-4o",
-        voice_live_hosted_agent_name="hosted-agent",
-        voice_live_hosted_agent_project="project",
-        voice_live_hosted_agent_endpoint="https://agent.example.test",
-        voice_live_agent_mode_enabled=True,
     )
     monkeypatch.setattr("app.config.get_settings", lambda: settings)
 

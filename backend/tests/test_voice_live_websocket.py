@@ -27,6 +27,7 @@ from app.models.hcp_profile import HcpProfile
 from app.models.service_config import ServiceConfig
 from app.models.voice_live_instance import VoiceLiveInstance
 from app.services.voice_live_websocket import (
+    AgentSyncRequiredError,
     _load_connection_config,
     handle_voice_live_websocket,
 )
@@ -108,6 +109,22 @@ async def seeded_db(db_session):
 
     await db_session.flush()
     return db_session
+
+
+async def _link_vl_instance(db_session, *, created_by: str = "test-user") -> str:
+    """Create a minimal VoiceLiveInstance and return its id.
+
+    Workaround for resolve_voice_config()'s no-VL-instance fallback branch,
+    which still reads deprecated HcpProfile columns dropped in Plan 29-05.
+    That fallback is owned/fixed by Plan 29-06 (not yet executed) -- every
+    HcpProfile fixture here that reaches resolve_voice_config() links a
+    VoiceLiveInstance to route through the working branch instead.
+    """
+    vl_inst = VoiceLiveInstance(name="VL-Test-Default", created_by=created_by)
+    db_session.add(vl_inst)
+    await db_session.flush()
+    await db_session.refresh(vl_inst)
+    return vl_inst.id
 
 
 @pytest.fixture
@@ -196,16 +213,26 @@ async def seeded_db_with_avatar(db_session):
 @pytest.fixture
 async def hcp_profile_with_agent(seeded_db):
     """Create an HCP profile with a synced agent_id."""
-    profile = HcpProfile(
-        name="Dr. WebSocket Test",
-        specialty="Oncology",
-        agent_id="asst_hcp_override_agent",
-        agent_sync_status="synced",
+    vl_inst = VoiceLiveInstance(
+        name="VL-HCP-Override-Agent",
+        voice_live_model="gpt-4o",
         voice_name="zh-CN-XiaoxiaoMultilingualNeural",
         voice_type="azure-standard",
         avatar_character="Lisa-casual-sitting",
         avatar_style="casual",
         avatar_customized=False,
+        created_by="test-user",
+    )
+    seeded_db.add(vl_inst)
+    await seeded_db.flush()
+    await seeded_db.refresh(vl_inst)
+
+    profile = HcpProfile(
+        name="Dr. WebSocket Test",
+        specialty="Oncology",
+        agent_id="hosted-hcp-override-agent",
+        agent_sync_status="synced",
+        voice_live_instance_id=vl_inst.id,
         agent_instructions_override="",
         created_by="test-user",
     )
@@ -243,8 +270,8 @@ async def hcp_with_vl_instance(seeded_db):
     profile = HcpProfile(
         name="Dr. Wang Fang",
         specialty="Neurology",
-        agent_id="",
-        agent_sync_status="none",
+        agent_id="hosted-wang-fang",
+        agent_sync_status="synced",
         voice_live_instance_id=vl_inst.id,
         agent_instructions_override="",
         created_by="test-user",
@@ -281,7 +308,7 @@ async def hcp_with_vl_and_override(seeded_db):
     profile = HcpProfile(
         name="Dr. Li Ming",
         specialty="Cardiology",
-        agent_id="asst_li_ming",
+        agent_id="hosted-li-ming",
         agent_sync_status="synced",
         voice_live_instance_id=vl_inst.id,
         agent_instructions_override="You are Dr. Li Ming, a Cardiologist.",
@@ -367,36 +394,35 @@ class TestLoadConnectionConfig:
 
         # This HCP has a synced agent -- should be agent mode
         assert cfg["use_agent_mode"] is True
-        assert cfg["agent_name"] == "asst_hcp_override_agent"
+        assert cfg["agent_name"] == "hosted-hcp-override-agent"
         # Voice settings from profile
         assert cfg["voice_name"] == "zh-CN-XiaoxiaoMultilingualNeural"
         assert cfg["voice_type"] == "azure-standard"
         # Model defaults to gpt-4o (profile has no voice_live_model override)
         assert cfg["model"] == "gpt-4o"
 
-    async def test_hcp_profile_voice_settings_applied(self, seeded_db):
-        """HCP profile voice settings are applied in model mode."""
+    async def test_hcp_profile_not_synced_rejects_connection(self, seeded_db):
+        """HCP profile without a synced agent raises AgentSyncRequiredError (D-08).
+
+        Model mode is no longer a fallback for HCP voice sessions -- agent mode
+        is mandatory. This replaces the old assertion that voice settings from
+        an unsynced profile applied in Model mode, which is no longer possible.
+        """
+        vl_id = await _link_vl_instance(seeded_db)
         profile = HcpProfile(
             name="Dr. No Agent",
             specialty="Cardiology",
             agent_id="",
             agent_sync_status="none",
-            voice_name="en-US-AvaNeural",
-            voice_type="azure-standard",
+            voice_live_instance_id=vl_id,
             created_by="test-user",
         )
         seeded_db.add(profile)
         await seeded_db.flush()
         await seeded_db.refresh(profile)
 
-        cfg = await _load_connection_config(seeded_db, hcp_profile_id=profile.id)
-
-        # No synced agent -- model mode
-        assert cfg["use_agent_mode"] is False
-        assert cfg["agent_name"] == ""
-        # Voice from profile
-        assert cfg["voice_name"] == "en-US-AvaNeural"
-        assert cfg["model"] == "gpt-4o"
+        with pytest.raises(AgentSyncRequiredError):
+            await _load_connection_config(seeded_db, hcp_profile_id=profile.id)
 
     async def test_system_prompt_passed_through(self, seeded_db):
         """System prompt is passed through to config."""
@@ -529,8 +555,8 @@ class TestLoadConnectionConfig:
         profile = HcpProfile(
             name="Dr. Whitespace",
             specialty="General",
-            agent_id="",
-            agent_sync_status="none",
+            agent_id="hosted-whitespace-test",
+            agent_sync_status="synced",
             voice_live_instance_id=vl_inst.id,
             agent_instructions_override="   ",  # whitespace only
             created_by="test-user",
@@ -783,8 +809,8 @@ class TestHandleVoiceLiveWebsocket:
         mock_connect_fn.assert_called_once()
         call_kwargs = mock_connect_fn.call_args[1]
         assert call_kwargs["model"] == "gpt-4o"
-        # api_version no longer passed (SDK >= 1.2.0b5 handles it internally)
-        assert "api_version" not in call_kwargs
+        # D-02: GA api_version is passed in model mode too
+        assert call_kwargs["api_version"] == "2026-07-15"
         # Endpoint used as-is (no cognitiveservices transform)
         assert call_kwargs["endpoint"] == REAL_FOUNDRY_ENDPOINT.rstrip("/")
         # No agent param in model mode
@@ -1010,8 +1036,9 @@ class TestHandleVoiceLiveWebsocket:
             f"audio.delta was NOT forwarded (forwarding loop likely crashed): {sent_types}"
         )
 
-    async def test_credential_uses_real_api_key(self, seeded_db, mock_sdk):
-        """AzureKeyCredential is called with the real API key from DB."""
+    async def test_credential_prefers_entra_when_available(self, seeded_db, mock_sdk):
+        """D-01: Entra (DefaultAzureCredential) is used whenever a token can be
+        obtained, even though a real API key is also configured in DB."""
         mock_connect_fn, _, _ = mock_sdk
         creds_mod = sys.modules["azure.core.credentials"]
 
@@ -1031,7 +1058,41 @@ class TestHandleVoiceLiveWebsocket:
 
         await handle_voice_live_websocket(ws, seeded_db)
 
-        # AzureKeyCredential should be called with the real API key
+        creds_mod.AzureKeyCredential.assert_not_called()
+
+    async def test_credential_falls_back_to_api_key_when_entra_unavailable(
+        self, seeded_db, mock_sdk
+    ):
+        """D-01: AzureKeyCredential(real key) is used when the Entra probe fails."""
+        mock_connect_fn, _, _ = mock_sdk
+        creds_mod = sys.modules["azure.core.credentials"]
+        identity_aio_mod = sys.modules["azure.identity.aio"]
+
+        class _FailingDefaultAzureCredential:
+            async def get_token(self, *scopes):
+                raise RuntimeError("no Entra identity available in this environment")
+
+            async def close(self):
+                pass
+
+        identity_aio_mod.DefaultAzureCredential = _FailingDefaultAzureCredential
+
+        mock_conn = _make_mock_azure_conn()
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_connect_fn.return_value = mock_ctx
+
+        session_update = json.dumps(
+            {
+                "type": "session.update",
+                "session": {"hcp_profile_id": None},
+            }
+        )
+        ws = _make_mock_ws([session_update])
+
+        await handle_voice_live_websocket(ws, seeded_db)
+
         creds_mod.AzureKeyCredential.assert_called_once_with(REAL_FOUNDRY_API_KEY)
 
 
@@ -1281,13 +1342,13 @@ class TestDualModeWebsocketHandler:
         mock_connect_fn, _, _ = mock_sdk
 
         # Create HCP with synced agent
+        vl_id = await _link_vl_instance(seeded_db)
         profile = HcpProfile(
             name="Dr. Agent Mode",
             specialty="Oncology",
-            agent_id="asst_agent_mode_test",
+            agent_id="hosted-agent-mode-test",
             agent_sync_status="synced",
-            voice_name="en-US-AvaNeural",
-            voice_type="azure-standard",
+            voice_live_instance_id=vl_id,
             agent_instructions_override="You are Dr. Agent Mode.",
             created_by="test-user",
         )
@@ -1317,13 +1378,13 @@ class TestDualModeWebsocketHandler:
         # connect() should be called with agent params, NOT model=
         mock_connect_fn.assert_called_once()
         call_kwargs = mock_connect_fn.call_args[1]
-        assert call_kwargs["agent_name"] == "asst_agent_mode_test"
+        assert call_kwargs["agent_name"] == "hosted-agent-mode-test"
         # project_name resolves from the seeded_db master config's default_project
         # (real value from .env), not a hardcoded literal
         assert call_kwargs["project_name"] == REAL_FOUNDRY_PROJECT
         assert "model" not in call_kwargs
         assert "agent_config" not in call_kwargs
-        assert call_kwargs["api_version"] == "2025-05-01-preview"
+        assert call_kwargs["api_version"] == "2026-07-15"
 
         # proxy.connected should include mode="agent"
         sent_calls = ws.send_text.call_args_list
@@ -1335,7 +1396,7 @@ class TestDualModeWebsocketHandler:
                 break
         assert proxy_msg is not None
         assert proxy_msg["mode"] == "agent"
-        assert proxy_msg["agent_name"] == "asst_agent_mode_test"
+        assert proxy_msg["agent_name"] == "hosted-agent-mode-test"
 
     async def test_model_mode_connect_uses_model_param(self, seeded_db, mock_sdk):
         """Model mode: connect() uses model= parameter, mode='model' in response."""
@@ -1363,7 +1424,7 @@ class TestDualModeWebsocketHandler:
         assert "model" in call_kwargs
         assert call_kwargs["model"] == "gpt-4o"
         assert "agent" not in call_kwargs
-        assert "api_version" not in call_kwargs
+        assert call_kwargs["api_version"] == "2026-07-15"
 
         # proxy.connected should include mode="model"
         sent_calls = ws.send_text.call_args_list
@@ -1386,13 +1447,13 @@ class TestDualModeWebsocketHandler:
         mock_connect_fn, _, models_mod = mock_sdk
 
         # Create HCP with synced agent
+        vl_id = await _link_vl_instance(seeded_db)
         profile = HcpProfile(
             name="Dr. Fail Agent",
             specialty="Cardiology",
-            agent_id="asst_will_fail",
+            agent_id="hosted-will-fail",
             agent_sync_status="synced",
-            voice_name="en-US-AvaNeural",
-            voice_type="azure-standard",
+            voice_live_instance_id=vl_id,
             created_by="test-user",
         )
         seeded_db.add(profile)
@@ -1418,7 +1479,7 @@ class TestDualModeWebsocketHandler:
         # connect() called exactly ONCE -- no fallback attempt
         mock_connect_fn.assert_called_once()
         call_kwargs = mock_connect_fn.call_args[1]
-        assert call_kwargs["agent_name"] == "asst_will_fail"  # was agent mode attempt
+        assert call_kwargs["agent_name"] == "hosted-will-fail"  # was agent mode attempt
         # project_name resolves from the seeded_db master config's default_project
         # (real value from .env), not a hardcoded literal
         assert call_kwargs["project_name"] == REAL_FOUNDRY_PROJECT
@@ -1479,54 +1540,51 @@ class TestDualModeWebsocketHandler:
         assert "agent" not in call_kwargs
         assert call_kwargs["model"] == "gpt-4o"
 
-    async def test_hcp_not_synced_uses_model_mode(self, seeded_db, mock_sdk):
-        """HCP with agent_sync_status != 'synced' uses model mode."""
+    async def test_hcp_not_synced_rejects_and_never_calls_connect(self, seeded_db, mock_sdk):
+        """HCP with agent_sync_status != 'synced' is rejected -- no Model mode fallback (D-08)."""
         mock_connect_fn, _, _ = mock_sdk
 
+        vl_id = await _link_vl_instance(seeded_db)
         profile = HcpProfile(
             name="Dr. Not Synced WS",
             specialty="General",
-            agent_id="asst_pending",
+            agent_id="",  # not asst_-prefixed: isolates D-08 from D-05 resync (covered separately)
             agent_sync_status="pending",
-            voice_name="en-US-AvaNeural",
-            voice_type="azure-standard",
+            voice_live_instance_id=vl_id,
             created_by="test-user",
         )
         seeded_db.add(profile)
         await seeded_db.flush()
         await seeded_db.refresh(profile)
 
-        mock_conn = _make_mock_azure_conn()
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
-        mock_ctx.__aexit__ = AsyncMock(return_value=False)
-        mock_connect_fn.return_value = mock_ctx
-
         session_update = json.dumps(
-            {
-                "type": "session.update",
-                "session": {"hcp_profile_id": profile.id},
-            }
+            {"type": "session.update", "session": {"hcp_profile_id": profile.id}}
         )
         ws = _make_mock_ws([session_update])
 
         await handle_voice_live_websocket(ws, seeded_db)
 
-        # Should be model mode since agent not synced
-        mock_connect_fn.assert_called_once()
-        call_kwargs = mock_connect_fn.call_args[1]
-        assert "model" in call_kwargs
-        assert "agent" not in call_kwargs
+        mock_connect_fn.assert_not_called()
+
+        sent_calls = ws.send_text.call_args_list
+        error_msg = None
+        for call in sent_calls:
+            msg = json.loads(call[0][0])
+            if msg.get("type") == "error":
+                error_msg = msg
+                break
+        assert error_msg is not None, "AGENT_SYNC_REQUIRED error should be sent to client"
+        assert error_msg["error"]["code"] == "AGENT_SYNC_REQUIRED"
 
     async def test_load_config_agent_mode_fields(self, seeded_db):
         """_load_connection_config returns agent mode fields for synced HCP."""
+        vl_id = await _link_vl_instance(seeded_db)
         profile = HcpProfile(
             name="Dr. Config Agent",
             specialty="Oncology",
-            agent_id="asst_config_test",
+            agent_id="hosted-config-test",
             agent_sync_status="synced",
-            voice_name="en-US-AvaNeural",
-            voice_type="azure-standard",
+            voice_live_instance_id=vl_id,
             created_by="test-user",
         )
         seeded_db.add(profile)
@@ -1536,8 +1594,68 @@ class TestDualModeWebsocketHandler:
         cfg = await _load_connection_config(seeded_db, hcp_profile_id=profile.id)
 
         assert cfg["use_agent_mode"] is True
-        assert cfg["agent_name"] == "asst_config_test"
+        assert cfg["agent_name"] == "hosted-config-test"
         assert cfg["project_name"]  # should be from master config
+
+    async def test_load_config_resyncs_classic_agent_before_connect(self, seeded_db):
+        """Classic asst_* agent is auto-resynced to hosted before agent-mode is decided (D-05)."""
+        from unittest.mock import patch as _patch
+
+        vl_id = await _link_vl_instance(seeded_db)
+        profile = HcpProfile(
+            name="Dr. Legacy Classic",
+            specialty="Oncology",
+            agent_id="asst_legacy_classic",
+            agent_sync_status="synced",
+            voice_live_instance_id=vl_id,
+            created_by="test-user",
+        )
+        seeded_db.add(profile)
+        await seeded_db.flush()
+        await seeded_db.refresh(profile)
+
+        async def _fake_resync(db, prof):
+            prof.agent_id = "hosted-legacy-migrated"
+            prof.agent_sync_status = "synced"
+            return True
+
+        with _patch(
+            "app.services.agent_sync_service.resync_classic_agent",
+            side_effect=_fake_resync,
+        ) as mock_resync:
+            cfg = await _load_connection_config(seeded_db, hcp_profile_id=profile.id)
+
+        mock_resync.assert_called_once()
+        assert cfg["use_agent_mode"] is True
+        assert cfg["agent_name"] == "hosted-legacy-migrated"
+
+    async def test_load_config_resync_failure_rejects(self, seeded_db):
+        """When auto-resync fails, connection is rejected, not silently model-mode (D-05+D-08)."""
+        from unittest.mock import patch as _patch
+
+        vl_id = await _link_vl_instance(seeded_db)
+        profile = HcpProfile(
+            name="Dr. Legacy Fails",
+            specialty="Oncology",
+            agent_id="asst_legacy_fails",
+            agent_sync_status="synced",
+            voice_live_instance_id=vl_id,
+            created_by="test-user",
+        )
+        seeded_db.add(profile)
+        await seeded_db.flush()
+        await seeded_db.refresh(profile)
+
+        async def _fake_resync_fail(db, prof):
+            prof.agent_sync_status = "failed"
+            return False
+
+        with _patch(
+            "app.services.agent_sync_service.resync_classic_agent",
+            side_effect=_fake_resync_fail,
+        ):
+            with pytest.raises(AgentSyncRequiredError):
+                await _load_connection_config(seeded_db, hcp_profile_id=profile.id)
 
     async def test_load_config_vl_instance_always_model(self, seeded_db):
         """_load_connection_config for VL Instance always returns model mode."""
@@ -1669,15 +1787,24 @@ class TestLoadConnectionConfigErrors:
 
     async def test_hcp_unsupported_model_fallback(self, seeded_db):
         """_load_connection_config falls back to default model for unsupported HCP model."""
-        # Create HCP with unsupported model
+        # Create HCP with unsupported model (via linked VoiceLiveInstance)
+        vl_inst = VoiceLiveInstance(
+            name="VL-Bad-Model",
+            voice_live_model="unsupported-model-xyz",
+            voice_name="en-US-AvaNeural",
+            voice_type="azure-standard",
+            created_by="test-user",
+        )
+        seeded_db.add(vl_inst)
+        await seeded_db.flush()
+        await seeded_db.refresh(vl_inst)
+
         profile = HcpProfile(
             name="Dr. Bad Model",
             specialty="General",
-            agent_id="",
-            agent_sync_status="none",
-            voice_name="en-US-AvaNeural",
-            voice_type="azure-standard",
-            voice_live_model="unsupported-model-xyz",
+            agent_id="hosted-bad-model-test",
+            agent_sync_status="synced",
+            voice_live_instance_id=vl_inst.id,
             created_by="test-user",
         )
         seeded_db.add(profile)
@@ -1696,15 +1823,26 @@ class TestLoadConnectionConfigErrors:
         from unittest.mock import patch as _patch
 
         # Create HCP with an avatar style that validate_avatar_style will change
-        profile = HcpProfile(
-            name="Dr. Bad Style",
-            specialty="General",
-            agent_id="",
-            agent_sync_status="none",
+        # (via linked VoiceLiveInstance)
+        vl_inst = VoiceLiveInstance(
+            name="VL-Bad-Style-HCP",
+            voice_live_model="gpt-4o",
             voice_name="en-US-AvaNeural",
             voice_type="azure-standard",
             avatar_character="lisa",
             avatar_style="invalid-style",
+            created_by="test-user",
+        )
+        seeded_db.add(vl_inst)
+        await seeded_db.flush()
+        await seeded_db.refresh(vl_inst)
+
+        profile = HcpProfile(
+            name="Dr. Bad Style",
+            specialty="General",
+            agent_id="hosted-bad-style-test",
+            agent_sync_status="synced",
+            voice_live_instance_id=vl_inst.id,
             created_by="test-user",
         )
         seeded_db.add(profile)
@@ -2073,14 +2211,23 @@ class TestWebSocketHandlerErrorPaths:
 
     async def test_voice_live_disabled_for_hcp(self, seeded_db, mock_sdk):
         """Handler sends error when voice_live_enabled is False on HCP profile."""
+        vl_inst = VoiceLiveInstance(
+            name="VL-Disabled",
+            voice_name="en-US-AvaNeural",
+            voice_type="azure-standard",
+            enabled=False,
+            created_by="test-user",
+        )
+        seeded_db.add(vl_inst)
+        await seeded_db.flush()
+        await seeded_db.refresh(vl_inst)
+
         profile = HcpProfile(
             name="Dr. VL Disabled",
             specialty="General",
             agent_id="",
             agent_sync_status="none",
-            voice_name="en-US-AvaNeural",
-            voice_type="azure-standard",
-            voice_live_enabled=False,
+            voice_live_instance_id=vl_inst.id,
             created_by="test-user",
         )
         seeded_db.add(profile)
@@ -2261,13 +2408,13 @@ class TestWebSocketHandlerErrorPaths:
         mock_connect_fn.return_value = mock_ctx
 
         # Create a real HCP profile
+        vl_id = await _link_vl_instance(seeded_db)
         profile = HcpProfile(
             name="Dr. Check Exception",
             specialty="General",
-            agent_id="",
-            agent_sync_status="none",
-            voice_name="en-US-AvaNeural",
-            voice_type="azure-standard",
+            agent_id="hosted-check-exception-profile",
+            agent_sync_status="synced",
+            voice_live_instance_id=vl_id,
             created_by="test-user",
         )
         seeded_db.add(profile)
@@ -2351,13 +2498,13 @@ class TestWebSocketHandlerErrorPaths:
             delattr(aio_mod, "AgentSessionConfig")
 
         # Create HCP with synced agent to trigger agent mode
+        vl_id = await _link_vl_instance(seeded_db)
         profile = HcpProfile(
             name="Dr. Old SDK",
             specialty="Oncology",
-            agent_id="asst_old_sdk",
+            agent_id="hosted-old-sdk",
             agent_sync_status="synced",
-            voice_name="en-US-AvaNeural",
-            voice_type="azure-standard",
+            voice_live_instance_id=vl_id,
             created_by="test-user",
         )
         seeded_db.add(profile)
@@ -2376,7 +2523,7 @@ class TestWebSocketHandlerErrorPaths:
 
         mock_connect_fn.assert_called_once()
         call_kwargs = mock_connect_fn.call_args[1]
-        assert call_kwargs["agent_name"] == "asst_old_sdk"
+        assert call_kwargs["agent_name"] == "hosted-old-sdk"
         # project_name resolves from the seeded_db master config's default_project
         # (real value from .env), not a hardcoded literal
         assert call_kwargs["project_name"] == REAL_FOUNDRY_PROJECT
@@ -2879,7 +3026,7 @@ class TestRealVoiceLiveIntegration:
         cfg = await _load_connection_config(db, hcp_profile_id=profile.id)
 
         assert cfg["use_agent_mode"] is True
-        assert cfg["agent_name"] == "asst_hcp_override_agent"
+        assert cfg["agent_name"] == "hosted-hcp-override-agent"
         assert cfg["project_name"]  # from master config's default_project
         assert cfg["project_name"] == REAL_FOUNDRY_PROJECT
         assert cfg["voice_name"] == "zh-CN-XiaoxiaoMultilingualNeural"
@@ -2918,7 +3065,7 @@ class TestRealVoiceLiveIntegration:
         assert cfg["instructions"] == "Auto-generated prompt from frontend."
         # Voice comes from VL Instance config via resolve_voice_config
         assert cfg["voice_name"] == "en-US-AvaNeural"
-        assert cfg["use_agent_mode"] is False
+        assert cfg["use_agent_mode"] is True
 
     async def test_real_config_resolution_hcp_override_priority(self, hcp_with_vl_and_override):
         """HCP override takes priority over VL Instance instructions.
@@ -2934,7 +3081,7 @@ class TestRealVoiceLiveIntegration:
         assert "English teacher" not in cfg["instructions"]
         # HCP with synced agent -> agent mode
         assert cfg["use_agent_mode"] is True
-        assert cfg["agent_name"] == "asst_li_ming"
+        assert cfg["agent_name"] == "hosted-li-ming"
 
     # -------------------------------------------------------------------
     # 4. Real credential encrypt/decrypt round-trip via DB
@@ -3170,13 +3317,13 @@ class TestRealVoiceLiveIntegration:
             pytest.skip("AZURE_FOUNDRY_DEFAULT_PROJECT required for agent mode test")
 
         # Create HCP with synced agent
+        vl_id = await _link_vl_instance(seeded_db)
         profile = HcpProfile(
             name="Dr. Real Agent Mode",
             specialty="Oncology",
             agent_id="integration-test-agent-hcp",
             agent_sync_status="synced",
-            voice_name="en-US-AvaNeural",
-            voice_type="azure-standard",
+            voice_live_instance_id=vl_id,
             agent_instructions_override="You are an oncologist.",
             created_by="test-user",
         )
