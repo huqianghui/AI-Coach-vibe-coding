@@ -93,6 +93,17 @@ PROFILE_DATA = {
 }
 
 
+async def _create_vl_instance(session, user_id: str) -> str:
+    """Create a minimal VoiceLiveInstance directly via the DB and return its id."""
+    from app.models.voice_live_instance import VoiceLiveInstance
+
+    inst = VoiceLiveInstance(name="Test VL Instance", created_by=user_id)
+    session.add(inst)
+    await session.flush()
+    await session.refresh(inst)
+    return inst.id
+
+
 # ---------------------------------------------------------------------------
 # Test 1: get_voice_live_token with hcp_profile_id returns profile agent_id
 # ---------------------------------------------------------------------------
@@ -235,13 +246,14 @@ async def test_voice_live_token_backward_compatible(mock_parse, mock_cfg, db_ses
 
 
 @patch("app.services.hcp_profile_service.agent_sync_service")
-async def test_create_profile_triggers_agent_sync(mock_sync, aclient):
+async def test_create_profile_triggers_agent_sync(mock_sync, aclient, db_session):
     """POST /hcp-profiles triggers agent sync and returns agent_sync_status."""
     mock_sync.sync_agent_for_profile = AsyncMock(return_value={"id": "asst_test123"})
+    vl_id = await _create_vl_instance(db_session, PROFILE_DATA["created_by"])
 
     resp = await aclient.post(
         "/api/v1/hcp-profiles",
-        json=PROFILE_DATA,
+        json={**PROFILE_DATA, "voice_live_instance_id": vl_id},
     )
 
     assert resp.status_code == 201
@@ -256,14 +268,15 @@ async def test_create_profile_triggers_agent_sync(mock_sync, aclient):
 
 
 @patch("app.services.hcp_profile_service.agent_sync_service")
-async def test_update_profile_triggers_agent_sync(mock_sync, aclient):
+async def test_update_profile_triggers_agent_sync(mock_sync, aclient, db_session):
     """PUT /hcp-profiles/{id} triggers agent re-sync."""
     mock_sync.sync_agent_for_profile = AsyncMock(return_value={"id": "asst_test123"})
+    vl_id = await _create_vl_instance(db_session, PROFILE_DATA["created_by"])
 
     # First create a profile
     create_resp = await aclient.post(
         "/api/v1/hcp-profiles",
-        json=PROFILE_DATA,
+        json={**PROFILE_DATA, "voice_live_instance_id": vl_id},
     )
     assert create_resp.status_code == 201
     profile_id = create_resp.json()["id"]
@@ -289,15 +302,16 @@ async def test_update_profile_triggers_agent_sync(mock_sync, aclient):
 
 
 @patch("app.services.hcp_profile_service.agent_sync_service")
-async def test_delete_profile_attempts_agent_deletion(mock_sync, aclient):
+async def test_delete_profile_attempts_agent_deletion(mock_sync, aclient, db_session):
     """DELETE /hcp-profiles/{id} attempts to delete the AI Foundry agent."""
     mock_sync.sync_agent_for_profile = AsyncMock(return_value={"id": "asst_delete_me"})
     mock_sync.delete_agent = AsyncMock(return_value=True)
+    vl_id = await _create_vl_instance(db_session, PROFILE_DATA["created_by"])
 
     # Create a profile (which gets an agent_id via mock)
     create_resp = await aclient.post(
         "/api/v1/hcp-profiles",
-        json=PROFILE_DATA,
+        json={**PROFILE_DATA, "voice_live_instance_id": vl_id},
     )
     assert create_resp.status_code == 201
     profile_id = create_resp.json()["id"]
@@ -318,14 +332,15 @@ async def test_delete_profile_attempts_agent_deletion(mock_sync, aclient):
 
 
 @patch("app.services.hcp_profile_service.agent_sync_service")
-async def test_retry_sync(mock_sync, aclient):
+async def test_retry_sync(mock_sync, aclient, db_session):
     """POST /hcp-profiles/{id}/retry-sync retries agent sync."""
     # First sync fails on create
     mock_sync.sync_agent_for_profile = AsyncMock(side_effect=Exception("Connection failed"))
+    vl_id = await _create_vl_instance(db_session, PROFILE_DATA["created_by"])
 
     create_resp = await aclient.post(
         "/api/v1/hcp-profiles",
-        json=PROFILE_DATA,
+        json={**PROFILE_DATA, "voice_live_instance_id": vl_id},
     )
     assert create_resp.status_code == 201
     profile_id = create_resp.json()["id"]
@@ -348,15 +363,16 @@ async def test_retry_sync(mock_sync, aclient):
 
 
 @patch("app.services.hcp_profile_service.agent_sync_service")
-async def test_create_profile_sync_failure(mock_sync, aclient):
+async def test_create_profile_sync_failure(mock_sync, aclient, db_session):
     """Profile is saved even when agent sync fails (D-02, D-10)."""
     mock_sync.sync_agent_for_profile = AsyncMock(
         side_effect=Exception("AI Foundry API unavailable")
     )
+    vl_id = await _create_vl_instance(db_session, PROFILE_DATA["created_by"])
 
     resp = await aclient.post(
         "/api/v1/hcp-profiles",
-        json=PROFILE_DATA,
+        json={**PROFILE_DATA, "voice_live_instance_id": vl_id},
     )
 
     # Profile should still be created (201), with failed sync status
@@ -592,16 +608,33 @@ async def _seed_real_service_configs(session, user_id: str) -> dict:
 
 
 async def _seed_real_hcp_profile(session, user_id: str, **overrides) -> HcpProfile:
-    """Seed a real HcpProfile ORM object in the test DB."""
-    defaults = dict(
-        name="Dr. RealSync Li",
-        specialty="Cardiology",
-        hospital="Real Hospital",
-        title="Professor",
+    """Seed a real HcpProfile ORM object with an assigned VoiceLiveInstance in the test DB.
+
+    D-09/D-13: HcpProfile no longer carries its own voice/avatar columns -- config
+    now comes exclusively from the VoiceLiveInstance FK. Voice/avatar/turn-detection
+    overrides are routed to the VoiceLiveInstance; profile-only overrides
+    (agent_id, agent_sync_status, name, specialty, hospital, title) apply directly
+    to the HcpProfile row.
+    """
+    from app.models.voice_live_instance import VoiceLiveInstance
+
+    _profile_fields = {
+        "name",
+        "specialty",
+        "hospital",
+        "title",
+        "created_by",
+        "agent_id",
+        "agent_sync_status",
+    }
+    profile_overrides = {k: v for k, v in overrides.items() if k in _profile_fields}
+    vl_overrides = {k: v for k, v in overrides.items() if k not in _profile_fields}
+    if "voice_live_enabled" in vl_overrides:
+        vl_overrides["enabled"] = vl_overrides.pop("voice_live_enabled")
+
+    vl_defaults = dict(
+        name="Real Sync VL Instance",
         created_by=user_id,
-        agent_id="asst_real_profile_agent",
-        agent_sync_status="synced",
-        voice_live_enabled=True,
         voice_live_model="gpt-4o-realtime-preview",
         voice_name="zh-CN-YunxiNeural",
         voice_type="azure-standard",
@@ -616,11 +649,31 @@ async def _seed_real_hcp_profile(session, user_id: str, **overrides) -> HcpProfi
         eou_detection=False,
         recognition_language="zh-CN",
     )
-    defaults.update(overrides)
+    vl_defaults.update(vl_overrides)
+    vl_instance = VoiceLiveInstance(**vl_defaults)
+    session.add(vl_instance)
+    await session.flush()
+
+    defaults = dict(
+        name="Dr. RealSync Li",
+        specialty="Cardiology",
+        hospital="Real Hospital",
+        title="Professor",
+        created_by=user_id,
+        agent_id="asst_real_profile_agent",
+        agent_sync_status="synced",
+        voice_live_instance_id=vl_instance.id,
+    )
+    defaults.update(profile_overrides)
     profile = HcpProfile(**defaults)
     session.add(profile)
     await session.flush()
     await session.refresh(profile)
+    # Eagerly load the voice_live_instance relationship so sync code paths
+    # (e.g. build_voice_live_metadata -> resolve_voice_config) that access
+    # profile.voice_live_instance outside an async context don't trigger a
+    # lazy-load (which raises MissingGreenlet under async SQLAlchemy).
+    await session.refresh(profile, attribute_names=["voice_live_instance"])
     return profile
 
 
@@ -703,10 +756,11 @@ class TestTokenBrokerRealData:
 class TestBuildVoiceLiveMetadataRealORM:
     """Tests for build_voice_live_metadata using real HcpProfile ORM objects.
 
-    Instead of MagicMock, these seed actual HcpProfile instances in the test DB
-    so resolve_voice_config exercises the real inline-field fallback path.
+    Instead of MagicMock, these seed actual HcpProfile instances (linked to a
+    real VoiceLiveInstance) in the test DB so resolve_voice_config exercises
+    the real VL-instance resolution path.
 
-    The real inline fallback path includes additional fields (avatar, response_temperature,
+    The real VL-instance path includes additional fields (avatar, response_temperature,
     proactive_engagement, etc.) which may cause the JSON to exceed 512 chars and get
     chunked by _chunk_metadata_value. We reassemble chunks before parsing.
     """
@@ -860,6 +914,7 @@ class TestProfileLifecycleRealDB:
 
         # Seed a user for created_by
         user = await _seed_real_user(db_session, "lifecycle_creator")
+        vl_id = await _create_vl_instance(db_session, user.id)
         await db_session.commit()
 
         profile_data = {
@@ -878,6 +933,7 @@ class TestProfileLifecycleRealDB:
             "difficulty": "easy",
             "is_active": True,
             "created_by": user.id,
+            "voice_live_instance_id": vl_id,
         }
 
         resp = await real_aclient.post("/api/v1/hcp-profiles", json=profile_data)
@@ -900,11 +956,12 @@ class TestProfileLifecycleRealDB:
         mock_sync.sync_agent_for_profile = AsyncMock(return_value={"id": "asst_updated"})
 
         user = await _seed_real_user(db_session, "lifecycle_updater")
+        vl_id = await _create_vl_instance(db_session, user.id)
         await db_session.commit()
 
         create_resp = await real_aclient.post(
             "/api/v1/hcp-profiles",
-            json={**PROFILE_DATA, "created_by": user.id},
+            json={**PROFILE_DATA, "created_by": user.id, "voice_live_instance_id": vl_id},
         )
         assert create_resp.status_code == 201
         profile_id = create_resp.json()["id"]
@@ -928,11 +985,12 @@ class TestProfileLifecycleRealDB:
         mock_sync.delete_agent = AsyncMock(return_value=True)
 
         user = await _seed_real_user(db_session, "lifecycle_deleter")
+        vl_id = await _create_vl_instance(db_session, user.id)
         await db_session.commit()
 
         create_resp = await real_aclient.post(
             "/api/v1/hcp-profiles",
-            json={**PROFILE_DATA, "created_by": user.id},
+            json={**PROFILE_DATA, "created_by": user.id, "voice_live_instance_id": vl_id},
         )
         assert create_resp.status_code == 201
         profile_id = create_resp.json()["id"]

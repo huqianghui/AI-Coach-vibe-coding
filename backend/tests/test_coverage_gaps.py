@@ -120,6 +120,18 @@ async def _user(role="user", username="covuser") -> tuple[str, str]:
         return u.id, token
 
 
+async def _create_vl_instance(user_id: str) -> str:
+    """Create a minimal VoiceLiveInstance directly via the DB and return its id."""
+    from app.models.voice_live_instance import VoiceLiveInstance
+
+    async with TestSessionLocal() as db:
+        inst = VoiceLiveInstance(name="Test VL Instance", created_by=user_id)
+        db.add(inst)
+        await db.commit()
+        await db.refresh(inst)
+        return inst.id
+
+
 async def _inactive_user(username="inactive") -> tuple[str, str]:
     """Create an inactive user and return (user_id, bearer_token)."""
     async with TestSessionLocal() as db:
@@ -140,9 +152,15 @@ async def _inactive_user(username="inactive") -> tuple[str, str]:
 
 async def _admin_scenario(client, admin_id, admin_token) -> str:
     """Create an HCP profile + rubric + skill + active scenario. Returns scenario_id."""
+    vl_id = await _create_vl_instance(admin_id)
     hcp = await client.post(
         "/api/v1/hcp-profiles",
-        json={"name": "Dr. Cov", "specialty": "Onc", "created_by": admin_id},
+        json={
+            "name": "Dr. Cov",
+            "specialty": "Onc",
+            "created_by": admin_id,
+            "voice_live_instance_id": vl_id,
+        },
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     # Create rubric + skill via DB (no API endpoint needed)
@@ -700,9 +718,15 @@ class TestHcpProfilesCoverage:
     async def test_create_hcp_profile(self, client):
         """Cover line 69: create_hcp_profile + return."""
         admin_id, admin_token = await _user(role="admin", username="hcp_admin")
+        vl_id = await _create_vl_instance(admin_id)
         resp = await client.post(
             "/api/v1/hcp-profiles",
-            json={"name": "Dr. Cover", "specialty": "Cardiology", "created_by": admin_id},
+            json={
+                "name": "Dr. Cover",
+                "specialty": "Cardiology",
+                "created_by": admin_id,
+                "voice_live_instance_id": vl_id,
+            },
             headers={"Authorization": f"Bearer {admin_token}"},
         )
         assert resp.status_code == 201
@@ -715,9 +739,15 @@ class TestHcpProfilesCoverage:
     async def test_list_hcp_profiles_with_search(self, client):
         """Cover list endpoint with search param."""
         admin_id, admin_token = await _user(role="admin", username="hcp_list_admin")
+        vl_id = await _create_vl_instance(admin_id)
         await client.post(
             "/api/v1/hcp-profiles",
-            json={"name": "Dr. Searchable", "specialty": "Oncology", "created_by": admin_id},
+            json={
+                "name": "Dr. Searchable",
+                "specialty": "Oncology",
+                "created_by": admin_id,
+                "voice_live_instance_id": vl_id,
+            },
             headers={"Authorization": f"Bearer {admin_token}"},
         )
         resp = await client.get(
@@ -730,9 +760,15 @@ class TestHcpProfilesCoverage:
     async def test_get_hcp_profile_by_id(self, client):
         """Cover line 101."""
         admin_id, admin_token = await _user(role="admin", username="hcp_get_admin")
+        vl_id = await _create_vl_instance(admin_id)
         create_resp = await client.post(
             "/api/v1/hcp-profiles",
-            json={"name": "Dr. GetTest", "specialty": "Derm", "created_by": admin_id},
+            json={
+                "name": "Dr. GetTest",
+                "specialty": "Derm",
+                "created_by": admin_id,
+                "voice_live_instance_id": vl_id,
+            },
             headers={"Authorization": f"Bearer {admin_token}"},
         )
         pid = create_resp.json()["id"]
@@ -746,9 +782,15 @@ class TestHcpProfilesCoverage:
     async def test_update_hcp_profile(self, client):
         """Cover line 113."""
         admin_id, admin_token = await _user(role="admin", username="hcp_upd_admin")
+        vl_id = await _create_vl_instance(admin_id)
         create_resp = await client.post(
             "/api/v1/hcp-profiles",
-            json={"name": "Dr. Before", "specialty": "Neuro", "created_by": admin_id},
+            json={
+                "name": "Dr. Before",
+                "specialty": "Neuro",
+                "created_by": admin_id,
+                "voice_live_instance_id": vl_id,
+            },
             headers={"Authorization": f"Bearer {admin_token}"},
         )
         pid = create_resp.json()["id"]
@@ -763,9 +805,15 @@ class TestHcpProfilesCoverage:
     async def test_delete_hcp_profile(self, client):
         """Cover line 124."""
         admin_id, admin_token = await _user(role="admin", username="hcp_del_admin")
+        vl_id = await _create_vl_instance(admin_id)
         create_resp = await client.post(
             "/api/v1/hcp-profiles",
-            json={"name": "Dr. Delete", "specialty": "Onc", "created_by": admin_id},
+            json={
+                "name": "Dr. Delete",
+                "specialty": "Onc",
+                "created_by": admin_id,
+                "voice_live_instance_id": vl_id,
+            },
             headers={"Authorization": f"Bearer {admin_token}"},
         )
         pid = create_resp.json()["id"]
@@ -783,9 +831,15 @@ class TestScenariosCoverage:
     """Cover scenarios.py: create, list, get, update, delete, clone, active."""
 
     async def _create_hcp(self, client, admin_token, admin_id) -> str:
+        vl_id = await _create_vl_instance(admin_id)
         resp = await client.post(
             "/api/v1/hcp-profiles",
-            json={"name": "Dr. ScnCov", "specialty": "Onc", "created_by": admin_id},
+            json={
+                "name": "Dr. ScnCov",
+                "specialty": "Onc",
+                "created_by": admin_id,
+                "voice_live_instance_id": vl_id,
+            },
             headers={"Authorization": f"Bearer {admin_token}"},
         )
         return resp.json()["id"]

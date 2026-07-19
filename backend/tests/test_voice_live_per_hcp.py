@@ -490,16 +490,42 @@ async def _seed_avatar_config(session, user_id: str) -> ServiceConfig:
 
 
 async def _seed_hcp_profile(session, user_id: str, **overrides) -> HcpProfile:
-    """Seed an HcpProfile with per-HCP voice/avatar settings."""
-    from app.models.hcp_profile import HcpProfile
+    """Seed an HcpProfile with per-HCP voice/avatar settings.
 
-    defaults = dict(
-        name="Dr. RealData Chen",
-        specialty="Oncology",
+    D-09: HcpProfile no longer has inline voice/avatar columns -- per-HCP
+    voice/avatar config now comes exclusively from a linked VoiceLiveInstance.
+    This helper creates a VoiceLiveInstance carrying the settings previously
+    passed as inline HcpProfile kwargs and links it via voice_live_instance_id.
+    """
+    from app.models.hcp_profile import HcpProfile
+    from app.models.voice_live_instance import VoiceLiveInstance
+
+    vl_instance_overrides = {
+        k: overrides.pop(k)
+        for k in list(overrides)
+        if k
+        in {
+            "voice_live_model",
+            "voice_name",
+            "voice_type",
+            "voice_temperature",
+            "voice_custom",
+            "avatar_character",
+            "avatar_style",
+            "avatar_customized",
+            "turn_detection_type",
+            "noise_suppression",
+            "echo_cancellation",
+            "eou_detection",
+            "recognition_language",
+        }
+    }
+    # Drop legacy flag kwarg if any caller still passes it -- no longer a real field.
+    overrides.pop("voice_live_enabled", None)
+
+    vl_defaults = dict(
+        name="Per-HCP Real Data Instance",
         created_by=user_id,
-        agent_id="asst_real_test_agent",
-        agent_sync_status="synced",
-        voice_live_enabled=True,
         voice_live_model="gpt-4o-realtime-preview",
         voice_name="zh-CN-YunxiNeural",
         voice_type="azure-standard",
@@ -514,11 +540,25 @@ async def _seed_hcp_profile(session, user_id: str, **overrides) -> HcpProfile:
         eou_detection=False,
         recognition_language="zh-CN",
     )
+    vl_defaults.update(vl_instance_overrides)
+    vl_instance = VoiceLiveInstance(**vl_defaults)
+    session.add(vl_instance)
+    await session.flush()
+
+    defaults = dict(
+        name="Dr. RealData Chen",
+        specialty="Oncology",
+        created_by=user_id,
+        agent_id="asst_real_test_agent",
+        agent_sync_status="synced",
+        voice_live_instance_id=vl_instance.id,
+    )
     defaults.update(overrides)
     profile = HcpProfile(**defaults)
     session.add(profile)
     await session.flush()
     await session.refresh(profile)
+    profile.voice_live_instance = vl_instance
     return profile
 
 

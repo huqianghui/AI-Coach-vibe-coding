@@ -16,7 +16,17 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.main import app
 from app.models.user import User
+from app.models.voice_live_instance import VoiceLiveInstance
 from app.services.voice_live_models import VOICE_LIVE_MODELS
+
+
+async def _create_vl_instance(session, user_id: str) -> str:
+    """Create a minimal VoiceLiveInstance directly via the DB and return its id."""
+    inst = VoiceLiveInstance(name="Test VL Instance", created_by=user_id)
+    session.add(inst)
+    await session.flush()
+    await session.refresh(inst)
+    return inst.id
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -189,6 +199,12 @@ class TestUnassignInstanceFromHcp:
         assert inst_resp.status_code == 201
         instance_id = inst_resp.json()["id"]
 
+        # Create a separate initial VL instance to satisfy the required
+        # voice_live_instance_id field on HCP profile creation (D-13) -- the
+        # HCP is then reassigned to `instance_id` below and later unassigned.
+        initial_vl_id = await _create_vl_instance(db_session, "admin-user-id-001")
+        await db_session.commit()
+
         # 2. Create HCP Profile via API
         hcp_resp = await aclient.post(
             "/api/v1/hcp-profiles",
@@ -196,6 +212,7 @@ class TestUnassignInstanceFromHcp:
                 "name": "Dr. Unassign Test",
                 "specialty": "Oncology",
                 "created_by": "admin-user-id-001",
+                "voice_live_instance_id": initial_vl_id,
             },
         )
         assert hcp_resp.status_code == 201
@@ -234,21 +251,37 @@ class TestUnassignInstanceFromHcp:
 
     @pytest.mark.asyncio
     @patch("app.services.hcp_profile_service.agent_sync_service")
-    async def test_unassign_already_unassigned_hcp(self, mock_sync, aclient: AsyncClient):
+    async def test_unassign_already_unassigned_hcp(
+        self, mock_sync, aclient: AsyncClient, db_session
+    ):
         """Unassign on HCP with no instance is idempotent (returns 200)."""
         mock_sync.sync_agent_for_profile = AsyncMock(return_value={"id": "asst_test"})
 
-        # Create HCP Profile with no VL Instance assigned
+        # Create HCP Profile with a VL Instance (required at creation, D-13),
+        # then clear the reference directly in the DB to simulate an
+        # already-unassigned HCP (the DB column itself stays nullable).
+        vl_id = await _create_vl_instance(db_session, "admin-user-id-001")
+        await db_session.commit()
         hcp_resp = await aclient.post(
             "/api/v1/hcp-profiles",
             json={
                 "name": "Dr. No Instance",
                 "specialty": "Cardiology",
                 "created_by": "admin-user-id-001",
+                "voice_live_instance_id": vl_id,
             },
         )
         assert hcp_resp.status_code == 201
         hcp_id = hcp_resp.json()["id"]
+
+        from sqlalchemy import update
+
+        from app.models.hcp_profile import HcpProfile
+
+        await db_session.execute(
+            update(HcpProfile).where(HcpProfile.id == hcp_id).values(voice_live_instance_id=None)
+        )
+        await db_session.commit()
 
         # Unassign (should be idempotent)
         resp = await aclient.post(

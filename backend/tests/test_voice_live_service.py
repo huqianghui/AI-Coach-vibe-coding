@@ -11,6 +11,7 @@ import pytest
 from app.config import get_settings
 from app.models.hcp_profile import HcpProfile
 from app.models.service_config import ServiceConfig
+from app.models.voice_live_instance import VoiceLiveInstance
 from app.services.voice_live_service import get_voice_live_token
 from app.utils.encryption import encrypt_value
 
@@ -74,18 +75,34 @@ async def seeded_db(db_session):
     return db_session
 
 
+async def _create_vl_instance(db, user_id: str) -> str:
+    """Create a minimal VoiceLiveInstance directly via the DB and return its id.
+
+    D-09: HcpProfile no longer has inline voice/avatar columns -- per-HCP
+    voice config comes exclusively from a linked VoiceLiveInstance.
+    """
+    inst = VoiceLiveInstance(
+        name="Agent Mode Test Instance",
+        voice_name="en-US-AvaNeural",
+        created_by=user_id,
+    )
+    db.add(inst)
+    await db.flush()
+    return inst.id
+
+
 class TestAgentModeAvailability:
     """Tests for agent_mode_available and agent_warning in get_voice_live_token."""
 
     async def test_agent_mode_available_when_synced(self, seeded_db):
         """agent_mode_available=True when HCP has synced agent_id."""
+        vl_id = await _create_vl_instance(seeded_db, "test-user")
         profile = HcpProfile(
             name="Dr. Synced Agent",
             specialty="Oncology",
             agent_id="asst_test_synced",
             agent_sync_status="synced",
-            voice_name="en-US-AvaNeural",
-            voice_type="azure-standard",
+            voice_live_instance_id=vl_id,
             created_by="test-user",
         )
         seeded_db.add(profile)
@@ -99,13 +116,13 @@ class TestAgentModeAvailability:
 
     async def test_agent_mode_unavailable_when_not_synced(self, seeded_db):
         """agent_mode_available=False with warning when HCP not synced."""
+        vl_id = await _create_vl_instance(seeded_db, "test-user")
         profile = HcpProfile(
             name="Dr. Not Synced",
             specialty="Cardiology",
             agent_id="",
             agent_sync_status="none",
-            voice_name="en-US-AvaNeural",
-            voice_type="azure-standard",
+            voice_live_instance_id=vl_id,
             created_by="test-user",
         )
         seeded_db.add(profile)
@@ -120,13 +137,13 @@ class TestAgentModeAvailability:
 
     async def test_agent_mode_unavailable_when_pending(self, seeded_db):
         """agent_mode_available=False with warning when agent sync pending."""
+        vl_id = await _create_vl_instance(seeded_db, "test-user")
         profile = HcpProfile(
             name="Dr. Pending",
             specialty="Neurology",
             agent_id="asst_pending",
             agent_sync_status="pending",
-            voice_name="en-US-AvaNeural",
-            voice_type="azure-standard",
+            voice_live_instance_id=vl_id,
             created_by="test-user",
         )
         seeded_db.add(profile)
@@ -141,13 +158,13 @@ class TestAgentModeAvailability:
 
     async def test_agent_mode_unavailable_when_failed(self, seeded_db):
         """agent_mode_available=False with warning when agent sync failed."""
+        vl_id = await _create_vl_instance(seeded_db, "test-user")
         profile = HcpProfile(
             name="Dr. Failed Sync",
             specialty="General",
             agent_id="asst_failed",
             agent_sync_status="failed",
-            voice_name="en-US-AvaNeural",
-            voice_type="azure-standard",
+            voice_live_instance_id=vl_id,
             created_by="test-user",
         )
         seeded_db.add(profile)

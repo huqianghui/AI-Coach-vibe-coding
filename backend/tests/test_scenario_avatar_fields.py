@@ -33,11 +33,21 @@ async def _seed_scenario_with_avatar(
         db.add(admin)
         await db.flush()
 
+        instance = VoiceLiveInstance(
+            name="Avatar Test Instance",
+            enabled=True,
+            avatar_enabled=True,
+            avatar_character=avatar_character,
+            avatar_style=avatar_style,
+            created_by=admin.id,
+        )
+        db.add(instance)
+        await db.flush()
+
         hcp = HcpProfile(
             name="Dr. Avatar Test",
             specialty="Cardiology",
-            avatar_character=avatar_character,
-            avatar_style=avatar_style,
+            voice_live_instance_id=instance.id,
             created_by=admin.id,
         )
         db.add(hcp)
@@ -146,8 +156,6 @@ class TestScenarioAvatarFields:
                 name="Dr. Voice Only",
                 specialty="Oncology",
                 voice_live_instance_id=instance.id,
-                avatar_character="harry",
-                avatar_style="casual",
                 created_by=admin.id,
             )
             db.add(hcp)

@@ -106,22 +106,22 @@ class TestVoiceLiveModelsConstant:
 
 
 class TestHcpProfileOrm:
-    """Tests for HcpProfile ORM model voice_live_model field."""
+    """Tests for HcpProfile ORM model voice_live_model field.
 
-    def test_has_voice_live_model_attribute(self):
-        """HcpProfile model has the voice_live_model attribute."""
-        assert hasattr(HcpProfile, "voice_live_model")
+    D-09: voice_live_model was one of the 14 deprecated inline voice/avatar
+    columns dropped from hcp_profiles. Model selection now lives exclusively
+    on VoiceLiveInstance. These tests assert the column stays gone (regression
+    guard) instead of asserting its former presence/default.
+    """
 
-    def test_voice_live_model_column_exists(self):
-        """voice_live_model is a mapped column in the table."""
+    def test_does_not_have_voice_live_model_attribute(self):
+        """HcpProfile model no longer has the voice_live_model attribute."""
+        assert not hasattr(HcpProfile, "voice_live_model")
+
+    def test_voice_live_model_column_removed(self):
+        """voice_live_model is not a mapped column in the table."""
         columns = {c.name for c in HcpProfile.__table__.columns}
-        assert "voice_live_model" in columns
-
-    def test_default_value(self):
-        """The default value for voice_live_model is 'gpt-4o'."""
-        col = HcpProfile.__table__.columns["voice_live_model"]
-        assert col.default is not None
-        assert col.default.arg == "gpt-4o"
+        assert "voice_live_model" not in columns
 
 
 # ---------------------------------------------------------------------------
@@ -130,35 +130,40 @@ class TestHcpProfileOrm:
 
 
 class TestHcpProfileSchemas:
-    """Tests for HcpProfile schema voice_live_model fields."""
+    """Tests for HcpProfile schema fields.
 
-    def test_create_schema_default(self):
-        """HcpProfileCreate defaults voice_live_model to 'gpt-4o'."""
-        schema = HcpProfileCreate(name="Test", specialty="Oncology", created_by="user1")
-        assert schema.voice_live_model == "gpt-4o"
+    D-09/D-13: voice_live_model no longer exists as an inline schema field --
+    model selection lives exclusively on VoiceLiveInstance. voice_live_instance_id
+    is now required on HcpProfileCreate. These tests assert the current contract
+    instead of the removed voice_live_model field.
+    """
 
-    def test_create_schema_custom_model(self):
-        """HcpProfileCreate accepts a custom voice_live_model."""
+    def test_create_schema_requires_voice_live_instance_id(self):
+        """HcpProfileCreate requires voice_live_instance_id (D-13)."""
         schema = HcpProfileCreate(
             name="Test",
             specialty="Oncology",
             created_by="user1",
-            voice_live_model="gpt-5",
+            voice_live_instance_id="vl-instance-1",
         )
-        assert schema.voice_live_model == "gpt-5"
+        assert schema.voice_live_instance_id == "vl-instance-1"
+
+    def test_create_schema_no_voice_live_model_field(self):
+        """HcpProfileCreate no longer exposes a voice_live_model field."""
+        assert "voice_live_model" not in HcpProfileCreate.model_fields
 
     def test_update_schema_default_none(self):
-        """HcpProfileUpdate defaults voice_live_model to None (optional)."""
+        """HcpProfileUpdate defaults voice_live_instance_id to None (optional)."""
         schema = HcpProfileUpdate()
-        assert schema.voice_live_model is None
+        assert schema.voice_live_instance_id is None
 
     def test_update_schema_with_value(self):
-        """HcpProfileUpdate accepts a voice_live_model value."""
-        schema = HcpProfileUpdate(voice_live_model="gpt-4.1")
-        assert schema.voice_live_model == "gpt-4.1"
+        """HcpProfileUpdate accepts a voice_live_instance_id value."""
+        schema = HcpProfileUpdate(voice_live_instance_id="vl-instance-2")
+        assert schema.voice_live_instance_id == "vl-instance-2"
 
-    def test_response_schema_default(self):
-        """HcpProfileResponse defaults voice_live_model to 'gpt-4o'."""
+    def test_response_schema_no_voice_live_model_field(self):
+        """HcpProfileResponse no longer exposes a voice_live_model field."""
         data = {
             "id": "test-id",
             "name": "Dr. Test",
@@ -181,7 +186,7 @@ class TestHcpProfileSchemas:
             "updated_at": "2026-01-01T00:00:00",
         }
         schema = HcpProfileResponse(**data)
-        assert schema.voice_live_model == "gpt-4o"
+        assert not hasattr(schema, "voice_live_model")
 
 
 # ---------------------------------------------------------------------------

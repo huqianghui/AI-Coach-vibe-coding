@@ -19,7 +19,7 @@ from app.models.score import ScoreDetail, SessionScore
 from app.models.session import CoachingSession
 from app.schemas.hcp_profile import HcpProfileCreate, HcpProfileUpdate
 from app.services import agent_sync_service
-from app.utils.exceptions import not_found
+from app.utils.exceptions import bad_request, not_found
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +141,12 @@ async def update_hcp_profile(
 
     profile = await get_hcp_profile(db, profile_id)
     update_data = data.model_dump(exclude_unset=True)
+
+    # D-13: voice_live_instance_id is required -- if the caller explicitly sends it,
+    # it cannot be cleared (None or empty string). Omitting the key entirely is fine
+    # (partial update leaves the existing value untouched).
+    if "voice_live_instance_id" in update_data and not update_data["voice_live_instance_id"]:
+        bad_request("voice_live_instance_id is required and cannot be cleared")
 
     # Serialize list fields to JSON strings
     for field in _JSON_LIST_FIELDS:

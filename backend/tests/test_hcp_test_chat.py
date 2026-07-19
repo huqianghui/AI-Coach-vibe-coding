@@ -41,14 +41,28 @@ async def _create_user_and_token() -> tuple[str, str]:
         return user.id, token
 
 
+async def _create_vl_instance(user_id: str) -> str:
+    """Create a minimal VoiceLiveInstance directly via the DB and return its id."""
+    from app.models.voice_live_instance import VoiceLiveInstance
+
+    async with TestSessionLocal() as session:
+        inst = VoiceLiveInstance(name="Test VL Instance", created_by=user_id)
+        session.add(inst)
+        await session.commit()
+        await session.refresh(inst)
+        return inst.id
+
+
 async def _create_hcp_profile(client, token: str, user_id: str, agent_id: str | None = None):
     """Create an HCP profile and return its ID."""
+    vl_id = await _create_vl_instance(user_id)
     resp = await client.post(
         "/api/v1/hcp-profiles",
         json={
             "name": "Dr. ChatTest",
             "specialty": "Oncology",
             "created_by": user_id,
+            "voice_live_instance_id": vl_id,
         },
         headers={"Authorization": f"Bearer {token}"},
     )

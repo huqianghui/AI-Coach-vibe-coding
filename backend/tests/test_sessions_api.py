@@ -6,8 +6,19 @@ from unittest.mock import patch
 from app.models.scoring_rubric import ScoringRubric
 from app.models.skill import Skill, SkillVersion
 from app.models.user import User
+from app.models.voice_live_instance import VoiceLiveInstance
 from app.services.auth import create_access_token, get_password_hash
 from tests.conftest import TestSessionLocal
+
+
+async def _create_vl_instance(user_id: str) -> str:
+    """Create a minimal VoiceLiveInstance directly via the DB and return its id."""
+    async with TestSessionLocal() as session:
+        inst = VoiceLiveInstance(name="Test VL Instance", created_by=user_id)
+        session.add(inst)
+        await session.commit()
+        await session.refresh(inst)
+        return inst.id
 
 
 async def _create_admin_and_token() -> tuple[str, str]:
@@ -46,9 +57,15 @@ async def _create_user_and_token(username="user_sess") -> tuple[str, str]:
 
 async def _create_active_scenario(client, admin_id, admin_token) -> str:
     """Create an HCP profile, rubric, and active scenario. Returns scenario_id."""
+    vl_id = await _create_vl_instance(admin_id)
     hcp_resp = await client.post(
         "/api/v1/hcp-profiles",
-        json={"name": "Dr. Sess", "specialty": "Onc", "created_by": admin_id},
+        json={
+            "name": "Dr. Sess",
+            "specialty": "Onc",
+            "created_by": admin_id,
+            "voice_live_instance_id": vl_id,
+        },
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     hcp_id = hcp_resp.json()["id"]

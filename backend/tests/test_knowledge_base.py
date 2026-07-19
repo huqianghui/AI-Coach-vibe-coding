@@ -1198,7 +1198,18 @@ class TestKbAgentSyncIntegration:
         unauthenticated MCPTool that got reported as a "synced" agent. Now the
         failure must propagate so the caller (hcp_profile_service /
         _trigger_agent_resync) can mark agent_sync_status="failed"."""
+        from app.models.voice_live_instance import VoiceLiveInstance
         from app.services.agent_sync_service import sync_agent_for_profile
+
+        # D-09: HcpProfile no longer has inline voice/avatar columns -- link a
+        # VoiceLiveInstance so build_voice_live_metadata (called before the KB
+        # resolution step under test) doesn't hit the dead no-VL-instance
+        # fallback branch (which still reads the now-deleted columns).
+        vl_instance = VoiceLiveInstance(name="KB Sync Test Instance", created_by=sample_hcp.created_by)
+        db_session.add(vl_instance)
+        await db_session.flush()
+        sample_hcp.voice_live_instance_id = vl_instance.id
+        sample_hcp.voice_live_instance = vl_instance
 
         cfg = HcpKnowledgeConfig(
             hcp_profile_id=sample_hcp.id,

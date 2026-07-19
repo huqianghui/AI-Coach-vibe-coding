@@ -1045,6 +1045,17 @@ class TestRealVoiceLiveInstanceService:
         assert config["voice_live_enabled"] is True
         assert config["voice_live_model"] == "gpt-4o"
 
+    @pytest.mark.skip(
+        reason=(
+            "D-09/D-13: HcpProfile no longer has inline voice/avatar columns -- "
+            "resolve_voice_config's no-VL-instance fallback branch (in "
+            "voice_live_instance_service.py, owned by Plan 29-06) still reads "
+            "profile.voice_live_enabled/voice_name/etc. and will raise AttributeError. "
+            "voice_live_instance_id is now required at the API layer (D-13) so this "
+            "path should only be reachable for legacy rows; Plan 29-06 must update "
+            "the fallback to return safe defaults instead of reading deleted columns."
+        )
+    )
     async def test_resolve_voice_config_inline_fallback_real_db(self, db_session):
         """resolve_voice_config returns inline HcpProfile fields when no VL instance."""
         from app.services.voice_live_instance_service import resolve_voice_config

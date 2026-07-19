@@ -103,6 +103,7 @@ class TestHcpProfileSchemas:
         data = HcpProfileCreate(
             name="Dr. Zhang",
             specialty="Oncology",
+            voice_live_instance_id="vl-instance-placeholder",
         )
         assert data.personality_type == "friendly"
         assert data.emotional_state == 50
@@ -124,6 +125,7 @@ class TestHcpProfileSchemas:
             objections=["Cost", "Safety"],
             probe_topics=["Outcomes"],
             difficulty="hard",
+            voice_live_instance_id="vl-instance-placeholder",
         )
         assert data.emotional_state == 80
         assert data.expertise_areas == ["intervention", "imaging"]

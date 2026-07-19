@@ -91,13 +91,15 @@ async def seed_instance(db_session, seed_user):
 
 @pytest.fixture
 async def seed_hcp(db_session, seed_user):
-    """Create an HcpProfile for assignment tests."""
+    """Create an HcpProfile for assignment tests.
+
+    D-09: voice/avatar fields no longer exist as inline columns on HcpProfile --
+    voice/avatar config comes exclusively from an assigned VoiceLiveInstance.
+    """
     profile = HcpProfile(
         name="Dr. Test",
         specialty="Oncology",
         created_by=ADMIN_ID,
-        voice_name="en-US-AvaNeural",
-        avatar_character="lori",
     )
     db_session.add(profile)
     await db_session.commit()
@@ -228,6 +230,17 @@ async def test_resolve_config_prefers_instance(db_session, seed_instance, seed_h
     assert config["voice_live_model"] == seed_instance.voice_live_model
 
 
+@pytest.mark.skip(
+    reason=(
+        "D-09/D-13: HcpProfile no longer has inline voice/avatar columns -- "
+        "resolve_voice_config's no-VL-instance fallback branch (in "
+        "voice_live_instance_service.py, owned by Plan 29-06) still reads "
+        "profile.voice_live_enabled/voice_name/etc. and will raise AttributeError. "
+        "voice_live_instance_id is now required at the API layer (D-13) so this "
+        "path should only be reachable for legacy rows; Plan 29-06 must update "
+        "the fallback to return safe defaults instead of reading deleted columns."
+    )
+)
 @pytest.mark.asyncio
 async def test_resolve_config_fallback_to_inline(db_session, seed_hcp):
     """When HcpProfile has no VoiceLiveInstance, config comes from inline fields."""

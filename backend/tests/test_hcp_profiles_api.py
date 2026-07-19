@@ -5,6 +5,18 @@ from app.services.auth import create_access_token, get_password_hash
 from tests.conftest import TestSessionLocal
 
 
+async def _create_vl_instance(user_id: str) -> str:
+    """Create a minimal VoiceLiveInstance directly via the DB and return its id."""
+    from app.models.voice_live_instance import VoiceLiveInstance
+
+    async with TestSessionLocal() as session:
+        inst = VoiceLiveInstance(name="Test VL Instance", created_by=user_id)
+        session.add(inst)
+        await session.commit()
+        await session.refresh(inst)
+        return inst.id
+
+
 async def _create_admin_and_token() -> tuple[str, str]:
     """Create an admin user and return (user_id, bearer_token)."""
     async with TestSessionLocal() as session:
@@ -44,6 +56,7 @@ class TestCreateProfileEndpoint:
 
     async def test_admin_can_create_profile(self, client):
         user_id, token = await _create_admin_and_token()
+        vl_id = await _create_vl_instance(user_id)
         response = await client.post(
             "/api/v1/hcp-profiles",
             json={
@@ -53,6 +66,7 @@ class TestCreateProfileEndpoint:
                 "personality_type": "skeptical",
                 "expertise_areas": ["immunotherapy"],
                 "objections": ["Cost"],
+                "voice_live_instance_id": vl_id,
             },
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -66,13 +80,15 @@ class TestCreateProfileEndpoint:
 
     async def test_admin_can_create_cautious_profile(self, client):
         """The API accepts the cautious personality exposed by the editor."""
-        _, token = await _create_admin_and_token()
+        user_id, token = await _create_admin_and_token()
+        vl_id = await _create_vl_instance(user_id)
         response = await client.post(
             "/api/v1/hcp-profiles",
             json={
                 "name": "Dr. Cautious",
                 "specialty": "Oncology",
                 "personality_type": "cautious",
+                "voice_live_instance_id": vl_id,
             },
             headers={"Authorization": f"Bearer {token}"},
         )
@@ -106,11 +122,17 @@ class TestListProfilesEndpoint:
 
     async def test_list_returns_paginated_profiles(self, client):
         user_id, token = await _create_admin_and_token()
+        vl_id = await _create_vl_instance(user_id)
         # Create two profiles
         for name in ["Dr. A", "Dr. B"]:
             await client.post(
                 "/api/v1/hcp-profiles",
-                json={"name": name, "specialty": "Onc", "created_by": user_id},
+                json={
+                    "name": name,
+                    "specialty": "Onc",
+                    "created_by": user_id,
+                    "voice_live_instance_id": vl_id,
+                },
                 headers={"Authorization": f"Bearer {token}"},
             )
 
@@ -127,14 +149,25 @@ class TestListProfilesEndpoint:
 
     async def test_search_filter(self, client):
         user_id, token = await _create_admin_and_token()
+        vl_id = await _create_vl_instance(user_id)
         await client.post(
             "/api/v1/hcp-profiles",
-            json={"name": "Dr. UniqueSearch", "specialty": "Onc", "created_by": user_id},
+            json={
+                "name": "Dr. UniqueSearch",
+                "specialty": "Onc",
+                "created_by": user_id,
+                "voice_live_instance_id": vl_id,
+            },
             headers={"Authorization": f"Bearer {token}"},
         )
         await client.post(
             "/api/v1/hcp-profiles",
-            json={"name": "Dr. Other", "specialty": "Card", "created_by": user_id},
+            json={
+                "name": "Dr. Other",
+                "specialty": "Card",
+                "created_by": user_id,
+                "voice_live_instance_id": vl_id,
+            },
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -152,9 +185,15 @@ class TestGetProfileEndpoint:
 
     async def test_get_existing_profile(self, client):
         user_id, token = await _create_admin_and_token()
+        vl_id = await _create_vl_instance(user_id)
         create_resp = await client.post(
             "/api/v1/hcp-profiles",
-            json={"name": "Dr. Single", "specialty": "Neuro", "created_by": user_id},
+            json={
+                "name": "Dr. Single",
+                "specialty": "Neuro",
+                "created_by": user_id,
+                "voice_live_instance_id": vl_id,
+            },
             headers={"Authorization": f"Bearer {token}"},
         )
         profile_id = create_resp.json()["id"]
@@ -180,9 +219,15 @@ class TestUpdateProfileEndpoint:
 
     async def test_updates_profile_fields(self, client):
         user_id, token = await _create_admin_and_token()
+        vl_id = await _create_vl_instance(user_id)
         create_resp = await client.post(
             "/api/v1/hcp-profiles",
-            json={"name": "Dr. Old", "specialty": "Onc", "created_by": user_id},
+            json={
+                "name": "Dr. Old",
+                "specialty": "Onc",
+                "created_by": user_id,
+                "voice_live_instance_id": vl_id,
+            },
             headers={"Authorization": f"Bearer {token}"},
         )
         profile_id = create_resp.json()["id"]
@@ -200,9 +245,15 @@ class TestUpdateProfileEndpoint:
     async def test_updates_profile_to_cautious(self, client):
         """The update schema uses the same personality values as creation."""
         user_id, token = await _create_admin_and_token()
+        vl_id = await _create_vl_instance(user_id)
         create_resp = await client.post(
             "/api/v1/hcp-profiles",
-            json={"name": "Dr. Careful", "specialty": "Onc", "created_by": user_id},
+            json={
+                "name": "Dr. Careful",
+                "specialty": "Onc",
+                "created_by": user_id,
+                "voice_live_instance_id": vl_id,
+            },
             headers={"Authorization": f"Bearer {token}"},
         )
 
@@ -221,9 +272,15 @@ class TestDeleteProfileEndpoint:
 
     async def test_deletes_profile(self, client):
         user_id, token = await _create_admin_and_token()
+        vl_id = await _create_vl_instance(user_id)
         create_resp = await client.post(
             "/api/v1/hcp-profiles",
-            json={"name": "Dr. Delete", "specialty": "Onc", "created_by": user_id},
+            json={
+                "name": "Dr. Delete",
+                "specialty": "Onc",
+                "created_by": user_id,
+                "voice_live_instance_id": vl_id,
+            },
             headers={"Authorization": f"Bearer {token}"},
         )
         profile_id = create_resp.json()["id"]
@@ -397,3 +454,90 @@ class TestPreviewInstructionsRouteOrder:
             f"Route shadowed by /{{profile_id}} — got {response.status_code}. "
             "Move /preview-instructions BEFORE /{profile_id} in hcp_profiles.py"
         )
+
+
+class TestVoiceLiveInstanceRequired:
+    """Tests for D-13: voice_live_instance_id is required on create and update."""
+
+    async def test_create_without_voice_live_instance_id_returns_422(self, client):
+        """POST with no voice_live_instance_id key returns 422."""
+        _, token = await _create_admin_and_token()
+        response = await client.post(
+            "/api/v1/hcp-profiles",
+            json={"name": "Dr. NoVL", "specialty": "Onc"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 422
+
+    async def test_create_with_empty_voice_live_instance_id_returns_422(self, client):
+        """POST with voice_live_instance_id set to an empty string returns 422."""
+        _, token = await _create_admin_and_token()
+        response = await client.post(
+            "/api/v1/hcp-profiles",
+            json={"name": "Dr. EmptyVL", "specialty": "Onc", "voice_live_instance_id": ""},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 422
+
+    async def test_create_with_valid_voice_live_instance_id_returns_201(self, client):
+        """POST with a valid, existing voice_live_instance_id succeeds and echoes it back."""
+        user_id, token = await _create_admin_and_token()
+        vl_id = await _create_vl_instance(user_id)
+        response = await client.post(
+            "/api/v1/hcp-profiles",
+            json={
+                "name": "Dr. ValidVL",
+                "specialty": "Onc",
+                "voice_live_instance_id": vl_id,
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 201
+        assert response.json()["voice_live_instance_id"] == vl_id
+
+    async def test_update_clearing_voice_live_instance_id_returns_422(self, client):
+        """PUT explicitly clearing voice_live_instance_id (empty string) returns 422."""
+        user_id, token = await _create_admin_and_token()
+        vl_id = await _create_vl_instance(user_id)
+        create_resp = await client.post(
+            "/api/v1/hcp-profiles",
+            json={
+                "name": "Dr. CannotClear",
+                "specialty": "Onc",
+                "voice_live_instance_id": vl_id,
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        profile_id = create_resp.json()["id"]
+
+        response = await client.put(
+            f"/api/v1/hcp-profiles/{profile_id}",
+            json={"voice_live_instance_id": ""},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 422
+
+    async def test_update_omitting_voice_live_instance_id_preserves_existing(self, client):
+        """PUT with a partial body omitting voice_live_instance_id leaves it unchanged."""
+        user_id, token = await _create_admin_and_token()
+        vl_id = await _create_vl_instance(user_id)
+        create_resp = await client.post(
+            "/api/v1/hcp-profiles",
+            json={
+                "name": "Dr. Partial",
+                "specialty": "Onc",
+                "voice_live_instance_id": vl_id,
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        profile_id = create_resp.json()["id"]
+
+        response = await client.put(
+            f"/api/v1/hcp-profiles/{profile_id}",
+            json={"personality_type": "analytical"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["personality_type"] == "analytical"
+        assert data["voice_live_instance_id"] == vl_id

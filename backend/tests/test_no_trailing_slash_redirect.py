@@ -12,8 +12,19 @@ from app.models.hcp_profile import HcpProfile
 from app.models.scenario import Scenario
 from app.models.skill import Skill, SkillVersion
 from app.models.user import User
+from app.models.voice_live_instance import VoiceLiveInstance
 from app.services.auth import create_access_token, get_password_hash
 from tests.conftest import TestSessionLocal
+
+
+async def _create_vl_instance(user_id: str) -> str:
+    """Create a minimal VoiceLiveInstance directly via the DB and return its id."""
+    async with TestSessionLocal() as session:
+        inst = VoiceLiveInstance(name="Test VL Instance", created_by=user_id)
+        session.add(inst)
+        await session.commit()
+        await session.refresh(inst)
+        return inst.id
 
 
 async def _seed_admin() -> tuple[str, str]:
@@ -164,9 +175,15 @@ class TestNoTrailingSlashRedirect:
     async def test_hcp_profiles_create_no_redirect(self, client):
         """POST /api/v1/hcp-profiles must return 201, not 307."""
         user_id, token = await _seed_admin()
+        vl_id = await _create_vl_instance(user_id)
         r = await client.post(
             "/api/v1/hcp-profiles",
-            json={"name": "Dr. NoRedirect", "specialty": "Onc", "created_by": user_id},
+            json={
+                "name": "Dr. NoRedirect",
+                "specialty": "Onc",
+                "created_by": user_id,
+                "voice_live_instance_id": vl_id,
+            },
             headers={"Authorization": f"Bearer {token}"},
         )
         assert r.status_code == 201
