@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 from app.api import (
     admin_users_router,
+    agent_foundation_models_router,
     analytics_router,
     auth_router,
     azure_config_router,
@@ -134,6 +135,7 @@ app.include_router(materials_router, prefix=settings.api_prefix)
 app.include_router(conference_router, prefix=settings.api_prefix)
 app.include_router(analytics_router, prefix=settings.api_prefix)
 app.include_router(voice_live_router, prefix=settings.api_prefix)
+app.include_router(agent_foundation_models_router, prefix=settings.api_prefix)
 app.include_router(skills_router, prefix=settings.api_prefix)
 app.include_router(dry_runs_router, prefix=settings.api_prefix)
 app.include_router(meta_skills_router, prefix=settings.api_prefix)
