@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter, Navigate, useLocation } from "react-router-dom";
 import { ProtectedRoute, AdminRoute, GuestRoute } from "./auth-guard";
 import { UserLayout } from "@/components/layouts/user-layout";
 import { AdminLayout } from "@/components/layouts/admin-layout";
@@ -46,6 +46,18 @@ function SuspensePage({ children }: { children: React.ReactNode }) {
   return <Suspense fallback={<LoadingFallback />}>{children}</Suspense>;
 }
 
+/**
+ * Redirects the legacy `/user/training/voice` route to the unified session
+ * page, preserving the query string (e.g. `?id=...&mode=...`).
+ * `<Navigate to="...">` does NOT forward `location.search` by default, so a
+ * plain string target would silently drop the session id/mode params and
+ * leave the destination page stuck in a perpetual loading state.
+ */
+function LegacyVoiceRouteRedirect() {
+  const location = useLocation();
+  return <Navigate to={`/user/training/session${location.search}`} replace />;
+}
+
 export const router = createBrowserRouter([
   {
     element: <GuestRoute />,
@@ -81,7 +93,7 @@ export const router = createBrowserRouter([
       },
       {
         path: "/user/training/voice",
-        element: <Navigate to="/user/training/session" replace />,
+        element: <LegacyVoiceRouteRedirect />,
       },
       {
         element: <AdminRoute />,
