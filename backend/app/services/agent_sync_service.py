@@ -126,8 +126,9 @@ def _chunk_metadata_value(key: str, value: str, max_len: int = 512) -> dict[str,
 def build_voice_live_metadata(profile: object) -> dict[str, str] | None:
     """Build microsoft.voice-live.configuration metadata from HCP profile voice fields.
 
-    Uses resolve_voice_config() to get the effective voice/avatar settings,
-    respecting VoiceLiveInstance > inline HcpProfile field priority.
+    Uses resolve_voice_config() to get the effective voice/avatar settings --
+    VoiceLiveInstance fields when assigned, or safe defaults (voice disabled)
+    when not (D-12).
 
     The output format matches Azure AI Foundry Portal's own save format:
     ``{"session": {camelCase keys for voice, avatar, turnDetection, etc.}}``

@@ -1,8 +1,10 @@
 """Voice Live Instance CRUD service.
 
 Manages reusable Voice Live configuration instances that can be
-assigned to HCP Profiles. Provides config resolution that prefers
-VoiceLiveInstance over deprecated inline HcpProfile voice fields.
+assigned to HCP Profiles. Provides config resolution via
+resolve_voice_config() -- returns VoiceLiveInstance fields when one
+is assigned, or a hardcoded safe-defaults dict when it is not (D-12:
+the deprecated inline HcpProfile voice/avatar columns no longer exist).
 """
 
 import logging
@@ -104,17 +106,7 @@ async def update_instance(
 
     refreshed = await get_instance(db, instance.id)
     if refreshed.hcp_profiles:
-        # Sync avatar fields to all assigned HCP profiles (denormalized cache)
-        avatar_fields_changed = any(
-            k in update_data for k in ("avatar_character", "avatar_style", "avatar_customized")
-        )
         for profile in refreshed.hcp_profiles:
-            # Always sync avatar fields when they changed
-            if avatar_fields_changed:
-                profile.avatar_character = refreshed.avatar_character
-                profile.avatar_style = refreshed.avatar_style
-                profile.avatar_customized = refreshed.avatar_customized
-
             if profile.agent_id and profile.agent_sync_status == "synced":
                 try:
                     # Set relationship directly to avoid async lazy-load
@@ -191,11 +183,6 @@ async def assign_to_hcp(
         raise NotFoundException(message=f"HCP Profile {hcp_profile_id} not found")
 
     profile.voice_live_instance_id = instance_id
-    # Sync avatar fields from VL Instance to HcpProfile (denormalized cache)
-    # This ensures scenario API returns correct avatar without runtime resolution
-    profile.avatar_character = instance.avatar_character
-    profile.avatar_style = instance.avatar_style
-    profile.avatar_customized = instance.avatar_customized
     await db.commit()
     await db.refresh(profile)
     # Set relationship directly so resolve_voice_config works in async context
@@ -271,8 +258,12 @@ async def unassign_from_hcp(db: AsyncSession, hcp_profile_id: str) -> HcpProfile
 def resolve_voice_config(profile: HcpProfile) -> dict:
     """Resolve voice/avatar config for an HCP Profile.
 
-    Priority: VoiceLiveInstance > inline HcpProfile fields (deprecated).
-    Returns a flat dict of all voice/avatar configuration fields.
+    Returns VoiceLiveInstance fields when one is assigned (profile.voice_live_instance
+    is set). Otherwise returns a hardcoded safe-defaults dict -- D-10 makes VL Instance
+    assignment mandatory for all HCPs, so this fallback is a defensive path for the
+    brief window between unassign and reassign, not a supported steady state. It reads
+    no HcpProfile column (the deprecated inline voice/avatar columns were dropped by
+    the D-09 migration and no longer exist on the model).
     """
     inst = profile.voice_live_instance
     if inst:
@@ -307,32 +298,31 @@ def resolve_voice_config(profile: HcpProfile) -> dict:
             "avatar_enabled": inst.avatar_enabled,
         }
 
-    # Fallback: deprecated inline fields (no Foundry-specific fields on HcpProfile)
     logger.debug(
-        "resolve_voice_config: hcp=%s source=inline (no VoiceLiveInstance)",
+        "resolve_voice_config: hcp=%s source=safe-defaults (no VoiceLiveInstance assigned)",
         profile.id,
     )
     return {
-        "voice_live_enabled": profile.voice_live_enabled,
-        "voice_live_model": profile.voice_live_model,
-        "voice_name": profile.voice_name,
-        "voice_type": profile.voice_type,
-        "voice_temperature": profile.voice_temperature,
-        "voice_custom": profile.voice_custom,
-        "avatar_character": profile.avatar_character,
-        "avatar_style": profile.avatar_style,
-        "avatar_customized": profile.avatar_customized,
-        "turn_detection_type": profile.turn_detection_type,
-        "noise_suppression": profile.noise_suppression,
-        "echo_cancellation": profile.echo_cancellation,
-        "eou_detection": profile.eou_detection,
-        "recognition_language": profile.recognition_language,
-        "model_instruction": "",  # inline fallback has no model_instruction
+        "voice_live_enabled": False,
+        "voice_live_model": "gpt-4o",
+        "voice_name": "en-US-AvaNeural",
+        "voice_type": "azure-standard",
+        "voice_temperature": 0.9,
+        "voice_custom": False,
+        "avatar_character": "lori",
+        "avatar_style": "casual",
+        "avatar_customized": False,
+        "turn_detection_type": "server_vad",
+        "noise_suppression": False,
+        "echo_cancellation": False,
+        "eou_detection": False,
+        "recognition_language": "auto",
+        "model_instruction": "",
         "response_temperature": 0.8,
         "proactive_engagement": True,
         "auto_detect_language": True,
         "playback_speed": 1.0,
         "custom_lexicon_enabled": False,
         "custom_lexicon_url": "",
-        "avatar_enabled": True,
+        "avatar_enabled": False,
     }
