@@ -738,3 +738,22 @@ Plans:
 - [x] 28-02-PLAN.md -- Session-time skill consumption abstraction: Toolbox mount + MCP probe + download fallback + local-degrade chain, wired into session_service.py for both text and Voice Live via focus_instruction (D-02, D-04, D-05, D-06)
 - [x] 28-03-PLAN.md -- Foundry sync status API + admin UI: schema/routes for manual retry and portal-url discovery, SkillFoundryStatusSection component mirroring the HCP agent sync UI, wired into the Skill editor (D-06, D-07)
 - [x] 28-04-PLAN.md -- Playwright E2E coverage for the Foundry sync admin story: status section rendering, retry flow, portal link, degradation states (D-06, D-07)
+
+### Phase 29: Voice Live API Refactor & Adaptation — 升级 azure-ai-voicelive SDK 至 1.3.0（GA api-version 2026-07-15），正式化双路径交互架构（文本直连 Agent Responses API，语音走 Voice Live → Agent），删除 voice-agent monkey-patch 与 classic agent 旧路径，VoiceLiveInstance 变为可选，移除 HCP 内联 voice/avatar deprecated 字段，拆分 Agent Foundation Model 与 Voice Live 模型目录，更新 docs/voice-live-avatar 文档套件与全部相关测试
+
+**Goal:** Upgrade azure-ai-voicelive SDK to 1.3.0 GA (api-version 2026-07-15), formalize the dual-path architecture (text via Agent Responses API, voice via Voice Live → hosted Agent), delete the voice-agent monkey-patch and classic-agent path, make VL Instance mandatory per HCP (D-10 supersedes the roadmap's "optional" wording), remove the 14 deprecated inline HCP voice/avatar fields, split the Agent Foundation Model catalog from the Voice Live model catalog, and fully update docs + tests.
+**Requirements**: D-01..D-16 (from 29-CONTEXT.md)
+**Depends on:** Phase 28
+**Plans:** 0/10 plans complete
+
+Plans:
+- [ ] 29-01-PLAN.md -- SDK 1.3.0 GA installability POC + Entra/API-key Agent connect + Foundry capabilities probe (D-03, D-04, D-14-probe)
+- [ ] 29-02-PLAN.md -- Single GA api-version setting + tested resync_classic_agent() foundation (D-02, D-05)
+- [ ] 29-03-PLAN.md -- WS proxy core rewire: Entra-first credentials, GA api-version, classic-branch/monkey-patch deletion, forced agent mode (D-01, D-02, D-05, D-06, D-07, D-08)
+- [ ] 29-04-PLAN.md -- WebRTC signaling path mirror of the WS rewiring (D-02, D-05, D-07, D-08)
+- [ ] 29-05-PLAN.md -- Drop 14 deprecated HcpProfile columns + VL-required API validation (D-09, D-13)
+- [ ] 29-06-PLAN.md -- resolve_voice_config() safe-defaults fallback + dead denormalized-cache write-site removal (D-12)
+- [ ] 29-07-PLAN.md -- Frontend: VL-required save validation + read-only Voice/Avatar VL summary card + inline-field cleanup (D-10, D-11)
+- [ ] 29-08-PLAN.md -- Agent Foundation Model catalog: Foundry deployments endpoint + HCP editor dropdown (D-14)
+- [ ] 29-09-PLAN.md -- Merge docs/voice-live-avatar into one 17-file tree with dual-path architecture diagram (D-15)
+- [ ] 29-10-PLAN.md -- Cross-cutting verification sweep: full backend/frontend suites + actual Playwright E2E + coverage gate + stale-literal sweep (D-16)
