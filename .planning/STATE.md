@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-stopped_at: Phase 29 UI-SPEC approved
-last_updated: "2026-07-19T10:46:40.504Z"
+stopped_at: Completed 29-01-PLAN.md
+last_updated: "2026-07-19T11:03:39.720Z"
 last_activity: 2026-07-19
 progress:
   total_phases: 31
   completed_phases: 26
   total_plans: 153
-  completed_plans: 133
-  percent: 87
+  completed_plans: 134
+  percent: 88
 ---
 
 # Project State
@@ -21,12 +21,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** MRs can practice realistic conversations with AI-powered digital HCPs and receive immediate, multi-dimensional feedback to improve their communication skills -- anytime, without needing a real HCP or trainer.
-**Current focus:** Phase 28 — sop-skill-ai-foundary-skill-hcp
+**Current focus:** Phase 29 (Voice Live API Refactor & Adaptation)
 
 ## Current Position
 
-Phase: 28
-Plan: Not started
+Phase: 29 (voice-live-api-refactor-adaptation-azure-ai-voicelive-sdk-1-) — EXECUTING
+Plan: 2 of 10
 Phase: 26 (add-voice-live-webrtc-transport-option-as-alternative-to-web) — COMPLETE (3/3 plans)
 Phase: 24 (Skill Focus + CU Evaluation) — COMPLETE (5/5 plans)
 Phase: 25 (Refactor user training pages) — COMPLETE (2/2 plans)
@@ -134,6 +134,7 @@ Phase: 26 (Scoring Architecture: LLM Content + CU Voice) — COMPLETE (1/1 plan)
 | Phase 27 P08 | 20 | 2 tasks | 6 files |
 | Phase 28 P01 | 25min | 3 tasks | 5 files |
 | Phase 28 P04 | 20min | 1 tasks | 1 files |
+| Phase 29 P01 | 20min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -296,6 +297,9 @@ Recent decisions affecting current work:
 - [Phase 28]: [Phase 28-01]: _build_unique_foundry_name suffixes skill.id[:8] on first sync only (HIGH-2 fix); foundry_skill_name persisted and reused verbatim thereafter
 - [Phase 28]: [Phase 28-01]: publish_skill idempotent re-publish does not re-trigger Foundry sync; retry deferred to Plan 28-03 (WARNING-2)
 - [Phase 28]: [Phase 28-04]: Shared buildSkillFixture() schema-complete SkillOut mock builder pattern for all mocked GET responses in Skill editor E2E specs (closes LOW-10)
+- [Phase 29]: [Phase 29]: pin-beta selected for azure-ai-voicelive (1.3.0b1) since GA 1.3.0 not on PyPI; api_version=2026-07-15 must be explicitly passed at every connect() call site
+- [Phase 29]: [Phase 29]: connect() kwarg shape changed in 1.3.0b1 -- agent_name/project_name are flattened top-level kwargs, not AgentSessionConfig dict
+- [Phase 29]: [Phase 29]: D-14 Foundry capabilities filter confirmed as capabilities.get('chat_completion') == 'true' from live project data
 
 ### Pending Todos
 
@@ -333,6 +337,6 @@ None yet.
 ## Session Continuity
 
 Last activity: 2026-07-19
-Last session: 2026-07-19T09:04:05.515Z
-Stopped at: Phase 29 UI-SPEC approved
-Resume file: .planning/phases/29-voice-live-api-refactor-adaptation-azure-ai-voicelive-sdk-1-/29-UI-SPEC.md
+Last session: 2026-07-19T11:03:39.716Z
+Stopped at: Completed 29-01-PLAN.md
+Resume file: None
