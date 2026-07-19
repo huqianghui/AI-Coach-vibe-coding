@@ -100,14 +100,18 @@ test.describe("HCP Editor: Voice & Avatar Tab", () => {
     ).toBeVisible();
   });
 
-  test("Voice Mode toggle switch is present", async ({ page }) => {
+  test("Voice Live Instance selector is present", async ({ page }) => {
     const voiceTab = page.getByRole("tab", { name: /voice.*avatar/i });
     await voiceTab.click();
     await page.waitForTimeout(500);
 
-    // Find the voice mode switch
-    const voiceModeSwitch = page.getByRole("switch");
-    await expect(voiceModeSwitch.first()).toBeVisible();
+    // D-13: voice is no longer an optional per-HCP toggle -- every HCP must
+    // reference exactly one Voice Live Instance, surfaced via a mandatory
+    // assignment combobox (no more on/off "Voice Mode" switch, D-11).
+    await expect(
+      page.getByText(/voice live instance/i).first(),
+    ).toBeVisible();
+    await expect(page.getByRole("combobox").first()).toBeVisible();
   });
 
   test("text chat mode shows when Voice Mode is OFF", async ({ page }) => {
@@ -493,10 +497,14 @@ test.describe("HCP Editor: Agent Config Center (Phase 15)", () => {
     const modelLabel = page.getByText(/model deployment/i);
     await expect(modelLabel.first()).toBeVisible({ timeout: 5000 });
 
-    // Find the model select trigger (a combobox-style button)
-    const modelSelect = page.locator(
-      "button[role='combobox']",
-    );
+    // Find the model select trigger (a combobox-style button), scoped to the
+    // Model Deployment card. D-13 added a second, unrelated combobox above it
+    // ("Assign a Voice Live Instance"), so an unscoped page-wide combobox
+    // locator would grab the wrong one -- scope to the label's own card.
+    const modelSelect = modelLabel
+      .first()
+      .locator("..")
+      .locator("button[role='combobox']");
     const selectCount = await modelSelect.count();
 
     if (selectCount > 0) {
