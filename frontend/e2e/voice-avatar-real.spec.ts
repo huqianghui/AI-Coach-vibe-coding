@@ -24,15 +24,27 @@ import { fileURLToPath } from "node:url";
 
 const authDir = join(dirname(fileURLToPath(import.meta.url)), ".auth");
 
+interface VoiceLiveInstanceSummary {
+  id: string;
+  name: string;
+  voice_live_model: string;
+  enabled: boolean;
+  voice_name: string;
+  avatar_character: string;
+  avatar_style: string;
+  avatar_enabled: boolean;
+}
+
 interface HcpProfile {
   id: string;
   name: string;
-  avatar_character: string;
-  avatar_style: string;
-  voice_name: string;
   agent_id?: string;
   agent_sync_status?: string;
   is_active: boolean;
+  // Voice/avatar config now lives on the linked Voice Live Instance —
+  // Phase 29 dropped the 14 inline voice/avatar columns from HCP profiles.
+  voice_live_instance_id?: string | null;
+  voice_live_instance?: VoiceLiveInstanceSummary | null;
 }
 
 interface VoiceLiveToken {
@@ -235,7 +247,9 @@ test.describe("Voice Live Token API — Real HCP Profiles", () => {
     const profiles = await getHcpProfiles(request, adminToken);
 
     const avatarProfile = profiles.find(
-      (p) => p.avatar_character && p.avatar_character.length > 0,
+      (p) =>
+        p.voice_live_instance?.avatar_character &&
+        p.voice_live_instance.avatar_character.length > 0,
     );
 
     if (!avatarProfile) {
@@ -316,7 +330,10 @@ test.describe("Voice Live Token API — Real HCP Profiles", () => {
 
     // Find an HCP with both avatar and agent
     const dualProfile = profiles.find(
-      (p) => p.avatar_character && p.agent_id && p.agent_sync_status === "synced",
+      (p) =>
+        p.voice_live_instance?.avatar_character &&
+        p.agent_id &&
+        p.agent_sync_status === "synced",
     );
 
     if (!dualProfile) {
@@ -341,7 +358,9 @@ test.describe("Voice Live Token API — Real HCP Profiles", () => {
 
     // Find an HCP with avatar but no agent
     const avatarOnlyProfile = profiles.find(
-      (p) => p.avatar_character && (!p.agent_id || p.agent_sync_status !== "synced"),
+      (p) =>
+        p.voice_live_instance?.avatar_character &&
+        (!p.agent_id || p.agent_sync_status !== "synced"),
     );
 
     if (!avatarOnlyProfile) {
@@ -389,7 +408,10 @@ test.describe("Voice Session UI — Real Azure Connection", () => {
     // Find an avatar-enabled HCP
     const profiles = await getHcpProfiles(request, adminToken);
     const avatarProfile = profiles.find(
-      (p) => p.is_active && p.avatar_character && p.avatar_character.length > 0,
+      (p) =>
+        p.is_active &&
+        p.voice_live_instance?.avatar_character &&
+        p.voice_live_instance.avatar_character.length > 0,
     );
     if (!avatarProfile) {
       test.skip();
@@ -466,7 +488,10 @@ test.describe("Voice Session UI — Real Azure Connection", () => {
 
     const profiles = await getHcpProfiles(request, adminToken);
     const avatarProfile = profiles.find(
-      (p) => p.is_active && p.avatar_character && p.avatar_character.length > 0,
+      (p) =>
+        p.is_active &&
+        p.voice_live_instance?.avatar_character &&
+        p.voice_live_instance.avatar_character.length > 0,
     );
     if (!avatarProfile) {
       test.skip();
@@ -708,7 +733,7 @@ test.describe("Agent Mode — Real AI Foundry Agent", () => {
     const dualProfile = profiles.find(
       (p) =>
         p.is_active &&
-        p.avatar_character &&
+        p.voice_live_instance?.avatar_character &&
         p.agent_id &&
         p.agent_sync_status === "synced",
     );
@@ -850,7 +875,9 @@ test.describe("Admin Voice & Avatar Tab — Real Data", () => {
     const adminToken = await loginAndGetToken(request, "admin", "admin123");
     const profiles = await getHcpProfiles(request, adminToken);
 
-    const voiceProfile = profiles.find((p) => p.voice_name && p.is_active);
+    const voiceProfile = profiles.find(
+      (p) => p.voice_live_instance?.voice_name && p.is_active,
+    );
     if (!voiceProfile) {
       test.skip();
       return;
@@ -869,9 +896,10 @@ test.describe("Admin Voice & Avatar Tab — Real Data", () => {
       await page.waitForTimeout(1000);
 
       // Voice name should be displayed
+      const voiceName = voiceProfile.voice_live_instance?.voice_name ?? "";
       const voiceNameField = page
-        .getByText(voiceProfile.voice_name)
-        .or(page.locator(`[value="${voiceProfile.voice_name}"]`))
+        .getByText(voiceName)
+        .or(page.locator(`[value="${voiceName}"]`))
         .first();
       const fieldCount = await voiceNameField.count();
       // Voice name may appear as a dropdown value or text
