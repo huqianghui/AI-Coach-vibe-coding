@@ -81,3 +81,40 @@ scope-boundary rules: only auto-fix issues directly caused by the current plan's
   follow-up fixture-repair pass should re-run this full-suite command and apply the same
   create-a-`VoiceLiveInstance`-and-link (or drop-invalid-kwarg) fix pattern established in
   29-03's `_link_vl_instance()` helper to each remaining broken fixture above.
+
+## From 29-06 execution
+
+### 3. `test_agent_sync_service.py::TestRealAgentSyncOperations` (6 failures) -- NOT fixed by the D-12 production change; different root cause than expected
+
+- **File:** `backend/tests/test_agent_sync_service.py`, class `TestRealAgentSyncOperations`,
+  helper `_create_profile()` (~line 1103-1144).
+- **Symptom:** `TypeError: 'voice_live_enabled' is an invalid keyword argument for HcpProfile`
+  raised at `HcpProfile(**defaults)` construction time, inside the test helper -- i.e. the
+  failure happens before `sync_agent_for_profile()` / `resolve_voice_config()` is ever called.
+- **Root cause:** `_create_profile()`'s `defaults` dict (lines ~1109-1139) still passes 14
+  deprecated inline voice/avatar kwargs (`voice_live_enabled`, `voice_live_model`,
+  `voice_name`, `voice_type`, `voice_temperature`, `voice_custom`, `avatar_character`,
+  `avatar_style`, `avatar_customized`, `turn_detection_type`, `noise_suppression`,
+  `echo_cancellation`, `eou_detection`, `recognition_language`) directly to the `HcpProfile`
+  ORM constructor. These columns were dropped from the model by Plan 29-05's migration
+  (`333e011`), so the constructor raises `TypeError` immediately -- this predates and is
+  unrelated to `resolve_voice_config()`'s fallback branch (the AttributeError path that
+  Plan 29-06/D-12 fixes in `voice_live_instance_service.py`).
+- **Correction to upstream assumption:** The orchestrator's brief for Plan 29-06 expected
+  these 6 failures to "fail via the resolve_voice_config fallback path" and turn green once
+  D-12 landed. That assumption does not hold -- the failure is a fixture-construction bug
+  (same root cause class as Item 2 above, i.e. `_create_profile()` never migrated to the
+  create-a-`VoiceLiveInstance`-and-link pattern), not the fallback-crash bug D-12 fixes.
+  Confirmed via full traceback: the `TypeError` fires inside SQLAlchemy's
+  `_declarative_constructor` before any call into `agent_sync_service` or
+  `voice_live_instance_service`.
+- **Verification:** After landing the D-12 production fix (commit `2832e67`), re-ran
+  `pytest tests/test_agent_sync_service.py::TestRealAgentSyncOperations -v` -- all 6 tests
+  still fail with the identical `TypeError` (not a new/different error), confirming D-12's
+  fix is unrelated to this failure mode.
+- **Action needed:** `test_agent_sync_service.py` is out of Plan 29-06's file-ownership
+  scope (owned by Plan 29-02's landed work; a parallel cleanup agent may also be touching
+  adjacent test files in this same file per the orchestrator's stated boundaries). Fix by
+  applying the same pattern as Item 2: update `_create_profile()` to create a
+  `VoiceLiveInstance` and pass its id as `voice_live_instance_id` instead of the 14 dropped
+  inline kwargs.

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-stopped_at: Completed 29-05-PLAN.md
-last_updated: "2026-07-19T14:40:33.155Z"
+stopped_at: Completed 29-06-PLAN.md
+last_updated: "2026-07-19T14:49:36.633Z"
 last_activity: 2026-07-19
 progress:
   total_phases: 31
   completed_phases: 26
   total_plans: 153
-  completed_plans: 138
-  percent: 90
+  completed_plans: 139
+  percent: 91
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-24)
 ## Current Position
 
 Phase: 29 (voice-live-api-refactor-adaptation-azure-ai-voicelive-sdk-1-) — EXECUTING
-Plan: 5 of 10
+Plan: 6 of 10
 Phase: 26 (add-voice-live-webrtc-transport-option-as-alternative-to-web) — COMPLETE (3/3 plans)
 Phase: 24 (Skill Focus + CU Evaluation) — COMPLETE (5/5 plans)
 Phase: 25 (Refactor user training pages) — COMPLETE (2/2 plans)
@@ -138,6 +138,7 @@ Phase: 26 (Scoring Architecture: LLM Content + CU Voice) — COMPLETE (1/1 plan)
 | Phase 29 P03 | ~2h | 3 tasks | 5 files |
 | Phase 29 P04 | 25min | 2 tasks | 2 files |
 | Phase 29 P05 | ~3h | 2 tasks | 21 files |
+| Phase 29 P06 | 15min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -307,6 +308,8 @@ Recent decisions affecting current work:
 - [Phase 29]: WebRTC signaling now sources api-version from settings.voice_live_api_version (GA 2026-07-15), auto-resyncs classic asst_* agents, and rejects unsynced-HCP sessions with 409 AGENT_SYNC_REQUIRED, mirroring the WS-side D-02/D-05/D-08 enforcement from Plan 29-03
 - [Phase 29]: D-09: Dropped 14 deprecated inline voice/avatar columns from hcp_profiles (no backfill); voice/avatar config now lives exclusively on VoiceLiveInstance
 - [Phase 29]: D-13: voice_live_instance_id is required on HcpProfileCreate and cannot be cleared on HcpProfileUpdate (service-layer guard, 422 on empty/None if key explicitly sent)
+- [Phase 29]: resolve_voice_config fallback: voice_live_enabled/avatar_enabled flip from True to False for unassigned HCPs (D-10/D-12 alignment with scenarios.py)
+- [Phase 29]: test_agent_sync_service.py::TestRealAgentSyncOperations (6 failures) not fixed by 29-06 -- pre-existing fixture bug (_create_profile uses dropped kwargs), unrelated to resolve_voice_config; deferred to deferred-items.md Item 3
 
 ### Pending Todos
 
@@ -344,6 +347,6 @@ None yet.
 ## Session Continuity
 
 Last activity: 2026-07-19
-Last session: 2026-07-19T14:40:32.984Z
-Stopped at: Completed 29-05-PLAN.md
+Last session: 2026-07-19T14:49:36.629Z
+Stopped at: Completed 29-06-PLAN.md
 Resume file: None
