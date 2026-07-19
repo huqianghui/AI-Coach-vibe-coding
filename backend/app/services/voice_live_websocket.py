@@ -44,36 +44,51 @@ MAX_VOICE_LIVE_INSTRUCTIONS_LENGTH = 16_000
 TRAINABLE_SESSION_STATUSES = frozenset({"created", "in_progress"})
 MODEL_SESSION_MODES = frozenset({"voice_realtime_model", "digital_human_realtime_model"})
 
-# SDK monkey-patch flag (DEPRECATED: no longer needed for hosted agents)
-_VOICE_AGENT_PATCHED = False
 
-
-def _apply_voice_agent_patch():
-    """Patch SDK to use /voice-agent/realtime + agent_id.
-
-    DEPRECATED: Only needed for classic agents (asst_* IDs).
-    Hosted agents use /voice-live/realtime + agent-name= natively.
-    Kept for backward compatibility with classic agent mode.
+class AgentSyncRequiredError(ValueError):
+    """Raised when an HCP voice session requires a synced hosted agent but
+    none is available (D-08). Subclasses ValueError so any legacy `except
+    ValueError` handling still catches it, but callers that need to send a
+    distinct AGENT_SYNC_REQUIRED error code to the client MUST catch this
+    exception specifically, BEFORE any generic `except ValueError`/`except
+    Exception` clause -- otherwise the rejection is silently swallowed and
+    the caller falls back to defaults instead of rejecting the connection.
     """
-    global _VOICE_AGENT_PATCHED
-    if _VOICE_AGENT_PATCHED:
-        return
+
+    def __init__(self, hcp_profile_id: str):
+        super().__init__(
+            f"Voice agent is not synced for HCP profile {hcp_profile_id}. "
+            "Please resync the agent (Admin > HCP Profiles > Resync Agent) "
+            "before starting a voice session."
+        )
+        self.hcp_profile_id = hcp_profile_id
+
+
+async def _resolve_voice_live_credential(api_key: str = "") -> tuple[object, bool]:
+    """Entra-first, API-key-fallback credential resolution for Voice Live
+    connect() (D-01). Mirrors agent_sync_service._get_project_client().
+
+    Returns (credential, is_entra). Caller MUST await credential.close()
+    when is_entra is True (DefaultAzureCredential holds an aiohttp session).
+    """
+    from azure.identity.aio import DefaultAzureCredential
+
     try:
-        from azure.ai.voicelive.aio._patch import _VoiceLiveConnectionManager
-
-        original_prepare_url = _VoiceLiveConnectionManager._prepare_url
-
-        def patched_prepare_url(self):
-            url = original_prepare_url(self)
-            url = url.replace("/voice-live/realtime", "/voice-agent/realtime")
-            url = url.replace("agent-name=", "agent_id=")
-            return url
-
-        _VoiceLiveConnectionManager._prepare_url = patched_prepare_url
-        _VOICE_AGENT_PATCHED = True
-        logger.info("Applied voice-agent URL monkey-patch to SDK")
+        credential = DefaultAzureCredential()
+        await credential.get_token("https://cognitiveservices.azure.com/.default")
+        logger.info("Voice Live credential: using Entra (DefaultAzureCredential)")
+        return credential, True
     except Exception:
-        logger.warning("Failed to apply voice-agent URL monkey-patch", exc_info=True)
+        logger.info("Voice Live credential: Entra probe failed, falling back to API key")
+
+    if api_key and api_key.strip():
+        from azure.core.credentials import AzureKeyCredential
+
+        return AzureKeyCredential(api_key), False
+
+    raise RuntimeError(
+        "No valid Voice Live credential available: Entra probe failed and no API key configured"
+    )
 
 
 async def _load_connection_config(
@@ -117,11 +132,6 @@ async def _load_connection_config(
     _settings = get_settings()
     _default_model = _settings.voice_live_default_model
     vl_model = vl_config.model_or_deployment or _default_model
-
-    # Check for hosted agent override (takes priority over per-HCP classic agents)
-    _hosted_agent_name = _settings.voice_live_hosted_agent_name
-    _hosted_agent_project = _settings.voice_live_hosted_agent_project
-    _hosted_agent_endpoint = _settings.voice_live_hosted_agent_endpoint
 
     result: dict[str, Any] = {
         "endpoint": effective_endpoint,
@@ -195,29 +205,23 @@ async def _load_connection_config(
                 hcp_model = _default_model
             result["model"] = hcp_model
 
-            # Agent mode: hosted agent override takes priority over per-HCP classic agents.
-            # If hosted agent is configured, use it for ALL agent-mode connections.
-            if (
-                not force_model_mode
-                and _settings.voice_live_agent_mode_enabled
-                and _hosted_agent_name
-            ):
-                result["use_agent_mode"] = True
-                result["agent_name"] = _hosted_agent_name
-                result["project_name"] = _hosted_agent_project
-                if _hosted_agent_endpoint:
-                    result["endpoint"] = _hosted_agent_endpoint.rstrip("/")
-            elif (
-                not force_model_mode
-                and _settings.voice_live_agent_mode_enabled
-                and profile.agent_id
-                and profile.agent_id.startswith("asst_")
-                and profile.agent_sync_status == "synced"
-            ):
-                master = await config_service.get_master_config(db)
-                result["use_agent_mode"] = True
-                result["agent_name"] = profile.agent_id
-                result["project_name"] = master.default_project if master else ""
+            # Agent mode is mandatory for HCP voice sessions (D-08): a synced
+            # agent_id is required, there is no fallback to Model mode. A
+            # classic asst_* agent is auto-resynced to a hosted agent first
+            # (D-05) so migrated profiles aren't rejected for a stale id.
+            if not force_model_mode:
+                if str(profile.agent_id or "").startswith("asst_"):
+                    from app.services.agent_sync_service import resync_classic_agent
+
+                    await resync_classic_agent(db, profile)
+
+                if profile.agent_id and profile.agent_sync_status == "synced":
+                    master = await config_service.get_master_config(db)
+                    result["use_agent_mode"] = True
+                    result["agent_name"] = profile.agent_id
+                    result["project_name"] = master.default_project if master else ""
+                else:
+                    raise AgentSyncRequiredError(hcp_profile_id)
 
             # Instructions priority for HCP mode:
             #   1. HCP profile's own agent_instructions_override (admin-set override)
@@ -234,6 +238,8 @@ async def _load_connection_config(
                 from app.services.agent_sync_service import build_agent_instructions
 
                 result["instructions"] = build_agent_instructions(profile.to_prompt_dict())
+        except AgentSyncRequiredError:
+            raise
         except Exception:
             logger.warning(
                 "Failed to load HCP profile %s, using defaults",
@@ -295,20 +301,6 @@ async def _load_connection_config(
                 vl_instance_id,
                 exc_info=True,
             )
-
-    # Standalone hosted agent mode: no HCP profile, no VL instance,
-    # but hosted agent is configured → activate agent mode.
-    if (
-        not force_model_mode
-        and not result["use_agent_mode"]
-        and _hosted_agent_name
-        and _settings.voice_live_agent_mode_enabled
-    ):
-        result["use_agent_mode"] = True
-        result["agent_name"] = _hosted_agent_name
-        result["project_name"] = _hosted_agent_project
-        if _hosted_agent_endpoint:
-            result["endpoint"] = _hosted_agent_endpoint.rstrip("/")
 
     if avatar_enabled is not None:
         # A caller may downgrade an otherwise permitted avatar connection, but
@@ -530,6 +522,9 @@ async def handle_voice_live_websocket(
                 avatar_enabled_override,
                 force_model_mode=training_session_id is not None,
             )
+        except AgentSyncRequiredError as e:
+            await _send_error(ws, str(e), "AGENT_SYNC_REQUIRED")
+            return
         except ValueError as e:
             await _send_error(ws, str(e))
             return
@@ -585,201 +580,129 @@ async def handle_voice_live_websocket(
                 ServerEventType,
                 VideoParams,
             )
-            from azure.core.credentials import AzureKeyCredential
         except ImportError:
             await _send_error(ws, "azure-ai-voicelive SDK not installed")
             return
 
-        # Use DefaultAzureCredential (token-based) when API key is empty or
-        # key-based auth is disabled on the endpoint
-        api_key = cfg["api_key"]
-        if api_key and api_key.strip():
-            credential = AzureKeyCredential(api_key)
-        else:
-            from azure.identity.aio import DefaultAzureCredential
-
-            credential = DefaultAzureCredential()
-
-        # Build session config -- modalities and audio/voice settings
-        modalities = [Modality.TEXT, Modality.AUDIO]
-        avatar_config_value = None
-        if cfg["avatar_enabled"]:
-            modalities.append(Modality.AVATAR)
-
-            # Distinguish photo avatars (VASA-1) vs video avatars
-            from app.services.avatar_characters import (
-                is_photo_avatar as _is_photo,
-            )
-            from app.services.avatar_characters import (
-                validate_avatar_style,
-            )
-
-            char_id = cfg["avatar_character"]
-            style = cfg["avatar_style"]
-
-            if _is_photo(char_id):
-                # Photo avatar: use dict format with VASA-1 model, no style
-                avatar_config_value = {
-                    "type": "photo-avatar",
-                    "model": "vasa-1",
-                    "character": char_id,
-                    "customized": False,
-                }
-                session_log.info("Using photo avatar (VASA-1): character=%s", char_id)
-            else:
-                # Video avatar: validate style, fallback to default if invalid
-                validated_style = validate_avatar_style(char_id, style)
-                if validated_style is not None and validated_style != style:
-                    session_log.warning(
-                        "Avatar style %r not valid for %s, falling back to %r",
-                        style,
-                        char_id,
-                        validated_style,
-                    )
-                    style = validated_style
-
-                avatar_config_value = AvatarConfig(
-                    character=char_id,
-                    style=style if style else None,
-                    customized=cfg["avatar_customized"],
-                    video=VideoParams(codec="h264"),
-                )
-                # Enable audio output through WebRTC audio track.
-                # Without this, Azure renders lip-sync but does NOT send
-                # TTS audio on the WebRTC audio track (output_audit_audio=false).
-                avatar_config_value["output_audit_audio"] = True
-                session_log.info(
-                    "Using video avatar: character=%s, style=%s, output_audit_audio=True",
-                    char_id,
-                    style,
-                )
-
-        # Enable input_audio_transcription so Azure sends
-        # conversation.item.input_audio_transcription.completed events,
-        # which provide user speech-to-text for the transcript display.
-        session_kwargs: dict[str, Any] = {
-            "modalities": modalities,
-            "turn_detection": AzureSemanticVad(type="azure_semantic_vad"),
-            "input_audio_noise_reduction": AudioNoiseReduction(type="azure_deep_noise_suppression"),
-            "input_audio_echo_cancellation": AudioEchoCancellation(type="server_echo_cancellation"),
-            "input_audio_transcription": AudioInputTranscriptionOptions(
-                model="azure-speech",
-                language=cfg.get("recognition_language", "zh,en"),
-            ),
-            "voice": AzureStandardVoice(name=cfg["voice_name"], type=cfg["voice_type"]),
-        }
-        # Only include avatar config when explicitly enabled.
-        # Passing avatar=None may cause the SDK to serialize {"avatar": null}
-        # which Azure could interpret differently from omitting the field entirely.
-        if avatar_config_value is not None:
-            session_kwargs["avatar"] = avatar_config_value
-        if not cfg.get("use_agent_mode", False) and cfg.get("instructions"):
-            session_kwargs["instructions"] = cfg["instructions"]
-        session_config = RequestSession(**session_kwargs)  # type: ignore[arg-type]
+        # D-01: Entra-first, API-key-fallback credential resolution. One
+        # credential is resolved and reused for the entire connection
+        # lifetime (whichever mode -- Agent or Model -- is ultimately used).
+        credential, _is_entra_credential = await _resolve_voice_live_credential(cfg["api_key"])
 
         from app.config import get_settings as _get_settings
 
-        use_agent_mode = cfg.get("use_agent_mode", False)
-        model = cfg["model"] or _get_settings().voice_live_default_model
+        _api_version = _get_settings().voice_live_api_version
 
-        if use_agent_mode:
-            # Agent mode: the agent carries its own instructions/tools/knowledge.
-            # Only send modalities (voice, avatar, transcription) -- NOT instructions.
-            agent_name = cfg["agent_name"]
-            project_name = cfg["project_name"]
-            session_log.info(
-                "Voice Live connecting (agent mode): endpoint=%s, "
-                "agent_name=%s, project_name=%s, avatar=%s, "
-                "session_modalities=%s",
-                cfg["endpoint"],
-                agent_name,
-                project_name,
-                cfg["avatar_enabled"],
-                [str(m) for m in modalities],
-            )
+        try:
+            # Build session config -- modalities and audio/voice settings
+            modalities = [Modality.TEXT, Modality.AUDIO]
+            avatar_config_value = None
+            if cfg["avatar_enabled"]:
+                modalities.append(Modality.AVATAR)
 
-            # Determine if this is a hosted agent (name-based) or classic agent (asst_* ID)
-            _is_hosted_agent = not agent_name.startswith("asst_")
-
-            if _is_hosted_agent:
-                # Hosted agent: SDK natively supports /voice-live/realtime + agent-name=
-                # Use DefaultAzureCredential (hosted agent endpoints require Entra auth)
-                from azure.identity.aio import DefaultAzureCredential as _DAC
-
-                _agent_credential = _DAC()
-
-                session_log.info(
-                    "Connecting to hosted agent: name=%s, project=%s, endpoint=%s",
-                    agent_name,
-                    project_name,
-                    cfg["endpoint"],
+                from app.services.avatar_characters import (
+                    is_photo_avatar as _is_photo,
+                )
+                from app.services.avatar_characters import (
+                    validate_avatar_style,
                 )
 
-                try:
-                    async with connect(
-                        endpoint=cfg["endpoint"],
-                        credential=_agent_credential,
-                        api_version="2026-01-01-preview",
-                        agent_name=agent_name,
-                        project_name=project_name,
-                    ) as azure_conn:
-                        await azure_conn.session.update(session=session_config)
-                        session_log.info("Connected to hosted agent, session config sent")
+                char_id = cfg["avatar_character"]
+                style = cfg["avatar_style"]
 
-                        await ws.send_text(
-                            json.dumps(
-                                {
-                                    "type": PROXY_CONNECTED_TYPE,
-                                    "message": f"Connected to hosted agent: {agent_name}",
-                                    "avatar_enabled": cfg["avatar_enabled"],
-                                    "model": "",
-                                    "mode": "agent",
-                                    "agent_name": agent_name,
-                                    "session_id": sid,
-                                }
-                            )
+                if _is_photo(char_id):
+                    avatar_config_value = {
+                        "type": "photo-avatar",
+                        "model": "vasa-1",
+                        "character": char_id,
+                        "customized": False,
+                    }
+                    session_log.info("Using photo avatar (VASA-1): character=%s", char_id)
+                else:
+                    validated_style = validate_avatar_style(char_id, style)
+                    if validated_style is not None and validated_style != style:
+                        session_log.warning(
+                            "Avatar style %r not valid for %s, falling back to %r",
+                            style,
+                            char_id,
+                            validated_style,
                         )
+                        style = validated_style
 
-                        await _handle_message_forwarding(
-                            ws,
-                            azure_conn,
-                            ConnectionClosed,
-                            ServerEventType,
-                            session_log,
-                            event_counts,
-                        )
-                finally:
-                    await _agent_credential.close()
-            else:
-                # Classic agent (asst_* ID): requires monkey-patch + agent_access_token
-                _apply_voice_agent_patch()
+                    avatar_config_value = AvatarConfig(
+                        character=char_id,
+                        style=style if style else None,
+                        customized=cfg["avatar_customized"],
+                        video=VideoParams(codec="h264"),
+                    )
+                    avatar_config_value["output_audit_audio"] = True
+                    session_log.info(
+                        "Using video avatar: character=%s, style=%s, output_audit_audio=True",
+                        char_id,
+                        style,
+                    )
 
-                from azure.identity.aio import DefaultAzureCredential as _DAC
+            session_kwargs: dict[str, Any] = {
+                "modalities": modalities,
+                "turn_detection": AzureSemanticVad(type="azure_semantic_vad"),
+                "input_audio_noise_reduction": AudioNoiseReduction(
+                    type="azure_deep_noise_suppression"
+                ),
+                "input_audio_echo_cancellation": AudioEchoCancellation(
+                    type="server_echo_cancellation"
+                ),
+                "input_audio_transcription": AudioInputTranscriptionOptions(
+                    model="azure-speech",
+                    language=cfg.get("recognition_language", "zh,en"),
+                ),
+                "voice": AzureStandardVoice(name=cfg["voice_name"], type=cfg["voice_type"]),
+            }
+            if avatar_config_value is not None:
+                session_kwargs["avatar"] = avatar_config_value
+            if not cfg.get("use_agent_mode", False) and cfg.get("instructions"):
+                session_kwargs["instructions"] = cfg["instructions"]
+            session_config = RequestSession(**session_kwargs)  # type: ignore[arg-type]
 
-                _ai_cred = _DAC()
-                try:
-                    _ai_token_obj = await _ai_cred.get_token("https://ai.azure.com/.default")
-                    _agent_access_token = _ai_token_obj.token
-                finally:
-                    await _ai_cred.close()
+            use_agent_mode = cfg.get("use_agent_mode", False)
+            model = cfg["model"] or _get_settings().voice_live_default_model
+
+            if use_agent_mode:
+                # Agent mode (D-06/D-07): the classic asst_* branch has been
+                # removed. Every agent-mode connection reaching this point is
+                # guaranteed to be a hosted (name-based) agent because
+                # _load_connection_config only sets use_agent_mode=True after
+                # resync_classic_agent (D-05) has run and agent_sync_status
+                # == "synced" -- any profile that doesn't meet that bar raises
+                # AgentSyncRequiredError before this code is reached (D-08).
+                agent_name = cfg["agent_name"]
+                project_name = cfg["project_name"]
+                session_log.info(
+                    "Voice Live connecting (agent mode): endpoint=%s, "
+                    "agent_name=%s, project_name=%s, api_version=%s, avatar=%s, "
+                    "session_modalities=%s",
+                    cfg["endpoint"],
+                    agent_name,
+                    project_name,
+                    _api_version,
+                    cfg["avatar_enabled"],
+                    [str(m) for m in modalities],
+                )
 
                 async with connect(
                     endpoint=cfg["endpoint"],
                     credential=credential,
-                    api_version="2025-05-01-preview",
+                    api_version=_api_version,
                     agent_name=agent_name,
                     project_name=project_name,
-                    query={"agent_access_token": _agent_access_token},
-                    credential_scopes=["https://cognitiveservices.azure.com/.default"],
                 ) as azure_conn:
                     await azure_conn.session.update(session=session_config)
-                    session_log.info("Connected to classic agent, session config sent")
+                    session_log.info("Connected to hosted agent, session config sent")
 
                     await ws.send_text(
                         json.dumps(
                             {
                                 "type": PROXY_CONNECTED_TYPE,
-                                "message": "Connected to Azure Voice Live (agent mode)",
+                                "message": f"Connected to hosted agent: {agent_name}",
                                 "avatar_enabled": cfg["avatar_enabled"],
                                 "model": "",
                                 "mode": "agent",
@@ -797,61 +720,67 @@ async def handle_voice_live_websocket(
                         session_log,
                         event_counts,
                     )
-        else:
-            # Model mode: pass model name and instructions directly
-            instructions = cfg.get("instructions") or cfg.get("system_prompt")
+            else:
+                # Model mode: pass model name and instructions directly
+                instructions = cfg.get("instructions") or cfg.get("system_prompt")
 
-            # Log the full session config for debugging
-            session_dict = (
-                session_config.as_dict()
-                if hasattr(session_config, "as_dict")
-                else dict(session_config)
-            )
-            session_log.info(
-                "Voice Live connecting (model mode): endpoint=%s, "
-                "model=%s, avatar=%s, has_instructions=%s, "
-                "session_modalities=%s, session_voice=%s, "
-                "session_avatar_type=%s",
-                cfg["endpoint"],
-                model,
-                cfg["avatar_enabled"],
-                bool(instructions),
-                session_dict.get("modalities"),
-                session_dict.get("voice"),
-                type(session_config.get("avatar")).__name__
-                if session_config.get("avatar") is not None
-                else "None",
-            )
+                session_dict = (
+                    session_config.as_dict()
+                    if hasattr(session_config, "as_dict")
+                    else dict(session_config)
+                )
+                session_log.info(
+                    "Voice Live connecting (model mode): endpoint=%s, "
+                    "model=%s, api_version=%s, avatar=%s, has_instructions=%s, "
+                    "session_modalities=%s, session_voice=%s, "
+                    "session_avatar_type=%s",
+                    cfg["endpoint"],
+                    model,
+                    _api_version,
+                    cfg["avatar_enabled"],
+                    bool(instructions),
+                    session_dict.get("modalities"),
+                    session_dict.get("voice"),
+                    type(session_config.get("avatar")).__name__
+                    if session_config.get("avatar") is not None
+                    else "None",
+                )
 
-            async with connect(
-                endpoint=cfg["endpoint"],
-                credential=credential,
-                model=model,
-            ) as azure_conn:
-                await azure_conn.session.update(session=session_config)
-                session_log.info("Connected to Azure Voice Live (model mode), session config sent")
-
-                await ws.send_text(
-                    json.dumps(
-                        {
-                            "type": PROXY_CONNECTED_TYPE,
-                            "message": "Connected to Azure Voice Live",
-                            "avatar_enabled": cfg["avatar_enabled"],
-                            "model": model,
-                            "mode": "model",
-                            "session_id": sid,
-                        }
+                async with connect(
+                    endpoint=cfg["endpoint"],
+                    credential=credential,
+                    api_version=_api_version,
+                    model=model,
+                ) as azure_conn:
+                    await azure_conn.session.update(session=session_config)
+                    session_log.info(
+                        "Connected to Azure Voice Live (model mode), session config sent"
                     )
-                )
 
-                await _handle_message_forwarding(
-                    ws,
-                    azure_conn,
-                    ConnectionClosed,
-                    ServerEventType,
-                    session_log,
-                    event_counts,
-                )
+                    await ws.send_text(
+                        json.dumps(
+                            {
+                                "type": PROXY_CONNECTED_TYPE,
+                                "message": "Connected to Azure Voice Live",
+                                "avatar_enabled": cfg["avatar_enabled"],
+                                "model": model,
+                                "mode": "model",
+                                "session_id": sid,
+                            }
+                        )
+                    )
+
+                    await _handle_message_forwarding(
+                        ws,
+                        azure_conn,
+                        ConnectionClosed,
+                        ServerEventType,
+                        session_log,
+                        event_counts,
+                    )
+        finally:
+            if _is_entra_credential:
+                await credential.close()
 
     except WebSocketDisconnect:
         session_log.info("Client WebSocket disconnected")

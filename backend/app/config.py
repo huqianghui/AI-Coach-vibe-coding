@@ -112,12 +112,6 @@ class Settings(BaseSettings):
     # Voice Live Agent Mode (RD-1: SDK >=1.2.0b5 supports API-key agent mode)
     voice_live_agent_mode_enabled: bool = True
 
-    # Hosted Agent override: when set, ALL Voice Live agent-mode connections
-    # use this hosted agent instead of per-HCP classic agents (asst_* IDs).
-    voice_live_hosted_agent_name: str = ""
-    voice_live_hosted_agent_project: str = ""
-    voice_live_hosted_agent_endpoint: str = ""
-
     # Logging
     log_level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR
 
