@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-stopped_at: Completed 29-03-PLAN.md
-last_updated: "2026-07-19T14:26:08.642Z"
+stopped_at: Completed 29-04-PLAN.md
+last_updated: "2026-07-19T14:37:24.501Z"
 last_activity: 2026-07-19
 progress:
   total_phases: 31
   completed_phases: 26
   total_plans: 153
-  completed_plans: 136
-  percent: 89
+  completed_plans: 138
+  percent: 90
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-24)
 ## Current Position
 
 Phase: 29 (voice-live-api-refactor-adaptation-azure-ai-voicelive-sdk-1-) — EXECUTING
-Plan: 3 of 10
+Plan: 4 of 10
 Phase: 26 (add-voice-live-webrtc-transport-option-as-alternative-to-web) — COMPLETE (3/3 plans)
 Phase: 24 (Skill Focus + CU Evaluation) — COMPLETE (5/5 plans)
 Phase: 25 (Refactor user training pages) — COMPLETE (2/2 plans)
@@ -136,6 +136,7 @@ Phase: 26 (Scoring Architecture: LLM Content + CU Voice) — COMPLETE (1/1 plan)
 | Phase 28 P04 | 20min | 1 tasks | 1 files |
 | Phase 29 P01 | 20min | 3 tasks | 2 files |
 | Phase 29 P03 | ~2h | 3 tasks | 5 files |
+| Phase 29 P04 | 25min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -302,6 +303,7 @@ Recent decisions affecting current work:
 - [Phase 29]: [Phase 29]: connect() kwarg shape changed in 1.3.0b1 -- agent_name/project_name are flattened top-level kwargs, not AgentSessionConfig dict
 - [Phase 29]: [Phase 29]: D-14 Foundry capabilities filter confirmed as capabilities.get('chat_completion') == 'true' from live project data
 - [Phase 29]: 29-03: combined Task1+Task2 production-code commit since both edited voice_live_websocket.py interleaved without an intermediate commit boundary; test-suite changes committed separately
+- [Phase 29]: WebRTC signaling now sources api-version from settings.voice_live_api_version (GA 2026-07-15), auto-resyncs classic asst_* agents, and rejects unsynced-HCP sessions with 409 AGENT_SYNC_REQUIRED, mirroring the WS-side D-02/D-05/D-08 enforcement from Plan 29-03
 
 ### Pending Todos
 
@@ -339,6 +341,6 @@ None yet.
 ## Session Continuity
 
 Last activity: 2026-07-19
-Last session: 2026-07-19T14:26:08.638Z
-Stopped at: Completed 29-03-PLAN.md
+Last session: 2026-07-19T14:37:24.496Z
+Stopped at: Completed 29-04-PLAN.md
 Resume file: None
