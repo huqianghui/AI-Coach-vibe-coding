@@ -43,23 +43,6 @@ class HcpProfileOut(BaseModel):
     # Voice Live Instance reference
     voice_live_instance_id: str | None = None
 
-    # Voice Live enable + model selection (Phase 13)
-    voice_live_enabled: bool = True
-    voice_live_model: str = "gpt-4o"
-
-    # Voice/Avatar settings (Phase 12)
-    voice_name: str = "en-US-AvaNeural"
-    voice_type: str = "azure-standard"
-    voice_temperature: float = 0.9
-    voice_custom: bool = False
-    avatar_character: str = "lori"
-    avatar_style: str = "casual"
-    avatar_customized: bool = False
-    turn_detection_type: str = "server_vad"
-    noise_suppression: bool = False
-    echo_cancellation: bool = False
-    eou_detection: bool = False
-    recognition_language: str = "auto"
     agent_instructions_override: str = ""
 
     # Knowledge Base config count (Phase 17)

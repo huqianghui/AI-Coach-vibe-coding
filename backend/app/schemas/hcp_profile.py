@@ -30,24 +30,10 @@ class HcpProfileCreate(BaseModel):
     difficulty: Literal["easy", "medium", "hard"] = "medium"
     is_active: bool = True
 
-    # Voice Live Instance reference (preferred)
-    voice_live_instance_id: str | None = None
+    # Voice Live Instance reference (required, D-13 -- every HCP must reference exactly
+    # one VoiceLiveInstance for its full voice+avatar configuration)
+    voice_live_instance_id: str = Field(..., min_length=1)
 
-    # Deprecated inline voice fields (kept for backward compat)
-    voice_live_enabled: bool = True
-    voice_live_model: str = "gpt-4o"
-    voice_name: str = "en-US-AvaNeural"
-    voice_type: str = "azure-standard"
-    voice_temperature: float = Field(default=0.9, ge=0.0, le=2.0)
-    voice_custom: bool = False
-    avatar_character: str = "lori"
-    avatar_style: str = "casual"
-    avatar_customized: bool = False
-    turn_detection_type: str = "server_vad"
-    noise_suppression: bool = False
-    echo_cancellation: bool = False
-    eou_detection: bool = False
-    recognition_language: str = "auto"
     agent_instructions_override: str = ""
 
 
@@ -72,24 +58,11 @@ class HcpProfileUpdate(BaseModel):
     difficulty: Literal["easy", "medium", "hard"] | None = None
     is_active: bool | None = None
 
-    # Voice Live Instance reference
-    voice_live_instance_id: str | None = None
-
-    # Deprecated inline voice fields
-    voice_live_enabled: bool | None = None
-    voice_live_model: str | None = None
-    voice_name: str | None = None
-    voice_type: str | None = None
-    voice_temperature: float | None = Field(default=None, ge=0.0, le=2.0)
-    voice_custom: bool | None = None
-    avatar_character: str | None = None
-    avatar_style: str | None = None
-    avatar_customized: bool | None = None
-    turn_detection_type: str | None = None
-    noise_suppression: bool | None = None
-    echo_cancellation: bool | None = None
-    eou_detection: bool | None = None
-    recognition_language: str | None = None
+    # Voice Live Instance reference. Optional at the type level so partial updates can
+    # omit it and leave the existing value untouched -- but if the caller DOES send it,
+    # empty string is rejected here. The "cannot be cleared" invariant (D-13) is enforced
+    # in the service layer since the schema alone cannot know the pre-update DB value.
+    voice_live_instance_id: str | None = Field(default=None, min_length=1)
     agent_instructions_override: str | None = None
 
 
@@ -121,21 +94,6 @@ class HcpProfileResponse(BaseModel):
     voice_live_instance_id: str | None = None
     voice_live_instance: VoiceLiveInstanceSummary | None = None
 
-    # Deprecated inline voice fields (kept for backward compat)
-    voice_live_enabled: bool = True
-    voice_live_model: str = "gpt-4o"
-    voice_name: str = "en-US-AvaNeural"
-    voice_type: str = "azure-standard"
-    voice_temperature: float = 0.9
-    voice_custom: bool = False
-    avatar_character: str = "lori"
-    avatar_style: str = "casual"
-    avatar_customized: bool = False
-    turn_detection_type: str = "server_vad"
-    noise_suppression: bool = False
-    echo_cancellation: bool = False
-    eou_detection: bool = False
-    recognition_language: str = "auto"
     agent_instructions_override: str = ""
 
     created_by: str

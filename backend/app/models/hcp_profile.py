@@ -2,7 +2,7 @@
 
 import json
 
-from sqlalchemy import Boolean, Float, ForeignKey, String, Text
+from sqlalchemy import Boolean, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -45,30 +45,6 @@ class HcpProfile(Base, TimestampMixin):
     voice_live_instance_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("voice_live_instances.id"), nullable=True, default=None, index=True
     )
-
-    # --- Deprecated inline voice fields (kept for backward compat, prefer VoiceLiveInstance) ---
-
-    # Voice Live enable flag + model selection (Phase 13)
-    voice_live_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    voice_live_model: Mapped[str] = mapped_column(String(50), default="gpt-4o")
-
-    # Voice settings (D-01, D-04)
-    voice_name: Mapped[str] = mapped_column(String(200), default="en-US-AvaNeural")
-    voice_type: Mapped[str] = mapped_column(String(50), default="azure-standard")
-    voice_temperature: Mapped[float] = mapped_column(Float, default=0.9)
-    voice_custom: Mapped[bool] = mapped_column(Boolean, default=False)
-
-    # Avatar settings (D-01, D-03, D-04)
-    avatar_character: Mapped[str] = mapped_column(String(100), default="lori")
-    avatar_style: Mapped[str] = mapped_column(String(100), default="casual")
-    avatar_customized: Mapped[bool] = mapped_column(Boolean, default=False)
-
-    # Conversation parameters (D-01, D-04)
-    turn_detection_type: Mapped[str] = mapped_column(String(50), default="server_vad")
-    noise_suppression: Mapped[bool] = mapped_column(Boolean, default=False)
-    echo_cancellation: Mapped[bool] = mapped_column(Boolean, default=False)
-    eou_detection: Mapped[bool] = mapped_column(Boolean, default=False)
-    recognition_language: Mapped[str] = mapped_column(String(20), default="auto")
 
     # Agent instruction override (D-02)
     agent_instructions_override: Mapped[str] = mapped_column(Text, default="")

@@ -40,23 +40,29 @@ class HcpProfileBrief(BaseModel):
 
     @classmethod
     def from_hcp_profile(cls, profile: Any) -> "HcpProfileBrief":
-        """Create from ORM HcpProfile, resolving avatar from VL Instance if assigned."""
-        # Prefer VL Instance avatar fields (authoritative source)
+        """Create from ORM HcpProfile, resolving avatar from the assigned VL Instance.
+
+        D-09/D-10: HcpProfile no longer carries its own avatar/voice columns --
+        every field here comes from the VoiceLiveInstance relationship. If no
+        instance is assigned yet (legacy row pending its next save, D-13 only
+        enforces at save time), fall back to safe neutral defaults rather than
+        crashing.
+        """
         vl_inst = getattr(profile, "voice_live_instance", None)
-        avatar_character = vl_inst.avatar_character if vl_inst else profile.avatar_character
-        avatar_style = vl_inst.avatar_style if vl_inst else profile.avatar_style
-        voice_live_enabled = vl_inst.enabled if vl_inst else profile.voice_live_enabled
-        avatar_enabled = vl_inst.avatar_enabled if vl_inst else voice_live_enabled
+        avatar_character = vl_inst.avatar_character if vl_inst else "lori"
+        avatar_style = vl_inst.avatar_style if vl_inst else "casual"
+        voice_live_enabled = bool(vl_inst.enabled) if vl_inst else False
+        avatar_enabled = bool(vl_inst.avatar_enabled) if vl_inst else False
         return cls(
             id=profile.id,
             name=profile.name,
             specialty=profile.specialty or "",
             avatar_url=getattr(profile, "avatar_url", "") or "",
-            avatar_character=avatar_character or "lori",
-            avatar_style=avatar_style or "casual",
-            voice_live_enabled=bool(voice_live_enabled),
+            avatar_character=avatar_character,
+            avatar_style=avatar_style,
+            voice_live_enabled=voice_live_enabled,
             voice_live_instance_id=getattr(profile, "voice_live_instance_id", None),
-            avatar_enabled=bool(avatar_enabled),
+            avatar_enabled=avatar_enabled,
         )
 
 
