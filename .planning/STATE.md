@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-stopped_at: Completed 29-08-PLAN.md
-last_updated: "2026-07-19T15:39:43.793Z"
+stopped_at: Completed 29-09-PLAN.md
+last_updated: "2026-07-19T16:00:07.413Z"
 last_activity: 2026-07-19
 progress:
   total_phases: 31
   completed_phases: 26
   total_plans: 153
-  completed_plans: 141
-  percent: 92
+  completed_plans: 142
+  percent: 93
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-24)
 ## Current Position
 
 Phase: 29 (voice-live-api-refactor-adaptation-azure-ai-voicelive-sdk-1-) — EXECUTING
-Plan: 8 of 10
+Plan: 9 of 10
 Phase: 26 (add-voice-live-webrtc-transport-option-as-alternative-to-web) — COMPLETE (3/3 plans)
 Phase: 24 (Skill Focus + CU Evaluation) — COMPLETE (5/5 plans)
 Phase: 25 (Refactor user training pages) — COMPLETE (2/2 plans)
@@ -140,6 +140,7 @@ Phase: 26 (Scoring Architecture: LLM Content + CU Voice) — COMPLETE (1/1 plan)
 | Phase 29 P05 | ~3h | 2 tasks | 21 files |
 | Phase 29 P06 | 15min | 2 tasks | 3 files |
 | Phase 29 P08 | 9min | 2 tasks | 15 files |
+| Phase 29 P09 | 55min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -313,6 +314,7 @@ Recent decisions affecting current work:
 - [Phase 29]: test_agent_sync_service.py::TestRealAgentSyncOperations (6 failures) not fixed by 29-06 -- pre-existing fixture bug (_create_profile uses dropped kwargs), unrelated to resolve_voice_config; deferred to deferred-items.md Item 3
 - [Phase 29]: D-11: voice mode availability derived solely from VL Instance assignment (Boolean(vlInstanceId)); no independent voiceModeEnabled state
 - [Phase 29]: 29-08: Used local useState fallback for Foundation Model dropdown (voice_live_model not on HcpFormValues per Plan 07)
+- [Phase 29]: docs(29-09): unified docs/voice-live-avatar into flat 17-file tree, deleted README/ subtree, corrected stale api-version/classic-agent/inline-field references, added dual-path architecture diagram
 
 ### Pending Todos
 
@@ -350,6 +352,6 @@ None yet.
 ## Session Continuity
 
 Last activity: 2026-07-19
-Last session: 2026-07-19T15:39:43.789Z
-Stopped at: Completed 29-08-PLAN.md
+Last session: 2026-07-19T15:59:57.245Z
+Stopped at: Completed 29-09-PLAN.md
 Resume file: None
