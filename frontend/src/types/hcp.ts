@@ -25,26 +25,7 @@ export interface HcpProfile {
   // Voice Live Instance reference
   voice_live_instance_id: string | null;
   voice_live_instance?: VoiceLiveInstanceSummary | null;
-  // Voice Live agent metadata toggle
-  voice_live_enabled: boolean;
   avatar_enabled?: boolean;
-  // Voice Live model selection (Phase 13)
-  voice_live_model: string;
-  // Voice settings (D-01)
-  voice_name: string;
-  voice_type: string;
-  voice_temperature: number;
-  voice_custom: boolean;
-  // Avatar settings (D-03)
-  avatar_character: string;
-  avatar_style: string;
-  avatar_customized: boolean;
-  // Conversation parameters (D-01)
-  turn_detection_type: string;
-  noise_suppression: boolean;
-  echo_cancellation: boolean;
-  eou_detection: boolean;
-  recognition_language: string;
   // Agent override (D-02)
   agent_instructions_override: string;
   // Knowledge Base config count (Phase 17)
@@ -77,21 +58,7 @@ export interface HcpProfileCreate {
   objections?: string[];
   probe_topics?: string[];
   difficulty?: HcpProfile["difficulty"];
-  voice_live_instance_id?: string | null;
-  voice_live_enabled?: boolean;
-  voice_live_model?: string;
-  voice_name?: string;
-  voice_type?: string;
-  voice_temperature?: number;
-  voice_custom?: boolean;
-  avatar_character?: string;
-  avatar_style?: string;
-  avatar_customized?: boolean;
-  turn_detection_type?: string;
-  noise_suppression?: boolean;
-  echo_cancellation?: boolean;
-  eou_detection?: boolean;
-  recognition_language?: string;
+  voice_live_instance_id: string;
   agent_instructions_override?: string;
 }
 

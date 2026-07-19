@@ -55,7 +55,7 @@ const SPECIALTIES = [
 
 const DIFFICULTIES = ["easy", "medium", "hard"] as const;
 
-const hcpSchema = z.object({
+export const hcpSchema = z.object({
   name: z.string().min(1),
   specialty: z.string().min(1),
   hospital: z.string().default(""),
@@ -75,24 +75,13 @@ const hcpSchema = z.object({
   objections: z.array(z.string()),
   probe_topics: z.array(z.string()),
   difficulty: z.enum(["easy", "medium", "hard"]),
-  // Voice Live Instance reference
-  voice_live_instance_id: z.string().nullable().default(null),
-  // Voice Live agent metadata toggle
-  voice_live_enabled: z.boolean().default(true),
-  voice_live_model: z.string().default("gpt-4o"),
-  // Voice/avatar fields
-  voice_name: z.string().default("en-US-AvaNeural"),
-  voice_type: z.string().default("azure-standard"),
-  voice_temperature: z.number().min(0).max(1).default(0.9),
-  voice_custom: z.boolean().default(false),
-  avatar_character: z.string().default("lori"),
-  avatar_style: z.string().default("casual"),
-  avatar_customized: z.boolean().default(false),
-  turn_detection_type: z.string().default("server_vad"),
-  noise_suppression: z.boolean().default(false),
-  echo_cancellation: z.boolean().default(false),
-  eou_detection: z.boolean().default(false),
-  recognition_language: z.string().default("auto"),
+  // Voice Live Instance reference (D-10/D-13 -- required on save, both create and edit)
+  voice_live_instance_id: z
+    .string()
+    .nullable()
+    .refine((val) => Boolean(val && val.length > 0), {
+      message: "hcp.vlInstanceValidationError",
+    }),
   agent_instructions_override: z.string().default(""),
 });
 
@@ -134,20 +123,6 @@ export default function HcpProfileEditorPage() {
       probe_topics: [],
       difficulty: "medium",
       voice_live_instance_id: null,
-      voice_live_enabled: true,
-      voice_live_model: "gpt-4o",
-      voice_name: "en-US-AvaNeural",
-      voice_type: "azure-standard",
-      voice_temperature: 0.9,
-      voice_custom: false,
-      avatar_character: "lori",
-      avatar_style: "casual",
-      avatar_customized: false,
-      turn_detection_type: "server_vad",
-      noise_suppression: false,
-      echo_cancellation: false,
-      eou_detection: false,
-      recognition_language: "auto",
       agent_instructions_override: "",
     },
   });
@@ -169,20 +144,6 @@ export default function HcpProfileEditorPage() {
         probe_topics: profile.probe_topics,
         difficulty: profile.difficulty,
         voice_live_instance_id: profile.voice_live_instance_id ?? null,
-        voice_live_enabled: profile.voice_live_enabled ?? true,
-        voice_live_model: profile.voice_live_model ?? "gpt-4o",
-        voice_name: profile.voice_name ?? "en-US-AvaNeural",
-        voice_type: profile.voice_type ?? "azure-standard",
-        voice_temperature: profile.voice_temperature ?? 0.9,
-        voice_custom: profile.voice_custom ?? false,
-        avatar_character: profile.avatar_character ?? "lori",
-        avatar_style: profile.avatar_style ?? "casual",
-        avatar_customized: profile.avatar_customized ?? false,
-        turn_detection_type: profile.turn_detection_type ?? "server_vad",
-        noise_suppression: profile.noise_suppression ?? false,
-        echo_cancellation: profile.echo_cancellation ?? false,
-        eou_detection: profile.eou_detection ?? false,
-        recognition_language: profile.recognition_language ?? "auto",
         agent_instructions_override:
           profile.agent_instructions_override ?? "",
       });
@@ -216,6 +177,12 @@ export default function HcpProfileEditorPage() {
           onError: () => toast.error(t("admin:errors.hcpSaveFailed")),
         },
       );
+    }
+  };
+
+  const handleInvalidSubmit = (errors: typeof form.formState.errors) => {
+    if (errors.voice_live_instance_id) {
+      toast.error(t("admin:hcp.vlInstanceSaveBlockedToast"));
     }
   };
 
@@ -269,7 +236,7 @@ export default function HcpProfileEditorPage() {
         </div>
         <div className="flex items-center gap-2">
           <Button
-            onClick={form.handleSubmit(handleSubmit)}
+            onClick={form.handleSubmit(handleSubmit, handleInvalidSubmit)}
             disabled={createMutation.isPending || updateMutation.isPending}
           >
             <Save className="size-4 mr-2" />

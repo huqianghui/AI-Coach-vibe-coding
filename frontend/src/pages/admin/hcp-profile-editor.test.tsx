@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { toast } from "sonner";
-import HcpProfileEditorPage from "./hcp-profile-editor";
+import HcpProfileEditorPage, { hcpSchema } from "./hcp-profile-editor";
 import type { HcpProfile } from "@/types/hcp";
 
 /* ── Mocks ────────────────────────────────────────────────────────────── */
@@ -64,7 +64,21 @@ vi.mock("@/components/admin/test-chat-dialog", () => ({
 }));
 
 vi.mock("@/components/admin/voice-avatar-tab", () => ({
-  VoiceAvatarTab: () => <div data-testid="voice-avatar-tab" />,
+  VoiceAvatarTab: (props: {
+    form: { setValue: (name: string, value: string) => void };
+  }) => (
+    <div data-testid="voice-avatar-tab">
+      <button
+        type="button"
+        data-testid="set-vl-instance"
+        onClick={() =>
+          props.form.setValue("voice_live_instance_id", "vl-test-1")
+        }
+      >
+        set-vl-instance
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock("@/components/admin/agent-status-section", () => ({
@@ -99,21 +113,7 @@ const MOCK_PROFILE: HcpProfile = {
   agent_version: "v1",
   agent_sync_status: "synced",
   agent_sync_error: "",
-  voice_live_instance_id: null,
-  voice_live_enabled: true,
-  voice_live_model: "gpt-4o",
-  voice_name: "en-US-AvaNeural",
-  voice_type: "azure-standard",
-  voice_temperature: 0.9,
-  voice_custom: false,
-  avatar_character: "lori",
-  avatar_style: "casual",
-  avatar_customized: false,
-  turn_detection_type: "server_vad",
-  noise_suppression: false,
-  echo_cancellation: false,
-  eou_detection: false,
-  recognition_language: "auto",
+  voice_live_instance_id: "vl-1",
   agent_instructions_override: "",
   knowledge_config_count: 0,
 };
@@ -386,6 +386,10 @@ describe("HcpProfileEditorPage", () => {
     const oncologyOption = await screen.findByText("Oncology");
     fireEvent.click(oncologyOption);
 
+    // Assign a Voice Live Instance (D-10 -- required on save)
+    await userEvent.click(screen.getByText("admin:hcp.tabVoiceAvatar"));
+    await userEvent.click(screen.getByTestId("set-vl-instance"));
+
     // Click save
     const saveButtons = screen.getAllByText("admin:hcp.save");
     const saveBtn = saveButtons[0]!.closest("button")!;
@@ -411,6 +415,8 @@ describe("HcpProfileEditorPage", () => {
     const specialtyTrigger = screen.getByText("Select specialty").closest("button")!;
     fireEvent.click(specialtyTrigger);
     fireEvent.click(await screen.findByText("Oncology"));
+    await userEvent.click(screen.getByText("admin:hcp.tabVoiceAvatar"));
+    await userEvent.click(screen.getByTestId("set-vl-instance"));
     await userEvent.click(
       screen.getAllByText("admin:hcp.save")[0]!.closest("button")!,
     );
@@ -434,6 +440,8 @@ describe("HcpProfileEditorPage", () => {
     const specialtyTrigger = screen.getByText("Select specialty").closest("button")!;
     fireEvent.click(specialtyTrigger);
     fireEvent.click(await screen.findByText("Oncology"));
+    await userEvent.click(screen.getByText("admin:hcp.tabVoiceAvatar"));
+    await userEvent.click(screen.getByTestId("set-vl-instance"));
     await userEvent.click(
       screen.getAllByText("admin:hcp.save")[0]!.closest("button")!,
     );
@@ -447,6 +455,84 @@ describe("HcpProfileEditorPage", () => {
     callbacks.onError();
 
     expect(toast.error).toHaveBeenCalledWith("admin:errors.hcpSaveFailed");
+  });
+
+  /* ---- D-10: VL Instance required at save time (Task 1 behaviors) ---- */
+
+  const VALID_SCHEMA_PAYLOAD = {
+    name: "Dr. Schema",
+    specialty: "Oncology",
+    hospital: "",
+    title: "",
+    personality_type: "friendly" as const,
+    emotional_state: 30,
+    communication_style: 50,
+    expertise_areas: [],
+    prescribing_habits: "",
+    concerns: "",
+    objections: [],
+    probe_topics: [],
+    difficulty: "medium" as const,
+    agent_instructions_override: "",
+  };
+
+  it("hcpSchema accepts a non-empty voice_live_instance_id", () => {
+    const result = hcpSchema.safeParse({
+      ...VALID_SCHEMA_PAYLOAD,
+      voice_live_instance_id: "vl-123",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("hcpSchema rejects an empty voice_live_instance_id", () => {
+    const result = hcpSchema.safeParse({
+      ...VALID_SCHEMA_PAYLOAD,
+      voice_live_instance_id: "",
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(
+        result.error.issues.some((issue) =>
+          issue.path.includes("voice_live_instance_id"),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("hcpSchema rejects a null voice_live_instance_id", () => {
+    const result = hcpSchema.safeParse({
+      ...VALID_SCHEMA_PAYLOAD,
+      voice_live_instance_id: null,
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(
+        result.error.issues.some((issue) =>
+          issue.path.includes("voice_live_instance_id"),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("blocks save with a toast and never calls the API when no VL instance is assigned", async () => {
+    renderEditor("/admin/hcp-profiles/new");
+
+    const nameInput = screen.getByRole("textbox", { name: /name/i });
+    await userEvent.type(nameInput, "Dr. Blocked");
+
+    // Do NOT assign a VL instance -- submit directly (specialty left blank is
+    // irrelevant to this assertion; handleInvalidSubmit fires the VL toast
+    // independently of any other field's validity)
+    await userEvent.click(
+      screen.getAllByText("admin:hcp.save")[0]!.closest("button")!,
+    );
+
+    await vi.waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        "admin:hcp.vlInstanceSaveBlockedToast",
+      );
+    });
+    expect(mockCreateMutate).not.toHaveBeenCalled();
   });
 
   /* ---- Update submit in edit mode ---- */
