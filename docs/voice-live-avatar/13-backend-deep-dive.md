@@ -1,16 +1,20 @@
-# 第七章：后端实现 —— Python 服务端
+# 13 — 后端深入
 
-> 返回 [学习导航](../index.md) | 上一章 [前端实现](../06-frontend/README.md) | 下一章 [架构选型](../08-architecture/README.md)
+<!-- merged from README/07-backend/README.md, README/08-architecture/README.md -->
 
----
-
-在前端完成 WebRTC 连接管理和媒体流渲染之后，一个自然的问题随之而来：**Python 服务端在 WebRTC 体系中扮演什么角色？需要用到哪些库？实现有多复杂？**
-
-答案取决于一个关键判断：**服务端是否需要接触（"碰"）媒体流**。如果只做信令转发（SDP/ICE 消息的中继），那不需要任何 WebRTC 库，和普通 WebSocket 服务器一样简单；如果要转发甚至处理媒体流，才需要引入 `aiortc` 等专用库。本章将按照这三种角色逐一讲解，并给出生产环境的技术选型建议。
+> 返回 [文档目录](./00-index.md)
 
 ---
 
-## 7.1 服务端角色决定实现复杂度
+在前端完成 WebRTC 连接管理和媒体流渲染之后（见 [12-frontend-deep-dive.md](./12-frontend-deep-dive.md)），一个自然的问题随之而来：**Python 服务端在 WebRTC 体系中扮演什么角色？需要用到哪些库？实现有多复杂？** 本章先回答这个问题，再退一步，从场景驱动的角度讨论 WebSocket/WebRTC 的架构选型，以及本项目和标准视频会议架构的区别。
+
+---
+
+## 后端实现 —— Python 服务端
+
+答案取决于一个关键判断：**服务端是否需要接触（"碰"）媒体流**。如果只做信令转发（SDP/ICE 消息的中继），那不需要任何 WebRTC 库，和普通 WebSocket 服务器一样简单；如果要转发甚至处理媒体流，才需要引入 `aiortc` 等专用库。本节将按照这三种角色逐一讲解，并给出生产环境的技术选型建议。
+
+### 服务端角色决定实现复杂度
 
 在 WebRTC 架构中，服务端可以承担三种截然不同的角色，每种角色对应的实现复杂度差异巨大。下面这张表格是理解后续所有内容的基础：
 
@@ -31,16 +35,14 @@
 
 可以看到，从"信令"到"媒体处理"，复杂度跨越了几个量级。接下来我们依次展开。
 
----
+### 信令服务器（本项目方案，最常见）
 
-## 7.2 信令服务器（本项目方案，最常见）
+本项目的后端就是典型的**信令服务器**：服务端完全不碰 WebRTC 媒体流，只用 WebSocket 转发 SDP 和 ICE 候选。这是最常见也是最简单的方案。实际生产代码中，这个角色由 `voice_live_websocket.py` 承担，转发的是 Azure SDK 事件而非通用 SDP 房间广播，但底层原理一致。
 
-本项目的后端就是典型的**信令服务器**：服务端完全不碰 WebRTC 媒体流，只用 WebSocket 转发 SDP 和 ICE 候选。这是最常见也是最简单的方案。
-
-### 完整的信令服务器示例
+#### 完整的信令服务器示例
 
 ```python
-# ===== 一个完整的 WebRTC 信令服务器 =====
+# ===== 一个完整的 WebRTC 信令服务器（通用示例，非本项目实际实现）=====
 # 依赖: pip install fastapi uvicorn websockets
 # 注意: 不需要任何 WebRTC 库！
 
@@ -73,10 +75,10 @@ async def signaling(ws: WebSocket, room_id: str):
 
 这就是全部了——不到 20 行代码。服务端只需要懂 WebSocket，对 WebRTC 协议本身完全不需要了解。
 
-### 对应的前端代码
+#### 对应的前端代码
 
 ```javascript
-// 前端：通过信令服务器建立 WebRTC P2P 连接
+// 前端：通过信令服务器建立 WebRTC P2P 连接（通用示例）
 const ws = new WebSocket(`wss://server/ws/room123`);
 const pc = new RTCPeerConnection({
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
@@ -113,7 +115,7 @@ ws.onmessage = async (e) => {
 };
 ```
 
-### 数据流向
+#### 数据流向
 
 理解信令服务器的关键在于理解数据流向——服务端只参与信令交换，不参与媒体传输：
 
@@ -138,15 +140,13 @@ Python 服务端的工作量：
   ❌ 不需要任何 WebRTC 库
 ```
 
-这种架构下，音视频数据直接在两端之间点对点传输，服务端的压力极低。
+这种架构下，音视频数据直接在两端之间点对点传输，服务端的压力极低。本项目中，Azure Avatar 服务扮演了"对端"的角色（而不是另一个用户浏览器），但服务端不碰媒体流这一核心原则完全一致。
 
----
+### SFU 媒体转发（多人视频会议）
 
-## 7.3 SFU 媒体转发（多人视频会议）
+当场景从 1v1 扩展到多人视频会议时，纯 P2P 架构会遇到带宽瓶颈。此时需要引入 SFU（Selective Forwarding Unit），服务端负责接收每个人的媒体流并转发给其他参与者。**本项目不需要 SFU**（只有 1 个用户看 1 个数字人），此节仅供架构选型参考。
 
-当场景从 1v1 扩展到多人视频会议时，纯 P2P 架构会遇到带宽瓶颈。此时需要引入 SFU（Selective Forwarding Unit），服务端负责接收每个人的媒体流并转发给其他参与者。
-
-### 为什么需要 SFU？
+#### 为什么需要 SFU？
 
 ```
 没有 SFU（纯 P2P，3人会议）：
@@ -164,7 +164,7 @@ Python 服务端的工作量：
   10 人会议 = 每人上传 1 份 = 10 条上行 → 可控
 ```
 
-### Python 用 aiortc 实现 SFU（简化示例）
+#### Python 用 aiortc 实现 SFU（简化示例）
 
 ```python
 # 依赖: pip install aiortc aiohttp
@@ -197,11 +197,9 @@ async def offer_handler(request):
 
 `aiortc` 提供了 Python 原生的 WebRTC 实现，`MediaRelay` 可以高效地将一个 track 复制分发给多个接收者。这对于原型验证和小规模场景已经够用。
 
----
+### 媒体处理服务器（AI 分析/录制/混流）
 
-## 7.4 媒体处理服务器（AI 分析/录制/混流）
-
-最复杂的场景是服务端不仅要接收 WebRTC 流，还要对媒体数据进行解码、AI 处理（如人脸检测、情感分析）、再编码后发回客户端。
+最复杂的场景是服务端不仅要接收 WebRTC 流，还要对媒体数据进行解码、AI 处理（如人脸检测、情感分析）、再编码后发回客户端。本项目也不需要这一层——数字人渲染完全在 Azure 侧完成，本地服务端不参与媒体处理。
 
 ```python
 # 依赖: pip install aiortc opencv-python-headless numpy
@@ -233,9 +231,7 @@ class AIProcessedVideoTrack(VideoStreamTrack):
 
 这种模式下，服务端需要完整的视频编解码能力，CPU 开销显著增加。适用于 AI 监控、实时字幕叠加、虚拟背景替换等场景。
 
----
-
-## 7.5 三种场景的技术选型对比
+### 三种场景的技术选型对比
 
 了解了三种角色之后，我们可以从多个维度进行横向对比，以便在实际项目中做出正确选型：
 
@@ -262,13 +258,11 @@ class AIProcessedVideoTrack(VideoStreamTrack):
 
 核心结论很明确：对于本项目这样只需要信令转发的场景，Python + FastAPI 就是最佳选择；而对于需要碰媒体流的场景，Python 更适合做原型验证，生产环境则应考虑专用引擎。
 
----
-
-## 7.6 生产级 SFU/MCU 方案
+### 生产级 SFU/MCU 方案
 
 如果你的项目确实需要在服务端处理媒体流（如多人视频会议、直播间），需要了解 `aiortc` 的局限性以及更成熟的替代方案。
 
-### aiortc 的定位
+#### aiortc 的定位
 
 ```
 aiortc 的定位：
@@ -278,7 +272,7 @@ aiortc 的定位：
   ❌ 没有大规模生产验证（不像 mediasoup/Janus）
 ```
 
-### 生产级方案对比
+#### 生产级方案对比
 
 ```
 生产级方案对比：
@@ -293,7 +287,7 @@ aiortc 的定位：
   └─────────────────┴───────────┴──────────────────────────┘
 ```
 
-### 推荐的混合架构
+#### 推荐的混合架构
 
 最佳实践是将 Python 的优势（业务逻辑、AI 集成）与专用媒体引擎的优势（高性能媒体处理）结合起来：
 
@@ -302,12 +296,180 @@ aiortc 的定位：
     Python FastAPI (信令+业务逻辑) → 调用 mediasoup/LiveKit API (媒体转发)
 ```
 
----
+### 后端角色小结
 
-## 本章小结
-
-WebSocket 信令服务器用纯 Python 就够了（本项目就是这样），不需要任何 WebRTC 库。如果需要服务端碰媒体流（SFU 转发或 AI 处理），用 `aiortc` 可以快速原型开发，但生产环境推荐用 mediasoup/LiveKit 等专用引擎处理媒体，Python 专注于信令和业务逻辑。
+WebSocket 信令服务器用纯 Python 就够了（本项目就是这样），不需要任何 WebRTC 库。如果需要服务端碰媒体流（SFU 转发或 AI 处理），用 `aiortc` 可以快速原型开发，但生产环境推荐用 mediasoup/LiveKit 等专用引擎处理媒体，Python 专注于信令和业务逻辑。本项目的后端实际代码位于 `backend/app/services/voice_live_websocket.py`（WebSocket 代理层）和 `backend/app/services/agent_chat_service.py`（文本会话，走 Agent Responses API），两者最终共享同一个 Hosted Agent（详见 [01-architecture.md](./01-architecture.md)）。
 
 ---
 
-> 返回 [学习导航](../index.md) | 上一章 [前端实现](../06-frontend/README.md) | 下一章 [架构选型](../08-architecture/README.md)
+## 架构选型 —— 场景驱动的技术决策
+
+在掌握了 WebSocket 和 WebRTC 的底层原理之后，面对实际项目时往往会遇到一个核心问题：**我要做的东西应该用 WebSocket 还是 WebRTC？还是两者配合？**
+
+答案取决于你要做的事情。WebSocket 管"信令和数据"，WebRTC 管"实时音视频"。大多数场景需要两者配合，但主次不同。本节通过四种典型场景的对比分析，帮助你建立场景驱动的技术选型思维。
+
+### 四种典型场景
+
+不同的应用场景对实时性、带宽、方向性的需求截然不同，下面分别分析每种场景的架构特点。
+
+#### 场景 1：视频会议（如 Zoom/Teams）
+
+```
+WebRTC = 主角（音视频传输）
+WebSocket = 配角（信令 + 聊天 + 控制）
+
+┌─────────────┐     WebRTC (音视频)      ┌─────────────┐
+│  用户 A 浏览器 │◄═══════════════════════►│  用户 B 浏览器 │
+│             │                          │             │
+│  摄像头+麦克风 │     WebSocket (信令)     │  摄像头+麦克风 │
+│             │◄────────────────────────►│             │
+└──────┬──────┘                          └──────┬──────┘
+       │ WebSocket                              │ WebSocket
+       ▼                                        ▼
+┌──────────────────────────────────────────────────────┐
+│              信令服务器 (WebSocket)                     │
+│  - SDP Offer/Answer 交换                               │
+│  - ICE candidate 中继                                  │
+│  - 聊天消息、举手、静音状态                               │
+│  - 房间管理（谁在线、谁退出）                             │
+└──────────────────────────────────────────────────────┘
+
+特点：
+  - WebRTC 负责：摄像头视频 + 麦克风音频 + 屏幕共享
+  - WebSocket 负责：房间信令、SDP 交换、文字聊天、状态同步
+  - Transceiver direction: "sendrecv"（双向收发）
+  - 可能需要 SFU 服务器（多人会议时中转视频流）
+```
+
+视频会议是 WebRTC 最经典的应用场景，WebRTC 承载核心的音视频传输，WebSocket 做辅助的信令和控制。
+
+#### 场景 2：直播/视频媒体播放（如 B站/YouTube Live）
+
+直播场景有多种技术方案可选，延迟要求决定了最终选型：
+
+```
+方案 A: 纯 WebSocket（低延迟直播，如弹幕互动）
+  观众浏览器 ◄── WebSocket ── 服务器 ◄── 推流端
+  - 视频帧编码为二进制通过 WebSocket 传输
+  - 延迟 ~1-3s，足够应对大多数互动场景
+  - 优点：实现简单，服务端可以广播给所有观众
+  - 缺点：TCP 拥塞可能导致卡顿
+
+方案 B: WebRTC（超低延迟直播，如拍卖/电竞）
+  观众浏览器 ◄═══ WebRTC ═══ 媒体服务器 ◄═══ 推流端
+  - Transceiver direction: "recvonly"（观众只收）
+  - 延迟 < 500ms
+  - 优点：延迟最低，浏览器硬件解码
+  - 缺点：需要 SFU/MCU 媒体服务器支撑大量观众
+
+方案 C: HLS/DASH（传统点播/直播）
+  观众浏览器 ◄── HTTP ── CDN ◄── 编码服务器
+  - 视频切片通过 HTTP 分发
+  - 延迟 5-30s
+  - 优点：CDN 缓存，支撑百万观众
+  - 缺点：延迟高，不适合强互动
+```
+
+#### 场景 3：AI 数字人对话（本项目！）
+
+本项目的架构比较特殊，WebSocket 和 WebRTC 并行工作，各自承担不同的数据通道：
+
+```
+WebSocket + WebRTC 并行
+
+  WebSocket: 用户语音（base64 上行）+ AI 文字（下行）+ 控制信令
+  WebRTC:    数字人视频+音频（下行 recvonly）
+
+  特殊之处：
+  - WebRTC 只用于 Avatar 视频，不传用户的媒体
+  - 用户音频通过 WebSocket 走后端代理（保护认证凭据）
+  - 和视频会议最大的区别：WebRTC 是单向的（recvonly）
+  - 无论是文本会话还是语音会话，最终都路由到同一个 Hosted Agent
+    （详见 01-architecture.md 的双路径架构一节）
+```
+
+#### 场景 4：在线教育白板/协作
+
+```
+WebSocket = 主角（实时数据同步）
+WebRTC = 可选（如果需要视频/语音）
+
+  WebSocket: 画笔轨迹、文档编辑、光标位置、聊天
+  WebRTC:    老师的摄像头/屏幕共享（如果需要）
+
+  白板数据是 JSON，用 WebSocket 足够
+  视频/语音才需要 WebRTC
+```
+
+### 选择决策树
+
+面对新项目时，可以按照下面的决策树快速定位应该用哪种技术：
+
+```
+你要传什么？
+  │
+  ├── 纯文本/JSON/控制指令 ─────────────────► WebSocket 就够了
+  │   (聊天、状态同步、通知推送)
+  │
+  ├── 音频/视频（实时性要求高 < 500ms）────► WebRTC
+  │   (视频通话、低延迟直播)                    + WebSocket 做信令
+  │
+  ├── 音频/视频（延迟 1-5s 可接受）─────────► WebSocket 传二进制
+  │   (直播弹幕、语音消息)                     或 HLS/DASH
+  │
+  └── 混合场景 ─────────────────────────────► WebSocket + WebRTC 并行
+      (AI数字人、在线教育、远程医疗)             各管各的
+```
+
+核心原则是：**文本/控制走 WebSocket，实时音视频走 WebRTC，混合场景两者并行**。不要过度设计——能用 WebSocket 解决的就不要引入 WebRTC。
+
+### 本项目 vs 标准视频会议的区别
+
+对于已经了解视频会议架构的读者，理解本项目和标准视频会议的差异至关重要。下表从多个维度进行对比：
+
+| 维度 | 本项目（AI 数字人） | 标准视频会议（Zoom） |
+|------|-------------------|---------------------|
+| **WebRTC 方向** | `recvonly`（只看数字人） | `sendrecv`（双向音视频） |
+| **用户摄像头** | 不需要 | 需要（上传视频流） |
+| **用户麦克风音频** | 走 WebSocket（base64） | 走 WebRTC（直接传） |
+| **为什么音频不走 WebRTC** | 后端需要代理保护认证凭据 | 不需要代理，直连对方 |
+| **信令服务器** | 后端 FastAPI（WebSocket proxy，`voice_live_websocket.py`） | 独立信令服务器 |
+| **媒体服务器** | 不需要（Azure Avatar 直推） | 大规模需要 SFU |
+| **SDP 交换** | 通过业务 WebSocket | 通过独立信令 WebSocket |
+
+最关键的区别在于 **WebRTC 的方向性**：本项目是单向接收（`recvonly`），而视频会议是双向收发（`sendrecv`）。这个差异决定了本项目不需要处理本地 MediaStream、不需要媒体服务器，架构大幅简化。
+
+### 从零开始做视频会议的架构大纲
+
+如果你的下一个项目是做视频会议而不是 AI 数字人，以下是需要准备的架构蓝图：
+
+```
+Frontend
+├── useSignaling()        ← WebSocket hook: 房间管理 + SDP 交换
+├── useMediaStream()      ← WebRTC hook: 本地摄像头/麦克风
+├── usePeerConnection()   ← WebRTC hook: 和对方建立音视频连接
+├── useScreenShare()      ← WebRTC hook: 屏幕共享
+├── useChat()             ← WebSocket hook: 文字聊天
+└── <VideoGrid />         ← UI: 多个 <video> 元素
+
+Backend
+├── signaling-server      ← WebSocket: SDP/ICE 中转 + 房间管理
+├── TURN server           ← coturn: NAT 穿透中继
+└── SFU (可选)            ← mediasoup/Janus: 多人会议媒体转发
+
+关键区别：
+  - direction: "sendrecv"（双向，不是 recvonly）
+  - 需要处理本地 MediaStream（getUserMedia）
+  - 需要处理多人场景（N 个 PeerConnection 或 SFU）
+  - 不需要后端代理音频（没有认证凭据要保护）
+```
+
+对比本项目的架构，视频会议多出了本地媒体采集（`getUserMedia`）、多人连接管理、SFU 中转等复杂度。但信令层面的 WebSocket 使用方式是相似的，本章以及前面章节学到的 SDP/ICE 知识可以直接复用。
+
+### 架构选型小结
+
+技术选型不存在"银弹"——WebSocket 和 WebRTC 各有所长，选择取决于具体场景。记住决策树的核心逻辑：纯数据用 WebSocket，实时音视频用 WebRTC，混合场景两者并行。理解本项目与标准视频会议的架构差异，有助于你在未来的项目中做出更准确的技术判断。
+
+---
+
+> 返回 [文档目录](./00-index.md) | 相关：[01-architecture.md](./01-architecture.md) · [04-backend-websocket.md](./04-backend-websocket.md)

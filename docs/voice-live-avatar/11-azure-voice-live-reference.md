@@ -1,33 +1,37 @@
-# 第五章：Azure Voice Live API 架构解析
+# 11 — Azure Voice Live API 参考
 
-> 返回 [学习导航](../index.md) | 上一章 [NAT 穿透](../04-nat-traversal/README.md) | 下一章 [前端实现](../06-frontend/README.md)
+<!-- merged from README/05-azure-voice-live/README.md -->
+
+> 返回 [文档目录](./00-index.md)
 
 ---
 
-在前几章中，我们已经理解了 WebSocket 与 WebRTC 的分工、WebRTC 的信令与媒体机制，以及 NAT 穿透的核心原理。本章将这些知识聚焦到 Azure Voice Live API 的实际架构上，逐一拆解安全模型、常见故障、地址体系、通信全景和 TURN 中继的引入流程。读完本章，你将对"浏览器 -- 后端 -- Azure 云"之间的每一条通信链路了然于胸。
+在前几章中，我们已经理解了 WebSocket 与 WebRTC 的分工、WebRTC 的信令与媒体机制，以及 NAT 穿透的核心原理（见 [09-websocket-webrtc-protocol.md](./09-websocket-webrtc-protocol.md)、[10-nat-traversal.md](./10-nat-traversal.md)）。本章将这些知识聚焦到 Azure Voice Live API 的实际架构上，逐一拆解安全模型、常见故障、地址体系、通信全景和 TURN 中继的引入流程。读完本章，你将对"浏览器 -- 后端 -- Azure 云"之间的每一条通信链路了然于胸。
+
+> **架构前提**：自 D-05/D-06/D-08/D-09 落地后，Voice Live 会话不再使用独立的 `model` 参数直连模型，而是通过 `agent_name=` / `project_name=` 连接到 Azure AI Foundry 中的 Hosted Agent（与文本会话共享同一个 Agent）。详见 [01-architecture.md](./01-architecture.md) 的双路径架构一节。
 
 ---
 
 ## 目录
 
-- [5.1 安全架构：为什么 WebRTC 直连 Azure](#51-安全架构为什么-webrtc-直连-azure)
-- [5.2 常见故障：只有文字没有音频的根因分析](#52-常见故障只有文字没有音频的根因分析)
-- [5.3 Endpoint 与地址体系](#53-endpoint-与地址体系)
-- [5.4 完整通信架构全景图](#54-完整通信架构全景图)
-- [5.5 TURN 中继器在 Voice Live 中的引入流程](#55-turn-中继器在-voice-live-中的引入流程)
-- [5.6 Realtime 模型的音频去哪了？—— 延迟真相与加速方案](#56-realtime-模型的音频去哪了-延迟真相与加速方案)
+- [11.1 安全架构：为什么 WebRTC 直连 Azure](#111-安全架构为什么-webrtc-直连-azure)
+- [11.2 常见故障：只有文字没有音频的根因分析](#112-常见故障只有文字没有音频的根因分析)
+- [11.3 Endpoint 与地址体系](#113-endpoint-与地址体系)
+- [11.4 完整通信架构全景图](#114-完整通信架构全景图)
+- [11.5 TURN 中继器在 Voice Live 中的引入流程](#115-turn-中继器在-voice-live-中的引入流程)
+- [11.6 Realtime 模型的音频去哪了？—— 延迟真相与加速方案](#116-realtime-模型的音频去哪了-延迟真相与加速方案)
 
 ---
 
-## 5.1 安全架构：为什么 WebRTC 直连 Azure
+## 11.1 安全架构：为什么 WebRTC 直连 Azure
 
 在 Azure Voice Live 架构中，WebSocket 消息走后端代理，而 WebRTC 媒体流由浏览器直连 Azure。这不是一个"性能优化"的偏好选择，而是由技术限制决定的。同时，安全性通过"临时凭据"机制得到了充分保障。
 
-### 5.1.1 为什么不能走后端代理？
+### 11.1.1 为什么不能走后端代理？
 
 ```
                          能不能代理？
-WebSocket（文字+音频数据）    可以，且必须代理（保护 API Key）
+WebSocket（文字+音频数据）    可以，且必须代理（保护 API Key/Entra 凭据）
 WebRTC（视频+音频流）         不能，技术上走不通
 ```
 
@@ -42,34 +46,34 @@ WebRTC（视频+音频流）         不能，技术上走不通
 
 > **类比**：WebSocket 代理就像"翻译官"——你说中文，翻译官转述给外国人，外国人回复，翻译官再转述给你。WebRTC 如果要代理，就像"让翻译官同时转播一场高清视频直播"——他不是干这个的，硬要他做只会卡顿和延迟。
 
-### 5.1.2 安全怎么保证？API Key 不是暴露了吗？
+### 11.1.2 安全怎么保证？API Key/Entra 凭据不是暴露了吗？
 
-**API Key 绝对没有暴露。WebRTC 连接用的是临时凭据，不是 API Key。**
+**认证凭据绝对没有暴露。WebRTC 连接用的是临时凭据，不是 API Key/Entra Token。**
 
 安全链路如下：
 
 ```
                                      谁知道什么？
 
-浏览器：                              不知道 API Key
+浏览器：                              不知道 API Key / Entra 凭据
                                       知道 JWT Token（登录凭证）
                                       知道 临时 TURN 凭据（Azure 动态生成，有效期几分钟）
 
-后端 (FastAPI)：                      知道 API Key（环境变量，绝不外传）
+后端 (FastAPI)：                      知道 API Key 或 Entra Token（环境变量/托管身份，绝不外传）
                                       验证 JWT，代理 WebSocket
 
-Azure Voice Live API：                知道 API Key（后端提交的）
+Azure Voice Live API：                知道 API Key/Entra 凭据（后端提交的）
                                       生成临时 TURN 凭据 -> 通过 WebSocket -> 传给浏览器
                                       TURN 服务器验证临时凭据
 ```
 
-### 5.1.3 认证流程详解
+### 11.1.3 认证流程详解
 
 ```
 Step 1: 浏览器用 JWT 连接后端 WebSocket
         -> 后端验证 JWT，确认用户身份
-        -> 后端用 API Key 连接 Azure Voice Live SDK
-        -> API Key 只在后端内存中，浏览器永远看不到
+        -> 后端用 API Key/Entra 凭据连接 Azure Voice Live SDK
+        -> 该凭据只在后端内存中，浏览器永远看不到
 
 Step 2: Azure 创建会话，返回 session.updated 事件
         -> 事件中包含临时 TURN 凭据：
@@ -90,24 +94,24 @@ Step 3: 浏览器用临时凭据连接 TURN 服务器
         -> 凭据过期/无效 -> 拒绝连接
 ```
 
-### 5.1.4 安全保障总结
+### 11.1.4 安全保障总结
 
 | 安全问题 | 如何保障 |
 |----------|---------|
-| API Key 泄露？ | 不可能。API Key 只在后端（Python 进程内存），从不经过网络传给浏览器。 |
+| API Key/Entra 凭据泄露？ | 不可能。凭据只在后端（Python 进程内存/托管身份），从不经过网络传给浏览器。 |
 | TURN 凭据被窃取？ | 影响有限。凭据是临时的（几分钟过期），且绑定特定 TURN 服务器和会话。 |
 | 有人伪造 WebRTC 连接？ | 做不到。需要有效的 TURN 凭据 + 匹配的 SDP 交换，而 SDP 交换走的是已认证的 WebSocket。 |
 | 中间人攻击？ | WebRTC 自带 DTLS 加密（类似 HTTPS），媒体流端到端加密。 |
 
-> **一句话总结**：API Key 被后端保护，WebRTC 用 Azure 动态颁发的"临时通行证"（TURN 凭据）来认证，通行证几分钟就过期，安全性有充分保障。
+> **一句话总结**：认证凭据被后端保护，WebRTC 用 Azure 动态颁发的"临时通行证"（TURN 凭据）来认证，通行证几分钟就过期，安全性有充分保障。
 
 ---
 
-## 5.2 常见故障：只有文字没有音频的根因分析
+## 11.2 常见故障：只有文字没有音频的根因分析
 
 在调试 Voice Live + Avatar 时，一个高频出现的现象是：文字转写正常显示，但没有音频输出，数字人的嘴型也不动。这几乎可以确定是 **WebRTC 没有建立成功**。
 
-### 5.2.1 症状与通道对照
+### 11.2.1 症状与通道对照
 
 结合前面章节的结论（WebSocket 和 WebRTC 是两条独立通道），症状可以精确解释：
 
@@ -117,7 +121,7 @@ Step 3: 浏览器用临时凭据连接 TURN 服务器
 | 没有音频输出 | WebRTC（Avatar 模式） | 数字人的语音通过 WebRTC Audio Track 传输，WebRTC 没连上就没有声音 |
 | 数字人嘴型不动 | WebRTC | 嘴型是 WebRTC Video Track 里的内容，没连上就没有画面变化 |
 
-### 5.2.2 WebRTC 可能失败的环节
+### 11.2.2 WebRTC 可能失败的环节
 
 WebRTC 的建立是一个多步骤的过程，任何一步失败都会导致上述症状：
 
@@ -146,7 +150,7 @@ Step  可能的失败点                           如何排查
       -> 有 SDP 但媒体流走不通                   企业防火墙拦截 UDP
 ```
 
-### 5.2.3 快速诊断方法
+### 11.2.3 快速诊断方法
 
 打开浏览器控制台（F12），关注以下日志：
 
@@ -159,7 +163,9 @@ Step  可能的失败点                           如何排查
 - 如果第 1 步就没有 `ice_servers`，问题在 Azure 配置端（Avatar 功能可能未启用或模型不支持）。
 - 如果第 1 步正常但第 2 步 ICE 状态卡在 `checking` 或 `failed`，问题在网络环境（防火墙/NAT 穿越失败）。
 
-### 5.2.4 理解确认
+更完整的三层日志体系和决策树，见 [14-production-operations.md](./14-production-operations.md)。
+
+### 11.2.4 理解确认
 
 > 理解了 WebSocket 和 WebRTC 是两条独立通道之后，这个故障就很好理解了：
 >
@@ -170,11 +176,11 @@ Step  可能的失败点                           如何排查
 
 ---
 
-## 5.3 Endpoint 与地址体系
+## 11.3 Endpoint 与地址体系
 
 Azure Voice Live 通信中到底涉及几个 endpoint？WebRTC 的地址是什么形式？答案是：一共涉及 **5 个地址**，但只有 **1 个**是你配置的（Azure AI Foundry endpoint）。其余都是 Azure 动态提供的。WebRTC 没有 URL，它的"地址"是 ICE candidate——IP:port 组合，藏在 SDP 文本里。
 
-### 5.3.1 完整地址清单
+### 11.3.1 完整地址清单
 
 ```
 +----- +------------------------------------+------------+----------------------+
@@ -184,7 +190,7 @@ Azure Voice Live 通信中到底涉及几个 endpoint？WebRTC 的地址是什�
 |      |   voice-live/ws?token=JWT          | (TCP)      |                      |
 +------+------------------------------------+------------+----------------------+
 | 2    | https://your-project.services.     | HTTPS ->   | 你配置（Azure endpoint|
-|      |   ai.azure.com                     | SDK 内部   | + API Key）          |
+|      |   ai.azure.com                     | SDK 内部   | + API Key/Entra）     |
 |      |                                    | 转 WS      |                      |
 +------+------------------------------------+------------+----------------------+
 | 3    | stun:relay1.communication.         | STUN       | Azure 动态返回        |
@@ -216,7 +222,7 @@ Azure 动态返回的（运行时自动下发的，4个）：
   -> 这些都不需要你配置，Azure 在 session.updated 事件中自动下发
 ```
 
-### 5.3.2 WebRTC 的"地址"长什么样？
+### 11.3.2 WebRTC 的"地址"长什么样？
 
 **WebRTC 没有 URL，它的地址是 SDP 文本里的 candidate 行：**
 
@@ -256,7 +262,7 @@ a=candidate:3 1 udp 41885695 52.176.xxx.xxx 3478 typ relay
   ICE 会从高优先级开始尝试，都不行才用 relay
 ```
 
-### 5.3.3 WebRTC 的通信形式 vs WebSocket 的通信形式
+### 11.3.3 WebRTC 的通信形式 vs WebSocket 的通信形式
 
 ```
 WebSocket 通信形式：
@@ -293,7 +299,7 @@ WebRTC 通信形式：
   +---------------------------------------------+
 ```
 
-### 5.3.4 RTP 包内部结构
+### 11.3.4 RTP 包内部结构
 
 以下内容了解即可，你永远不会直接操作这些数据包：
 
@@ -328,7 +334,7 @@ WebRTC 通信形式：
 
 ---
 
-## 5.4 完整通信架构全景图
+## 11.4 完整通信架构全景图
 
 把前面所有内容汇总，以下是 Azure Voice Live 完整通信架构的全景图：
 
@@ -342,10 +348,10 @@ WebRTC 通信形式：
 |  |      |---- (1) ---->|          |---- (2) ---->| Voice Live   |      |
 |  |      |  WebSocket   |          |  Python SDK  | API          |      |
 |  |      |  wss://后端   |          |  https://    |              |      |
-|  |      |  /api/v1/    |          |  foundry     | STT+LLM+TTS |      |
-|  |      |  voice-live  |          |  endpoint    |              |      |
-|  |      |  /ws         |          |              |              |      |
-|  |      |<-------------|<---------|<-------------|              |      |
+|  |      |  /api/v1/    |          |  foundry     | -> Hosted    |      |
+|  |      |  voice-live  |          |  endpoint    |    Agent     |      |
+|  |      |  /ws         |          |              |    (STT+LLM+ |      |
+|  |      |<-------------|<---------|<-------------|     TTS)     |      |
 |  |      |  JSON 文本    |  SDK 事件 |  session.*   |              |      |
 |  |      |  + base64音频 |          |  response.*  |              |      |
 |  |      |              |          |              +------+-------+      |
@@ -375,15 +381,15 @@ WebRTC 通信形式：
 +------------------------------------------------------------------------+
 ```
 
-> **总结**：你只需配置 1 个地址（Azure AI Foundry endpoint），Azure 会在运行时动态下发 STUN/TURN 服务器地址和 WebRTC 所需的 ICE candidates。WebRTC 没有 URL——它的"地址"是嵌在 SDP 文本中的 IP:port 组合，由 ICE 协商自动发现，每次连接都可能不同。WebRTC 的通信是 RTP 包在 UDP 上流动，浏览器自动处理编解码和渲染，你的 JS 代码只需绑定 `<video>` 元素即可。
+> **总结**：你只需配置 1 个地址（Azure AI Foundry endpoint），Azure 会在运行时动态下发 STUN/TURN 服务器地址和 WebRTC 所需的 ICE candidates。WebRTC 没有 URL——它的"地址"是嵌在 SDP 文本中的 IP:port 组合，由 ICE 协商自动发现，每次连接都可能不同。WebRTC 的通信是 RTP 包在 UDP 上流动，浏览器自动处理编解码和渲染，你的 JS 代码只需绑定 `<video>` 元素即可。上图中的 "Voice Live API" 最终路由到同一个 Hosted Agent（与文本会话共享），细节见 [01-architecture.md](./01-architecture.md) 的双路径架构。
 
 ---
 
-## 5.5 TURN 中继器在 Voice Live 中的引入流程
+## 11.5 TURN 中继器在 Voice Live 中的引入流程
 
 中继器（TURN）的引入是全自动的，它是 ICE 框架的一部分，你不需要手动决定"要不要用中继器"——ICE 会自动探测并选择最优路径。
 
-### 5.5.1 准备阶段：获取 TURN 凭据
+### 11.5.1 准备阶段：获取 TURN 凭据
 
 准备阶段在 WebSocket 信令通道上完成：
 
@@ -392,9 +398,15 @@ WebRTC 通信形式：
 | 准备阶段：获取 TURN 凭据（在 WebSocket 信令通道上完成）                  |
 +-----------------------------------------------------------------------+
 |                                                                       |
-|  Step 1: 后端用 API Key 连接 Azure Voice Live SDK                     |
-|    backend -> Azure: connect(endpoint, credential, model,             |
-|                             avatar_config=AvatarConfig(...))          |
+|  Step 1: 后端用 API Key/Entra 凭据连接 Azure Voice Live SDK           |
+|    backend -> Azure: azure.ai.voicelive.aio.connect(                  |
+|                         endpoint=endpoint,                            |
+|                         credential=credential,                        |
+|                         agent_name=agent_name,                        |
+|                         project_name=project_name,                    |
+|                         avatar_config=AvatarConfig(...))               |
+|    （SDK 1.3.0 GA 起，agent_name=/project_name= 为扁平化 kwargs，      |
+|     取代旧版 AgentSessionConfig/agent_config 嵌套 dict）              |
 |                                                                       |
 |  Step 2: Azure 创建 session，返回 session.updated 事件                |
 |    Azure -> backend -> 浏览器:                                        |
@@ -422,7 +434,7 @@ WebRTC 通信形式：
 +-----------------------------------------------------------------------+
 ```
 
-### 5.5.2 运行阶段：ICE 自动探路
+### 11.5.2 运行阶段：ICE 自动探路
 
 运行阶段由浏览器的 ICE Agent 自动完成，决定是否使用 TURN 中继：
 
@@ -484,7 +496,7 @@ WebRTC 通信形式：
 +-----------------------------------------------------------------------+
 ```
 
-### 5.5.3 关键理解
+### 11.5.3 关键理解
 
 | 问题 | 答案 |
 |------|------|
@@ -498,13 +510,13 @@ WebRTC 通信形式：
 
 ---
 
-## 5.6 Realtime 模型的音频去哪了？—— 延迟真相与加速方案
+## 11.6 Realtime 模型的音频去哪了？—— 延迟真相与加速方案
 
 很多开发者在选型时会有这样的预期："用 `gpt-4o-realtime` 这类 realtime 模型，它能同时输出文本和音频，响应应该比传统的 `文本 → LLM → TTS` 方案快很多吧？"
 
 **答案是：在 Voice Live API 中，没有快多少。** 理解这一点，对于正确设定客户的性能预期至关重要。
 
-### 5.6.1 Realtime 模型的音频被丢弃了
+### 11.6.1 Realtime 模型的音频被丢弃了
 
 这是一个容易被忽略的关键事实：在 Voice Live API 的管线中，realtime 模型生成的音频模态**被丢弃**，只取文本输出：
 
@@ -514,7 +526,7 @@ WebRTC 通信形式：
 │  用户语音                                                   │
 │     │                                                      │
 │     ▼                                                      │
-│  realtime model (gpt-4o-realtime)                          │
+│  realtime model (gpt-4o-realtime, 经 Hosted Agent 编排)     │
 │     │                                                      │
 │     ├── text output  ──→ ✅ 被使用 ──→ Azure Speech Service │
 │     │                                        │             │
@@ -526,7 +538,7 @@ WebRTC 通信形式：
 └────────────────────────────────────────────────────────────┘
 ```
 
-### 5.6.2 为什么要丢弃？三个原因
+### 11.6.2 为什么要丢弃？三个原因
 
 | 原因 | 说明 |
 |------|------|
@@ -536,7 +548,7 @@ WebRTC 通信形式：
 
 > **类比**：就像餐厅的主厨（realtime 模型）顺手做了一份沙拉（音频），但甜品师（Azure Speech Service）做出来的更精致，而且只有甜品师能在盘子上画出客户要求的花纹（viseme）。所以主厨的沙拉只好倒掉。
 
-### 5.6.3 延迟对比：到底差多少？
+### 11.6.3 延迟对比：到底差多少？
 
 #### 带 Avatar（数字人）模式 —— Voice Live API
 
@@ -564,7 +576,7 @@ Voice Live + realtime 模型:
 
 > 注意：**TTS 这一段延迟完全相同**。Realtime 模型省下来的时间全部在输入端（VAD + ASR）和理解端（LLM 推理），不在输出端（TTS）。
 
-### 5.6.4 不需要 Avatar 时 —— 可以跳过 TTS，再快 300ms
+### 11.6.4 不需要 Avatar 时 —— 可以跳过 TTS，再快 300ms
 
 如果业务场景**不需要数字人**（只要语音对话，没有虚拟形象），可以直接使用 realtime 模型的原生音频输出，彻底绕过 Azure Speech Service 的 TTS 环节：
 
@@ -595,7 +607,7 @@ Voice Live + realtime 模型:
                   0    200   400   600   800  1000  1200  1400  1600ms
 ```
 
-### 5.6.5 客户觉得慢怎么办？—— 分级加速策略
+### 11.6.5 客户觉得慢怎么办？—— 分级加速策略
 
 当客户反馈"数字人回复太慢"时，按以下优先级逐步优化：
 
@@ -612,7 +624,7 @@ Voice Live + realtime 模型:
 
 | 手段 | 预计收益 | 原理 |
 |------|---------|------|
-| 打字机效果显示文本 | 感知延迟降低 ~300ms | 文本先于音频到达，用打字机效果让用户先"看到"回复（详见 [9A. 文字语音同步](../09-production/text-audio-sync.md)） |
+| 打字机效果显示文本 | 感知延迟降低 ~300ms | 文本先于音频到达，用打字机效果让用户先"看到"回复（详见 [14-production-operations.md](./14-production-operations.md) 的文字语音同步一节） |
 | 思考动画 / 加载提示 | 心理感知改善 | 数字人"点头思考"动画让等待不那么枯燥 |
 | 预热连接 | 首次响应快 ~200ms | 页面加载时就建立 WebSocket + WebRTC 连接，而不是用户点"开始"才连接 |
 
@@ -638,7 +650,7 @@ Voice Live + realtime 模型:
 
 实现方式：
 
-- **数字人模式（方案 B）**：当前架构不变，Voice Live API + Avatar + Azure Speech TTS
+- **数字人模式（方案 B）**：当前架构不变，Voice Live API + Avatar + Azure Speech TTS，均通过 Hosted Agent 编排
 - **纯语音模式（方案 C）**：不启用 avatar modality，直接使用 realtime 模型的原生音频输出，跳过 TTS 环节。前端不建立 WebRTC 连接，只通过 WebSocket 接收音频
 
 ```typescript
@@ -676,13 +688,13 @@ function createVoiceLiveConfig(mode: 'avatar' | 'voice-only') {
 | 预生成常用回复 | 首句 ~100ms | 需要维护"常见开场白"库，牺牲灵活性 |
 | Edge 部署 realtime 模型 | ~200-300ms | 需要 Azure Edge Zone，成本极高 |
 
-### 5.6.6 决策总结
+### 11.6.6 决策总结
 
 ```
 客户反馈"太慢了"
     │
     ├─ 先量化：到底是多少 ms？用 getStats() 和日志确认
-    │          （参考第九章 9C 远程诊断）
+    │          （参考 14-production-operations.md 远程诊断一节）
     │
     ├─ < 1s？ → 第一级 + 第二级优化，大部分客户可接受
     │
@@ -696,4 +708,19 @@ function createVoiceLiveConfig(mode: 'avatar' | 'voice-only') {
 
 ---
 
-> 返回 [学习导航](../index.md) | 上一章 [NAT 穿透](../04-nat-traversal/README.md) | 下一章 [前端实现](../06-frontend/README.md)
+## 11.7 SDK 与 api-version 参考（本次刷新新增）
+
+以下信息与后端实际配置对齐（`backend/app/config.py` / `backend/pyproject.toml`），供排查版本相关问题时参考：
+
+| 项 | 值 | 来源 |
+|----|-----|------|
+| api-version | `2026-07-15`（GA） | `settings.voice_live_api_version`，`backend/app/config.py` |
+| SDK 依赖 | `azure-ai-voicelive[aiohttp]==1.3.0b1`（临时固定；GA 1.3.0 尚未发布至 PyPI，截至 2026-07-19） | `backend/pyproject.toml` |
+| connect() 签名（本次刷新起） | `connect(endpoint=..., credential=..., agent_name=..., project_name=..., avatar_config=...)`（扁平化 kwargs，取代旧版嵌套 `AgentSessionConfig`/`agent_config` dict） | Azure Voice Live SDK 1.3.0b1+ |
+| 认证路径 | Entra ID 优先，API Key 为 fallback（D-01） | `backend/app/services/voice_live_websocket.py` |
+
+一旦 SDK GA 1.3.0 正式登陆 PyPI，需要同步更新此表和 `pyproject.toml` 的实际 pin，避免本参考页与代码再次产生分歧。
+
+---
+
+> 返回 [文档目录](./00-index.md) | 相关：[01-architecture.md](./01-architecture.md) · [09-websocket-webrtc-protocol.md](./09-websocket-webrtc-protocol.md) · [14-production-operations.md](./14-production-operations.md)
