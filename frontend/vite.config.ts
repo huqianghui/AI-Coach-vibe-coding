@@ -4,6 +4,9 @@ import tailwindcss from "@tailwindcss/vite";
 import istanbul from "vite-plugin-istanbul";
 import path from "path";
 
+// Note: vitest's `test` config (including coverage.thresholds) lives in the
+// sibling `vitest.config.ts` file, not here — this project splits build config
+// (vite.config.ts) from unit-test config (vitest.config.ts). See 29-10-SUMMARY.md.
 export default defineConfig({
   plugins: [
     react(),

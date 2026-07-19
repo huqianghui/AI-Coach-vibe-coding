@@ -36,6 +36,15 @@ export default defineConfig({
         "src/components/ui/select.tsx",
         "src/components/ui/form.tsx",
       ],
+      // TODO: raise to 95 per project testing standard once coverage improves
+      // (measured baseline recorded in 29-10-SUMMARY.md: Stmts 71.87%, Branches
+      // 82.31%, Funcs 70.33%, Lines 71.87% as of Phase 29's final verification sweep)
+      thresholds: {
+        statements: 71,
+        branches: 82,
+        functions: 70,
+        lines: 71,
+      },
     },
   },
 });
