@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.models.user import User
+from app.models.voice_live_instance import VoiceLiveInstance
 from app.schemas.hcp_profile import HcpProfileCreate, HcpProfileUpdate
 from app.services.auth import get_password_hash
 from app.services.hcp_profile_service import (
@@ -33,15 +34,28 @@ async def _seed_user(db) -> str:
     return user.id
 
 
+async def _create_vl_instance(db, user_id: str) -> str:
+    """Create a minimal VoiceLiveInstance and return its id.
+
+    D-13: HcpProfileCreate requires voice_live_instance_id -- every test that
+    constructs one needs a real VoiceLiveInstance row to link.
+    """
+    inst = VoiceLiveInstance(name="HCP Service Test VL Instance", created_by=user_id)
+    db.add(inst)
+    await db.flush()
+    return inst.id
+
+
 class TestCreateHcpProfile:
     """Tests for create_hcp_profile."""
 
     async def test_creates_profile_with_required_fields(self, db_session):
         user_id = await _seed_user(db_session)
+        vl_id = await _create_vl_instance(db_session, user_id)
         data = HcpProfileCreate(
             name="Dr. Zhang",
             specialty="Oncology",
-            created_by=user_id,
+            created_by=user_id, voice_live_instance_id=vl_id,
         )
         profile = await create_hcp_profile(db_session, data, user_id)
 
@@ -52,10 +66,11 @@ class TestCreateHcpProfile:
 
     async def test_serializes_list_fields_to_json(self, db_session):
         user_id = await _seed_user(db_session)
+        vl_id = await _create_vl_instance(db_session, user_id)
         data = HcpProfileCreate(
             name="Dr. Li",
             specialty="Cardiology",
-            created_by=user_id,
+            created_by=user_id, voice_live_instance_id=vl_id,
             expertise_areas=["interventional", "heart failure"],
             objections=["Cost concerns"],
             probe_topics=["Long-term data"],
@@ -69,10 +84,11 @@ class TestCreateHcpProfile:
 
     async def test_defaults_are_applied(self, db_session):
         user_id = await _seed_user(db_session)
+        vl_id = await _create_vl_instance(db_session, user_id)
         data = HcpProfileCreate(
             name="Dr. A",
             specialty="Derm",
-            created_by=user_id,
+            created_by=user_id, voice_live_instance_id=vl_id,
         )
         profile = await create_hcp_profile(db_session, data, user_id)
 
@@ -87,8 +103,9 @@ class TestGetHcpProfiles:
 
     async def test_returns_all_profiles(self, db_session):
         user_id = await _seed_user(db_session)
+        vl_id = await _create_vl_instance(db_session, user_id)
         for name in ["Dr. Zhang", "Dr. Li"]:
-            data = HcpProfileCreate(name=name, specialty="Oncology", created_by=user_id)
+            data = HcpProfileCreate(name=name, specialty="Oncology", created_by=user_id, voice_live_instance_id=vl_id)
             await create_hcp_profile(db_session, data, user_id)
 
         profiles, total = await get_hcp_profiles(db_session)
@@ -97,14 +114,15 @@ class TestGetHcpProfiles:
 
     async def test_search_by_name(self, db_session):
         user_id = await _seed_user(db_session)
+        vl_id = await _create_vl_instance(db_session, user_id)
         await create_hcp_profile(
             db_session,
-            HcpProfileCreate(name="Dr. Zhang", specialty="Oncology", created_by=user_id),
+            HcpProfileCreate(name="Dr. Zhang", specialty="Oncology", created_by=user_id, voice_live_instance_id=vl_id),
             user_id,
         )
         await create_hcp_profile(
             db_session,
-            HcpProfileCreate(name="Dr. Li", specialty="Cardiology", created_by=user_id),
+            HcpProfileCreate(name="Dr. Li", specialty="Cardiology", created_by=user_id, voice_live_instance_id=vl_id),
             user_id,
         )
 
@@ -114,14 +132,15 @@ class TestGetHcpProfiles:
 
     async def test_filter_by_is_active(self, db_session):
         user_id = await _seed_user(db_session)
+        vl_id = await _create_vl_instance(db_session, user_id)
         await create_hcp_profile(
             db_session,
-            HcpProfileCreate(name="Active", specialty="Onc", created_by=user_id, is_active=True),
+            HcpProfileCreate(name="Active", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id, is_active=True),
             user_id,
         )
         await create_hcp_profile(
             db_session,
-            HcpProfileCreate(name="Inactive", specialty="Onc", created_by=user_id, is_active=False),
+            HcpProfileCreate(name="Inactive", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id, is_active=False),
             user_id,
         )
 
@@ -135,7 +154,8 @@ class TestGetHcpProfile:
 
     async def test_returns_profile_by_id(self, db_session):
         user_id = await _seed_user(db_session)
-        data = HcpProfileCreate(name="Dr. X", specialty="Neuro", created_by=user_id)
+        vl_id = await _create_vl_instance(db_session, user_id)
+        data = HcpProfileCreate(name="Dr. X", specialty="Neuro", created_by=user_id, voice_live_instance_id=vl_id)
         created = await create_hcp_profile(db_session, data, user_id)
 
         fetched = await get_hcp_profile(db_session, created.id)
@@ -151,7 +171,8 @@ class TestUpdateHcpProfile:
 
     async def test_updates_partial_fields(self, db_session):
         user_id = await _seed_user(db_session)
-        data = HcpProfileCreate(name="Dr. Old", specialty="Onc", created_by=user_id)
+        vl_id = await _create_vl_instance(db_session, user_id)
+        data = HcpProfileCreate(name="Dr. Old", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id)
         profile = await create_hcp_profile(db_session, data, user_id)
 
         update = HcpProfileUpdate(name="Dr. New", personality_type="skeptical")
@@ -163,7 +184,8 @@ class TestUpdateHcpProfile:
 
     async def test_updates_list_fields(self, db_session):
         user_id = await _seed_user(db_session)
-        data = HcpProfileCreate(name="Dr. Y", specialty="Onc", created_by=user_id)
+        vl_id = await _create_vl_instance(db_session, user_id)
+        data = HcpProfileCreate(name="Dr. Y", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id)
         profile = await create_hcp_profile(db_session, data, user_id)
 
         update = HcpProfileUpdate(expertise_areas=["new_area_1", "new_area_2"])
@@ -177,7 +199,8 @@ class TestDeleteHcpProfile:
 
     async def test_deletes_existing_profile(self, db_session):
         user_id = await _seed_user(db_session)
-        data = HcpProfileCreate(name="Dr. Del", specialty="Onc", created_by=user_id)
+        vl_id = await _create_vl_instance(db_session, user_id)
+        data = HcpProfileCreate(name="Dr. Del", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id)
         profile = await create_hcp_profile(db_session, data, user_id)
 
         await delete_hcp_profile(db_session, profile.id)
@@ -196,7 +219,8 @@ class TestAgentSyncOnCreate:
     async def test_create_syncs_agent_on_success(self, db_session):
         """create_hcp_profile sets agent_id and sync_status=synced on sync success."""
         user_id = await _seed_user(db_session)
-        data = HcpProfileCreate(name="Dr. Sync", specialty="Oncology", created_by=user_id)
+        vl_id = await _create_vl_instance(db_session, user_id)
+        data = HcpProfileCreate(name="Dr. Sync", specialty="Oncology", created_by=user_id, voice_live_instance_id=vl_id)
 
         with patch(
             "app.services.hcp_profile_service.agent_sync_service.sync_agent_for_profile",
@@ -216,7 +240,8 @@ class TestAgentSyncOnUpdate:
     async def test_update_resyncs_agent_on_success(self, db_session):
         """update_hcp_profile sets sync_status=synced on re-sync success."""
         user_id = await _seed_user(db_session)
-        data = HcpProfileCreate(name="Dr. Up", specialty="Neuro", created_by=user_id)
+        vl_id = await _create_vl_instance(db_session, user_id)
+        data = HcpProfileCreate(name="Dr. Up", specialty="Neuro", created_by=user_id, voice_live_instance_id=vl_id)
 
         # Create with sync success
         with patch(
@@ -242,7 +267,8 @@ class TestAgentSyncOnUpdate:
     async def test_update_assigns_agent_id_when_missing(self, db_session):
         """update_hcp_profile sets agent_id if profile had no agent_id."""
         user_id = await _seed_user(db_session)
-        data = HcpProfileCreate(name="Dr. NoAgent", specialty="Derm", created_by=user_id)
+        vl_id = await _create_vl_instance(db_session, user_id)
+        data = HcpProfileCreate(name="Dr. NoAgent", specialty="Derm", created_by=user_id, voice_live_instance_id=vl_id)
 
         # Create with sync failure (no agent_id)
         with patch(
@@ -274,7 +300,8 @@ class TestDeleteWithAgent:
     async def test_delete_calls_agent_delete(self, db_session):
         """delete_hcp_profile calls agent_sync_service.delete_agent when agent_id exists."""
         user_id = await _seed_user(db_session)
-        data = HcpProfileCreate(name="Dr. Del Agent", specialty="Onc", created_by=user_id)
+        vl_id = await _create_vl_instance(db_session, user_id)
+        data = HcpProfileCreate(name="Dr. Del Agent", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id)
 
         with patch(
             "app.services.hcp_profile_service.agent_sync_service.sync_agent_for_profile",
@@ -297,7 +324,8 @@ class TestDeleteWithAgent:
     async def test_delete_tolerates_agent_deletion_failure(self, db_session):
         """delete_hcp_profile succeeds even if agent deletion fails."""
         user_id = await _seed_user(db_session)
-        data = HcpProfileCreate(name="Dr. Del Fail", specialty="Onc", created_by=user_id)
+        vl_id = await _create_vl_instance(db_session, user_id)
+        data = HcpProfileCreate(name="Dr. Del Fail", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id)
 
         with patch(
             "app.services.hcp_profile_service.agent_sync_service.sync_agent_for_profile",
@@ -326,7 +354,8 @@ class TestRetryAgentSync:
     async def test_retry_syncs_agent_on_success(self, db_session):
         """retry_agent_sync sets agent_id and sync_status=synced."""
         user_id = await _seed_user(db_session)
-        data = HcpProfileCreate(name="Dr. Retry", specialty="Onc", created_by=user_id)
+        vl_id = await _create_vl_instance(db_session, user_id)
+        data = HcpProfileCreate(name="Dr. Retry", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id)
 
         # Create with sync failure
         with patch(
@@ -353,7 +382,8 @@ class TestRetryAgentSync:
     async def test_retry_handles_second_failure(self, db_session):
         """retry_agent_sync sets failed status on repeated failure."""
         user_id = await _seed_user(db_session)
-        data = HcpProfileCreate(name="Dr. Retry2", specialty="Onc", created_by=user_id)
+        vl_id = await _create_vl_instance(db_session, user_id)
+        data = HcpProfileCreate(name="Dr. Retry2", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id)
 
         # Create with sync failure
         with patch(

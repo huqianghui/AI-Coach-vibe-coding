@@ -180,6 +180,11 @@ class TestLoadConnectionConfig:
         mock_profile = MagicMock()
         mock_profile.agent_instructions_override = "Custom override instructions"
         mock_profile.to_prompt_dict.return_value = {"name": "Dr. Test"}
+        # D-08: agent mode requires a synced agent_id -- satisfy the gate so this
+        # test exercises the override-instructions path rather than raising
+        # AgentSyncRequiredError.
+        mock_profile.agent_id = "agent-test-1"
+        mock_profile.agent_sync_status = "synced"
 
         mock_voice_config = {
             "voice_name": "en-US-AvaNeural",
@@ -216,6 +221,9 @@ class TestLoadConnectionConfig:
             mock_cs.get_effective_endpoint = AsyncMock(
                 return_value="https://ep.services.ai.azure.com"
             )
+            mock_master_config = MagicMock()
+            mock_master_config.default_project = "test-project"
+            mock_cs.get_master_config = AsyncMock(return_value=mock_master_config)
 
             result = await _load_connection_config(db_session, hcp_profile_id="hcp-1")
 

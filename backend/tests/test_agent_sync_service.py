@@ -1101,10 +1101,34 @@ class TestRealAgentSyncOperations:
 
     @staticmethod
     async def _create_profile(db_session, user_id: str, **overrides):
-        """Create an HcpProfile in the DB with defaults + overrides."""
+        """Create an HcpProfile in the DB with defaults + overrides.
+
+        D-09: HcpProfile no longer has inline voice/avatar columns -- voice/
+        avatar config lives exclusively on VoiceLiveInstance, linked via
+        voice_live_instance_id. This helper creates and links a real
+        VoiceLiveInstance so resolve_voice_config() (used internally by
+        build_voice_live_metadata() during agent sync) resolves real values
+        instead of the safe-defaults fallback.
+        """
         import json
 
         from app.models.hcp_profile import HcpProfile
+        from app.models.voice_live_instance import VoiceLiveInstance
+
+        vl_instance = VoiceLiveInstance(
+            name="Agent Sync Test VL Instance",
+            voice_live_model="gpt-4o",
+            voice_name="en-US-AvaNeural",
+            voice_type="azure-standard",
+            voice_temperature=0.9,
+            avatar_character="lori",
+            avatar_style="casual",
+            turn_detection_type="server_vad",
+            recognition_language="auto",
+            created_by=user_id,
+        )
+        db_session.add(vl_instance)
+        await db_session.flush()
 
         defaults = {
             "name": "Dr. Test",
@@ -1121,26 +1145,14 @@ class TestRealAgentSyncOperations:
             "probe_topics": json.dumps(["clinical trials"]),
             "difficulty": "medium",
             "agent_id": "",
-            "voice_live_enabled": True,
-            "voice_live_model": "gpt-4o",
-            "voice_name": "en-US-AvaNeural",
-            "voice_type": "azure-standard",
-            "voice_temperature": 0.9,
-            "voice_custom": False,
-            "avatar_character": "lori",
-            "avatar_style": "casual",
-            "avatar_customized": False,
-            "turn_detection_type": "server_vad",
-            "noise_suppression": False,
-            "echo_cancellation": False,
-            "eou_detection": False,
-            "recognition_language": "auto",
+            "voice_live_instance_id": vl_instance.id,
             "created_by": user_id,
         }
         defaults.update(overrides)
         profile = HcpProfile(**defaults)
         db_session.add(profile)
         await db_session.flush()
+        await db_session.refresh(profile, attribute_names=["voice_live_instance"])
         return profile
 
     @pytest.mark.asyncio

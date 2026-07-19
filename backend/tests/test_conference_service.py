@@ -70,16 +70,28 @@ async def _seed_conference_fixture(
 
     hcps = []
     for i in range(audience_count):
+        # D-09: HcpProfile has no inline voice_name column -- link a VoiceLiveInstance
+        # so resolve_voice_config() has something to resolve.
+        vl_instance = VoiceLiveInstance(
+            name=f"VL Instance {i}",
+            voice_name=f"zh-CN-TestVoice{i}Neural",
+            created_by=user.id,
+        )
+        session.add(vl_instance)
+        await session.flush()
+
         hcp = HcpProfile(
             name=f"Dr. HCP-{i}",
             specialty="Oncology",
             personality_type="analytical",
-            voice_name=f"zh-CN-TestVoice{i}Neural",
+            voice_live_instance_id=vl_instance.id,
             created_by=user.id,
         )
         session.add(hcp)
         hcps.append(hcp)
     await session.flush()
+    for hcp in hcps:
+        await session.refresh(hcp, attribute_names=["voice_live_instance"])
 
     scenario = Scenario(
         name="Conference Test Scenario",
@@ -141,7 +153,12 @@ class TestCreateConferenceSession:
             assert "conference_prompt_config" in config[0]
 
     async def test_audience_config_prefers_voice_live_instance_voice(self):
-        """Snapshots Voice Live instance voice before deprecated inline profile voice."""
+        """Resolved audience config reflects whichever VoiceLiveInstance is linked.
+
+        D-09: HcpProfile has no inline voice_name/avatar_* columns anymore --
+        resolve_voice_config() reads exclusively from the linked VoiceLiveInstance,
+        so switching the link changes the resolved config.
+        """
         async with TestSessionLocal() as db:
             data = await _seed_conference_fixture(db)
             voice_instance = VoiceLiveInstance(
@@ -154,9 +171,9 @@ class TestCreateConferenceSession:
             db.add(voice_instance)
             await db.flush()
 
-            data["hcps"][0].voice_name = "zh-CN-XiaoxiaoNeural"
             data["hcps"][0].voice_live_instance_id = voice_instance.id
             await db.flush()
+            await db.refresh(data["hcps"][0], attribute_names=["voice_live_instance"])
 
             session = await create_conference_session(db, data["scenario"].id, data["user"].id)
             config = json.loads(session.audience_config)

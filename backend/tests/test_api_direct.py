@@ -15,10 +15,24 @@ from app.models.scoring_rubric import ScoringRubric
 from app.models.session import CoachingSession
 from app.models.skill import Skill, SkillVersion
 from app.models.user import User
+from app.models.voice_live_instance import VoiceLiveInstance
 from app.schemas.auth import LoginRequest
 from app.services.auth import create_access_token, get_password_hash
 from app.utils.exceptions import AppException
 from tests.conftest import TestSessionLocal
+
+
+async def _create_vl_instance(db, user_id: str) -> str:
+    """Create a minimal VoiceLiveInstance and return its id.
+
+    D-13: HcpProfileCreate requires voice_live_instance_id -- tests that go
+    through the create_profile() API function need a real VoiceLiveInstance
+    row to link.
+    """
+    inst = VoiceLiveInstance(name="Direct Test VL Instance", created_by=user_id)
+    db.add(inst)
+    await db.flush()
+    return inst.id
 
 _MOCK_LLM_RESULT = {
     "overall_score": 75.0,
@@ -672,7 +686,10 @@ class TestHcpProfilesDirect:
         db_session.add(user)
         await db_session.commit()
 
-        data = HcpProfileCreate(name="Dr. Direct", specialty="Onc", created_by=user.id)
+        vl_id = await _create_vl_instance(db_session, user.id)
+        data = HcpProfileCreate(
+            name="Dr. Direct", specialty="Onc", created_by=user.id, voice_live_instance_id=vl_id
+        )
         result = await create_profile(data=data, db=db_session, user=user)
         assert result.name == "Dr. Direct"
 
@@ -691,7 +708,10 @@ class TestHcpProfilesDirect:
         db_session.add(user)
         await db_session.commit()
 
-        data = HcpProfileCreate(name="Dr. GetD", specialty="Onc", created_by=user.id)
+        vl_id = await _create_vl_instance(db_session, user.id)
+        data = HcpProfileCreate(
+            name="Dr. GetD", specialty="Onc", created_by=user.id, voice_live_instance_id=vl_id
+        )
         created = await create_profile(data=data, db=db_session, user=user)
         await db_session.commit()
 
@@ -713,7 +733,10 @@ class TestHcpProfilesDirect:
         db_session.add(user)
         await db_session.commit()
 
-        data = HcpProfileCreate(name="Dr. Before", specialty="Onc", created_by=user.id)
+        vl_id = await _create_vl_instance(db_session, user.id)
+        data = HcpProfileCreate(
+            name="Dr. Before", specialty="Onc", created_by=user.id, voice_live_instance_id=vl_id
+        )
         created = await create_profile(data=data, db=db_session, user=user)
         await db_session.commit()
 
@@ -736,7 +759,10 @@ class TestHcpProfilesDirect:
         db_session.add(user)
         await db_session.commit()
 
-        data = HcpProfileCreate(name="Dr. Del", specialty="Onc", created_by=user.id)
+        vl_id = await _create_vl_instance(db_session, user.id)
+        data = HcpProfileCreate(
+            name="Dr. Del", specialty="Onc", created_by=user.id, voice_live_instance_id=vl_id
+        )
         created = await create_profile(data=data, db=db_session, user=user)
         await db_session.commit()
 
