@@ -46,6 +46,15 @@ def _mock_master_config(default_project="my-project"):
     return master
 
 
+def _mock_hcp_profile(agent_id="", agent_sync_status="none", voice_live_instance_id=None):
+    """Create a mock HcpProfile-like object for WebRTC per-HCP tests."""
+    profile = MagicMock()
+    profile.agent_id = agent_id
+    profile.agent_sync_status = agent_sync_status
+    profile.voice_live_instance_id = voice_live_instance_id
+    return profile
+
+
 class TestWebRTCSessionModelMode:
     """Test WebRTC session creation in model mode (default)."""
 
@@ -77,7 +86,7 @@ class TestWebRTCSessionModelMode:
             "wss://test.cognitiveservices.azure.com/voice-live/realtime/calls"
             in data["signaling_url"]
         )
-        assert "api-version=2026-01-01-preview" in data["signaling_url"]
+        assert "api-version=2026-07-15" in data["signaling_url"]
         assert "model=gpt-4o" in data["signaling_url"]
 
         # Verify auth
@@ -155,6 +164,85 @@ class TestWebRTCSessionAgentMode:
         assert "agent_id=agent-abc" in data["signaling_url"]
         assert "project_id=proj-1" in data["signaling_url"]
         assert data["model"] == ""  # Empty for agent mode
+
+
+class TestWebRTCSessionAgentSyncGate:
+    """Test D-05 auto-resync and D-08 forced-agent-mode enforcement for HCP profiles."""
+
+    @patch("app.services.voice_live_webrtc._exchange_api_key_for_bearer_token")
+    @patch("app.services.voice_live_webrtc.config_service")
+    @patch("app.services.hcp_profile_service.get_hcp_profile")
+    async def test_unsynced_hcp_rejects_with_409(
+        self, mock_get_profile, mock_config_svc, mock_exchange, client
+    ):
+        """HCP with no synced agent is rejected before any session is built."""
+        _, token = await _create_user_and_token("webrtc_unsynced")
+
+        mock_get_profile.return_value = _mock_hcp_profile(agent_id="", agent_sync_status="none")
+        mock_config_svc.get_config = AsyncMock(return_value=_mock_vl_config("gpt-4o"))
+        mock_config_svc.get_effective_key = AsyncMock(return_value="key-789")
+        mock_config_svc.get_effective_endpoint = AsyncMock(
+            return_value="https://test.cognitiveservices.azure.com"
+        )
+        mock_config_svc.get_master_config = AsyncMock(return_value=_mock_master_config())
+
+        resp = await client.post(
+            "/api/v1/voice-live/webrtc/session",
+            params={"hcp_profile_id": "hcp-unsynced-1"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 409
+        data = resp.json()
+        assert data["code"] == "AGENT_SYNC_REQUIRED"
+        mock_exchange.assert_not_called()
+
+    @patch("app.services.voice_live_webrtc._exchange_api_key_for_bearer_token")
+    @patch("app.services.voice_live_webrtc.config_service")
+    @patch("app.services.agent_sync_service.resync_classic_agent")
+    @patch("app.services.hcp_profile_service.get_hcp_profile")
+    async def test_classic_agent_auto_resyncs_then_succeeds(
+        self, mock_get_profile, mock_resync, mock_config_svc, mock_exchange, client
+    ):
+        """Classic asst_* agent is resynced to hosted before the signaling URL is built."""
+        _, token = await _create_user_and_token("webrtc_resync")
+
+        profile = _mock_hcp_profile(agent_id="asst_legacy_webrtc", agent_sync_status="synced")
+        mock_get_profile.return_value = profile
+
+        async def _fake_resync(db, p):
+            p.agent_id = "hosted-legacy-webrtc"
+            p.agent_sync_status = "synced"
+            return True
+
+        mock_resync.side_effect = _fake_resync
+        mock_config_svc.get_config = AsyncMock(return_value=_mock_vl_config("gpt-4o"))
+        mock_config_svc.get_effective_key = AsyncMock(return_value="key-abc")
+        mock_config_svc.get_effective_endpoint = AsyncMock(
+            return_value="https://test.cognitiveservices.azure.com"
+        )
+        mock_config_svc.get_master_config = AsyncMock(return_value=_mock_master_config())
+        mock_exchange.return_value = "resynced-bearer-token"
+
+        with patch("app.services.voice_live_instance_service.resolve_voice_config") as mock_resolve:
+            mock_resolve.return_value = {
+                "voice_name": "en-US-AvaNeural",
+                "voice_type": "azure-standard",
+                "turn_detection_type": "server_vad",
+                "noise_suppression": False,
+                "echo_cancellation": False,
+                "voice_live_model": "gpt-4o",
+            }
+            resp = await client.post(
+                "/api/v1/voice-live/webrtc/session",
+                params={"hcp_profile_id": "hcp-resync-1"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        mock_resync.assert_awaited_once()
+        assert data["agent_id"] == "hosted-legacy-webrtc"
+        assert "agent_id=hosted-legacy-webrtc" in data["signaling_url"]
 
 
 class TestWebRTCSessionErrors:
