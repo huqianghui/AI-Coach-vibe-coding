@@ -2778,3 +2778,115 @@ class TestSanitizeAgentName:
         """Legacy underscore names (pre-fix) are properly converted."""
         assert self._sanitize("skill_creator") == "skill-creator"
         assert self._sanitize("skill_evaluator") == "skill-evaluator"
+
+
+# --- D-05: resync_classic_agent ---
+
+
+@pytest.mark.asyncio
+async def test_resync_classic_agent_success():
+    """resync_classic_agent migrates an asst_* id to a hosted agent on success."""
+    from app.services.agent_sync_service import resync_classic_agent
+
+    mock_db = AsyncMock()
+    mock_profile = MagicMock()
+    mock_profile.id = "profile-1"
+    mock_profile.agent_id = "asst_legacy_123"
+    mock_profile.agent_version = ""
+    mock_profile.agent_sync_status = "synced"
+    mock_profile.agent_sync_error = ""
+
+    with (
+        patch(
+            "app.services.agent_sync_service.prefetch_sync_config",
+            new_callable=AsyncMock,
+            return_value=("https://ep", "key", "gpt-4o"),
+        ),
+        patch(
+            "app.services.agent_sync_service.sync_agent_for_profile",
+            new_callable=AsyncMock,
+            return_value={"id": "hcp-legacy-migrated", "version": "1"},
+        ) as mock_sync,
+    ):
+        result = await resync_classic_agent(mock_db, mock_profile)
+
+    assert result is True
+    mock_sync.assert_called_once()
+    assert mock_profile.agent_id == "hcp-legacy-migrated"
+    assert mock_profile.agent_version == "1"
+    assert mock_profile.agent_sync_status == "synced"
+    assert mock_profile.agent_sync_error == ""
+
+
+@pytest.mark.asyncio
+async def test_resync_classic_agent_failure_restores_original_id():
+    """resync_classic_agent restores the original asst_* id on failure (no orphaning)."""
+    from app.services.agent_sync_service import resync_classic_agent
+
+    mock_db = AsyncMock()
+    mock_profile = MagicMock()
+    mock_profile.id = "profile-2"
+    mock_profile.agent_id = "asst_will_fail_resync"
+    mock_profile.agent_version = ""
+    mock_profile.agent_sync_status = "synced"
+    mock_profile.agent_sync_error = ""
+
+    with (
+        patch(
+            "app.services.agent_sync_service.prefetch_sync_config",
+            new_callable=AsyncMock,
+            return_value=("https://ep", "key", "gpt-4o"),
+        ),
+        patch(
+            "app.services.agent_sync_service.sync_agent_for_profile",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("Foundry unavailable"),
+        ) as mock_sync,
+    ):
+        result = await resync_classic_agent(mock_db, mock_profile)
+
+    assert result is False
+    mock_sync.assert_called_once()
+    assert mock_profile.agent_id == "asst_will_fail_resync"
+    assert mock_profile.agent_sync_status == "failed"
+    assert "Foundry unavailable" in mock_profile.agent_sync_error
+
+
+@pytest.mark.asyncio
+async def test_resync_classic_agent_noop_when_never_synced():
+    """resync_classic_agent is a no-op for a never-synced (empty agent_id) profile."""
+    from app.services.agent_sync_service import resync_classic_agent
+
+    mock_db = AsyncMock()
+    mock_profile = MagicMock()
+    mock_profile.id = "profile-3"
+    mock_profile.agent_id = ""
+
+    with patch(
+        "app.services.agent_sync_service.sync_agent_for_profile",
+        new_callable=AsyncMock,
+    ) as mock_sync:
+        result = await resync_classic_agent(mock_db, mock_profile)
+
+    assert result is False
+    mock_sync.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_resync_classic_agent_noop_when_already_hosted():
+    """resync_classic_agent is a no-op for an already-hosted (non asst_*) agent_id."""
+    from app.services.agent_sync_service import resync_classic_agent
+
+    mock_db = AsyncMock()
+    mock_profile = MagicMock()
+    mock_profile.id = "profile-4"
+    mock_profile.agent_id = "hcp-already-hosted"
+
+    with patch(
+        "app.services.agent_sync_service.sync_agent_for_profile",
+        new_callable=AsyncMock,
+    ) as mock_sync:
+        result = await resync_classic_agent(mock_db, mock_profile)
+
+    assert result is False
+    mock_sync.assert_not_called()

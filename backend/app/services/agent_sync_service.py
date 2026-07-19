@@ -825,6 +825,64 @@ async def sync_agent_for_profile(
     return result
 
 
+async def resync_classic_agent(db: AsyncSession, profile: object) -> bool:
+    """Migrate a classic Foundry Agent (asst_* id) to a hosted agent (D-05).
+
+    No-op (returns False immediately, no network call) if profile.agent_id
+    does not start with "asst_" -- covers both "never synced" (empty id)
+    and "already hosted" profiles.
+
+    On success: profile.agent_id/agent_version/agent_sync_status/agent_sync_error
+    are updated in place and flushed; returns True.
+    On failure: the original asst_* agent_id is restored (never left blank/
+    orphaned), agent_sync_status is set to "failed" with the error recorded,
+    flushed, and the function returns False (does not raise -- callers decide
+    how to react, e.g. Plan 29-03's voice_live_websocket.py treats a False
+    return the same as "not synced" and rejects the connection per D-08).
+    """
+    old_agent_id = getattr(profile, "agent_id", "") or ""
+    if not old_agent_id.startswith("asst_"):
+        return False
+
+    profile.agent_id = ""  # forces sync_agent_for_profile's create_agent (hosted) branch
+    profile.agent_sync_status = "pending"
+    await db.flush()
+
+    try:
+        endpoint, api_key, model = await prefetch_sync_config(db)
+        result = await sync_agent_for_profile(
+            db,
+            profile,
+            prefetched_endpoint=endpoint,
+            prefetched_key=api_key,
+            prefetched_model=model,
+        )
+        profile.agent_id = result.get("id", "")
+        profile.agent_version = str(result.get("version", ""))
+        profile.agent_sync_status = "synced"
+        profile.agent_sync_error = ""
+        await db.flush()
+        logger.info(
+            "resync_classic_agent: migrated classic agent %s -> hosted agent %s (profile %s)",
+            old_agent_id,
+            profile.agent_id,
+            getattr(profile, "id", "?"),
+        )
+        return True
+    except Exception as e:
+        profile.agent_id = old_agent_id
+        profile.agent_sync_status = "failed"
+        profile.agent_sync_error = str(e)[:500]
+        await db.flush()
+        logger.error(
+            "resync_classic_agent: failed to migrate classic agent %s (profile %s): %s",
+            old_agent_id,
+            getattr(profile, "id", "?"),
+            e,
+        )
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Portal URL discovery — derive from connections API, no extra env vars needed
 # ---------------------------------------------------------------------------
