@@ -744,7 +744,7 @@ Plans:
 **Goal:** Upgrade azure-ai-voicelive SDK to 1.3.0 GA (api-version 2026-07-15), formalize the dual-path architecture (text via Agent Responses API, voice via Voice Live → hosted Agent), delete the voice-agent monkey-patch and classic-agent path, make VL Instance mandatory per HCP (D-10 supersedes the roadmap's "optional" wording), remove the 14 deprecated inline HCP voice/avatar fields, split the Agent Foundation Model catalog from the Voice Live model catalog, and fully update docs + tests.
 **Requirements**: D-01..D-16 (from 29-CONTEXT.md)
 **Depends on:** Phase 28
-**Plans:** 7/10 plans executed
+**Plans:** 8/10 plans executed
 
 Plans:
 - [x] 29-01-PLAN.md -- SDK 1.3.0 GA installability POC + Entra/API-key Agent connect + Foundry capabilities probe (D-03, D-04, D-14-probe)
@@ -754,6 +754,6 @@ Plans:
 - [x] 29-05-PLAN.md -- Drop 14 deprecated HcpProfile columns + VL-required API validation (D-09, D-13)
 - [x] 29-06-PLAN.md -- resolve_voice_config() safe-defaults fallback + dead denormalized-cache write-site removal (D-12)
 - [x] 29-07-PLAN.md -- Frontend: VL-required save validation + read-only Voice/Avatar VL summary card + inline-field cleanup (D-10, D-11)
-- [ ] 29-08-PLAN.md -- Agent Foundation Model catalog: Foundry deployments endpoint + HCP editor dropdown (D-14)
+- [x] 29-08-PLAN.md -- Agent Foundation Model catalog: Foundry deployments endpoint + HCP editor dropdown (D-14)
 - [ ] 29-09-PLAN.md -- Merge docs/voice-live-avatar into one 17-file tree with dual-path architecture diagram (D-15)
 - [ ] 29-10-PLAN.md -- Cross-cutting verification sweep: full backend/frontend suites + actual Playwright E2E + coverage gate + stale-literal sweep (D-16)
