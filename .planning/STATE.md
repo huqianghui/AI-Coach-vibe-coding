@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to execute
-stopped_at: Completed 29-06-PLAN.md
-last_updated: "2026-07-19T14:49:36.633Z"
+stopped_at: Completed 29-07-PLAN.md
+last_updated: "2026-07-19T15:27:33.309Z"
 last_activity: 2026-07-19
 progress:
   total_phases: 31
   completed_phases: 26
   total_plans: 153
-  completed_plans: 139
-  percent: 91
+  completed_plans: 140
+  percent: 92
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-24)
 ## Current Position
 
 Phase: 29 (voice-live-api-refactor-adaptation-azure-ai-voicelive-sdk-1-) — EXECUTING
-Plan: 6 of 10
+Plan: 7 of 10
 Phase: 26 (add-voice-live-webrtc-transport-option-as-alternative-to-web) — COMPLETE (3/3 plans)
 Phase: 24 (Skill Focus + CU Evaluation) — COMPLETE (5/5 plans)
 Phase: 25 (Refactor user training pages) — COMPLETE (2/2 plans)
@@ -310,6 +310,7 @@ Recent decisions affecting current work:
 - [Phase 29]: D-13: voice_live_instance_id is required on HcpProfileCreate and cannot be cleared on HcpProfileUpdate (service-layer guard, 422 on empty/None if key explicitly sent)
 - [Phase 29]: resolve_voice_config fallback: voice_live_enabled/avatar_enabled flip from True to False for unassigned HCPs (D-10/D-12 alignment with scenarios.py)
 - [Phase 29]: test_agent_sync_service.py::TestRealAgentSyncOperations (6 failures) not fixed by 29-06 -- pre-existing fixture bug (_create_profile uses dropped kwargs), unrelated to resolve_voice_config; deferred to deferred-items.md Item 3
+- [Phase 29]: D-11: voice mode availability derived solely from VL Instance assignment (Boolean(vlInstanceId)); no independent voiceModeEnabled state
 
 ### Pending Todos
 
@@ -347,6 +348,6 @@ None yet.
 ## Session Continuity
 
 Last activity: 2026-07-19
-Last session: 2026-07-19T14:49:36.629Z
-Stopped at: Completed 29-06-PLAN.md
+Last session: 2026-07-19T15:27:33.305Z
+Stopped at: Completed 29-07-PLAN.md
 Resume file: None
