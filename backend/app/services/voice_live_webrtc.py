@@ -16,10 +16,9 @@ from app.services import config_service
 from app.services.agents.adapters.azure_voice_live import parse_voice_live_mode
 from app.services.voice_live_service import _exchange_api_key_for_bearer_token
 from app.utils.azure_endpoints import to_cognitive_services_endpoint
+from app.utils.exceptions import AppException
 
 logger = logging.getLogger(__name__)
-
-WEBRTC_API_VERSION = "2026-01-01-preview"
 
 AVATAR_WARNING = "Avatar (digital human) is not supported with WebRTC audio transport in preview."
 
@@ -59,6 +58,7 @@ async def create_webrtc_session_config(
     config_is_agent = mode_info.get("mode") == "agent"
 
     _default_model = get_settings().voice_live_default_model
+    _api_version = get_settings().voice_live_api_version
     voice_live_model = mode_info.get("model", _default_model)
 
     # Config-level agent/project defaults
@@ -83,10 +83,29 @@ async def create_webrtc_session_config(
         try:
             profile = await hcp_profile_service.get_hcp_profile(db, hcp_profile_id)
 
-            # HCP-level agent override: synced agent_id activates agent mode
-            if profile.agent_id and profile.agent_sync_status == "synced":
-                agent_id = profile.agent_id
-                project_name_val = default_project
+            # D-05: auto-resync a classic (asst_*) Foundry Agent to a hosted agent
+            # on first WebRTC connection, mirroring the WS-side wiring in
+            # voice_live_websocket.py (Plan 29-03). No-op if not asst_-prefixed.
+            if (profile.agent_id or "").startswith("asst_"):
+                from app.services.agent_sync_service import resync_classic_agent
+
+                await resync_classic_agent(db, profile)
+
+            # D-08: forced agent mode -- a WebRTC voice session for an HCP profile
+            # requires a synced hosted agent_id. Reject before any signaling URL
+            # or bearer token is built (do not leak a half-configured session).
+            if not (profile.agent_id and profile.agent_sync_status == "synced"):
+                raise AppException(
+                    status_code=409,
+                    code="AGENT_SYNC_REQUIRED",
+                    message=(
+                        f"HCP profile {hcp_profile_id} has no synced Voice Live "
+                        "agent. Resync the agent before starting a voice session."
+                    ),
+                )
+
+            agent_id = profile.agent_id
+            project_name_val = default_project
 
             # Resolve voice config from VoiceLiveInstance or fallback inline fields
             vc = resolve_voice_config(profile)
@@ -96,6 +115,13 @@ async def create_webrtc_session_config(
             noise_suppression = vc["noise_suppression"]
             echo_cancellation = vc["echo_cancellation"]
             voice_live_model = vc["voice_live_model"] or _default_model
+        except AppException:
+            # D-08 rejection must propagate untouched -- do NOT let the broad
+            # `except Exception` below swallow it and silently fall back to
+            # model mode (that would defeat the forced-agent-mode guarantee,
+            # the same exception-ordering hazard closed on the WS side in
+            # Plan 29-03 / threat T-29-02).
+            raise
         except Exception:
             logger.warning(
                 "Failed to load HCP profile %s for WebRTC session, using defaults",
@@ -113,14 +139,14 @@ async def create_webrtc_session_config(
     if is_agent:
         signaling_url = (
             f"wss://{endpoint_host}/voice-live/realtime/calls"
-            f"?api-version={WEBRTC_API_VERSION}"
+            f"?api-version={_api_version}"
             f"&agent_id={agent_id}"
             f"&project_id={project_name_val or ''}"
         )
     else:
         signaling_url = (
             f"wss://{endpoint_host}/voice-live/realtime/calls"
-            f"?api-version={WEBRTC_API_VERSION}"
+            f"?api-version={_api_version}"
             f"&model={voice_live_model}"
         )
 
