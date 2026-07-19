@@ -95,7 +95,7 @@ async def agent_connect_probe(
 
     Returns (result, detail) where result is "PASS" or "FAIL".
     """
-    from azure.ai.voicelive.aio import AgentSessionConfig, connect
+    from azure.ai.voicelive.aio import connect
     from azure.ai.voicelive.models import Modality, RequestSession
 
     try:
@@ -103,17 +103,17 @@ async def agent_connect_probe(
     except Exception as exc:  # noqa: BLE001
         return "FAIL", f"credential resolution failed: {type(exc).__name__}: {exc}"
 
-    agent_config: AgentSessionConfig = {
-        "agent_name": agent_name,
-        "project_name": project_name,
-    }
-
+    # NOTE: 1.3.0b1 is a breaking change from 1.2.0b5 -- connect() no longer accepts an
+    # `agent_config: AgentSessionConfig` dict; agent_name/project_name are now flattened
+    # top-level kwargs on connect() itself. Downstream plans (29-02/29-06/29-07) must use
+    # this flattened kwarg shape, not the old AgentSessionConfig dict.
     try:
         async with connect(
             endpoint=endpoint,
             credential=credential,
             api_version=GA_API_VERSION,
-            agent_config=agent_config,
+            agent_name=agent_name,
+            project_name=project_name,
         ) as connection:
             print(f"  [connect] WebSocket established via {path_label} credential path")
             await connection.send(
