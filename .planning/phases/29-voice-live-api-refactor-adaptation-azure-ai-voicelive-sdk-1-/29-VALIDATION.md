@@ -1,9 +1,9 @@
 ---
 phase: 29
 slug: voice-live-api-refactor-adaptation-azure-ai-voicelive-sdk-1
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: approved
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-07-19
 ---
 
@@ -36,17 +36,18 @@ created: 2026-07-19
 
 ## Per-Task Verification Map
 
-> Task IDs to be filled by planner. Mapping follows the 16 locked decisions (no formal REQ-IDs for this phase).
+> Backfilled 2026-07-19 against the final 10-plan set (29-01..29-10). Mapping follows the 16 locked decisions (no formal REQ-IDs for this phase).
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| TBD | — | — | D-01 Entra-first connect + API-key fallback | — | Entra used when creds available; fallback covered | unit | `pytest tests/test_voice_live_websocket.py -k "entra or api_key" -x` | ❌ W0 | ⬜ pending |
-| TBD | — | — | D-02 single GA api-version constant (WS + WebRTC) | — | No preview-version literals remain | unit | `pytest tests/test_voice_live_websocket.py tests/test_voice_live_webrtc.py -k api_version -x` | ✅ (update assertions at `test_voice_live_websocket.py:786-787,1326,1366`, `test_voice_live_webrtc.py:80`) | ⬜ pending |
-| TBD | — | — | D-05 asst_* HCP auto-resync | T-29-01 | Resync runs before classic branch deleted | unit + integration | `pytest tests/ -k asst_resync -x` | ❌ W0 | ⬜ pending |
-| TBD | — | — | D-06/D-08 classic branch removed; unsynced HCP rejected | T-29-02 | Rejection enforced server-side (WS; WebRTC gap = Open Q#3) | unit | `pytest tests/test_voice_live_websocket.py -k agent_forced_reject -x` | ❌ W0 | ⬜ pending |
-| TBD | — | — | D-09/D-13 HCP save without VL instance rejected | — | API-level required validation (create + update) | unit | `pytest tests/ -k vl_required -x` | ❌ W0 | ⬜ pending |
-| TBD | — | — | D-14 foundation model catalog endpoint | T-29-03 | Admin-scoped; returns only dropdown fields | unit | `pytest tests/test_agent_foundation_models.py -x` | ❌ W0 | ⬜ pending |
-| TBD | — | — | D-16 E2E full HCP voice training session post-refactor | — | N/A | e2e | `npx playwright test --config=e2e/playwright.config.ts` (confirm exact spec) | locate existing spec | ⬜ pending |
+| 29-03 T2 | 29-03 | 2 | D-01 Entra-first connect + API-key fallback | — | Entra used when creds available; fallback covered | unit | `pytest tests/test_voice_live_websocket.py -k "entra or api_key" -x` | ❌ W0 (added by 29-03 T3) | ⬜ pending |
+| 29-02 T1 / 29-03 T2 / 29-04 T1 | 29-02, 29-03, 29-04 | 2 | D-02 single GA api-version constant (WS + WebRTC) | — | No preview-version literals remain | unit | `pytest tests/test_voice_live_websocket.py tests/test_voice_live_webrtc.py -k api_version -x` | ✅ (update assertions at `test_voice_live_websocket.py:786-787,1326,1366`, `test_voice_live_webrtc.py:80`) | ⬜ pending |
+| 29-02 T2 | 29-02 | 2 | D-05 asst_* HCP auto-resync | T-29-01 | Resync runs before classic branch deleted | unit + integration | `pytest tests/ -k asst_resync -x` | ❌ W0 (added by 29-02 T2, TDD) | ⬜ pending |
+| 29-03 T1/T2 | 29-03 | 2 | D-06/D-08 classic branch removed; unsynced HCP rejected | T-29-02 | Rejection enforced server-side (WS + WebRTC via 29-04 T1) | unit | `pytest tests/test_voice_live_websocket.py -k agent_forced_reject -x` | ❌ W0 (added by 29-03 T3) | ⬜ pending |
+| 29-05 T2 | 29-05 | 2 | D-09/D-13 HCP save without VL instance rejected | — | API-level required validation (create + update) | unit | `pytest tests/ -k vl_required -x` | ❌ W0 (added by 29-05 T2, TDD) | ⬜ pending |
+| 29-08 T1 | 29-08 | 4 | D-14 foundation model catalog endpoint | T-29-03 | Admin-scoped; returns only dropdown fields | unit | `pytest tests/test_agent_foundation_models.py -x` | ❌ W0 (added by 29-08 T1, TDD) | ⬜ pending |
+| 29-07 T1-T3 | 29-07 | 3 | D-10/D-11 frontend VL-required validation + read-only Voice/Avatar tab | — | Save blocked in UI without VL instance | unit (vitest) | `cd frontend && npx vitest run src/components/admin src/pages/admin` | ❌ W0 (added by 29-07 tasks) | ⬜ pending |
+| 29-10 T3 | 29-10 | 5 | D-16 E2E full HCP voice training session post-refactor | — | N/A | e2e | `npx playwright test --config=e2e/playwright.config.ts` (actual execution required) | ✅ existing voice/HCP/agent-sync specs | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -74,11 +75,11 @@ created: 2026-07-19
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 120s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references (missing test files created by owning plans' TDD tasks)
+- [x] No watch-mode flags
+- [x] Feedback latency < 120s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-07-19 (plan-checker pass: 0 blockers, warnings resolved)
