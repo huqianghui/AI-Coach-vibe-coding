@@ -56,23 +56,17 @@ HCP Profile 通过 FK 引用 VoiceLiveInstance。
 
 ```python
 # backend/app/models/hcp_profile.py — Voice Live 相关字段
-class HcpProfile(TimestampMixin, Base):
-    # 推荐：引用 VoiceLiveInstance
+class HcpProfile(Base, TimestampMixin):
+    # 强制项：每个 HCP 必须引用一个 VoiceLiveInstance（D-09/D-10）
     voice_live_instance_id = Column(String(36), ForeignKey("voice_live_instances.id"), nullable=True)
     voice_live_instance = relationship("VoiceLiveInstance", back_populates="hcp_profiles")
 
-    # Deprecated 内联字段（向后兼容，优先级低于 VoiceLiveInstance）
-    voice_live_enabled = Column(Boolean, default=False)
-    voice_live_model = Column(String(100), default="gpt-4o")
-    voice_name = Column(String(100), default="zh-CN-XiaoxiaoMultilingualNeural")
-    # ... 等同于 VoiceLiveInstance 的字段子集
-
-    # Agent 同步状态
-    agent_id = Column(String(200), nullable=True)
-    agent_version = Column(String(50), nullable=True)
+    # Agent 同步状态（Hosted Agent，非 classic asst_*）
+    agent_id = Column(String(100), default="")
     agent_sync_status = Column(String(20), default="none")  # none|pending|synced|failed
-    agent_sync_error = Column(Text, nullable=True)
 ```
+
+> **D-09 变更**：`voice_live_enabled`、`voice_live_model`、`voice_name` 等内联字段已被彻底删除（迁移 `z33a_drop_hcp_inline_voice_fields.py`），不是"deprecated 但保留兼容"，字段本身已从模型和数据库表中移除。所有 HCP 必须通过 `voice_live_instance_id` 引用一个 `VoiceLiveInstance`。
 
 ### ServiceConfig（服务配置表）
 
@@ -102,26 +96,23 @@ class ServiceConfig(TimestampMixin, Base):
 # backend/app/services/voice_live_instance_service.py
 def resolve_voice_config(profile: HcpProfile) -> dict:
     """
-    优先级: VoiceLiveInstance > HCP Profile 内联字段
+    强制要求: profile.voice_live_instance 必须存在（D-09/D-10，无内联字段回退）
+    未分配 VoiceLiveInstance 的 HCP 视为配置错误，而非静默降级
     返回: 包含所有 voice/avatar 配置的扁平字典
     """
-    if profile.voice_live_instance:
-        inst = profile.voice_live_instance
-        return {
-            "voice_live_model": inst.voice_live_model,
-            "voice_name": inst.voice_name,
-            "avatar_character": inst.avatar_character,
-            "avatar_style": inst.avatar_style,
-            "avatar_enabled": inst.avatar_enabled,
-            "turn_detection_type": inst.turn_detection_type,
-            # ... 全部字段
-        }
-    else:
-        return {
-            "voice_live_model": profile.voice_live_model,
-            "voice_name": profile.voice_name,
-            # ... 从 deprecated 内联字段读取
-        }
+    if not profile.voice_live_instance:
+        raise ConfigurationError(f"HCP {profile.id} 未分配 VoiceLiveInstance")
+
+    inst = profile.voice_live_instance
+    return {
+        "voice_live_model": inst.voice_live_model,
+        "voice_name": inst.voice_name,
+        "avatar_character": inst.avatar_character,
+        "avatar_style": inst.avatar_style,
+        "avatar_enabled": inst.avatar_enabled,
+        "turn_detection_type": inst.turn_detection_type,
+        # ... 全部字段
+    }
 ```
 
 ## ER 关系图
@@ -134,9 +125,9 @@ def resolve_voice_config(profile: HcpProfile) -> dict:
 │ endpoint         │       │ voice_live_model      │       │ agent_id     │
 │ api_key_encrypted│       │ voice_name            │       │ agent_sync_  │
 │ region           │       │ avatar_character      │       │   status     │
-│ is_master        │       │ avatar_enabled        │       │ (deprecated  │
-│                  │       │ turn_detection_type   │       │  inline VL   │
-│ azure_voice_live │       │ response_temperature  │       │  fields)     │
+│ is_master        │       │ avatar_enabled        │       │ (无内联字段, │
+│                  │       │ turn_detection_type   │       │  已 D-09 删除)│
+│ azure_voice_live │       │ response_temperature  │       │              │
 │ ai_foundry       │       │ ...                   │       │              │
 └──────────────────┘       └───────────────────────┘       └──────────────┘
 ```
@@ -145,9 +136,10 @@ def resolve_voice_config(profile: HcpProfile) -> dict:
 
 | 迁移 | 文件 | 内容 |
 |------|------|------|
-| j13a | `j13a_add_voice_live_enabled_to_hcp_profile.py` | HCP 添加 `voice_live_enabled` |
-| k14a | `k14a_add_voice_live_model_to_hcp_profile.py` | HCP 添加 `voice_live_model` 等内联字段 |
+| j13a | `j13a_add_voice_live_enabled_to_hcp_profile.py` | HCP 添加 `voice_live_enabled`（早期实现，已被 z33a 删除） |
+| k14a | `k14a_add_voice_live_model_to_hcp_profile.py` | HCP 添加 `voice_live_model` 等内联字段（早期实现，已被 z33a 删除） |
 | m16a | `m16a_create_voice_live_instances.py` | **创建 VoiceLiveInstance 表** + HCP FK + 数据迁移 |
 | n17a | `n17a_add_foundry_playground_fields.py` | 添加 Playground 字段（temperature, playback, lexicon, avatar_enabled） |
+| z33a | `z33a_drop_hcp_inline_voice_fields.py` | **删除** j13a/k14a 引入的 HCP 内联语音字段（D-09），VoiceLiveInstance 成为唯一配置来源 |
 
-> **重要**：m16a 迁移包含数据迁移逻辑——为每个已有 HCP Profile 自动创建对应的 VoiceLiveInstance。
+> **重要**：m16a 迁移包含数据迁移逻辑——为每个已有 HCP Profile 自动创建对应的 VoiceLiveInstance。z33a 迁移在此之后彻底移除了内联字段，因此 j13a/k14a 引入的列在当前 schema 中已不存在。

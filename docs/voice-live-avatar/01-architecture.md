@@ -122,17 +122,26 @@ Browser                      Backend                       Azure Voice Live
 - **实现**：后端使用 `azure-ai-voicelive` Python SDK 建立与 Azure 的连接，前端仅通过 backend WebSocket 通信
 - **Token 端点**：`/voice-live/token` 返回 masked token（`***configured***`），前端不获取真实密钥
 
-### 2. Model Mode（非 Agent Mode）
-- **原因**：Agent Mode 需要 Azure AD (Entra ID) 认证，API Key 部署不支持
-- **替代**：通过 `instructions` 字段注入 HCP 角色设定，等效于 Agent 行为
-- **指令来源**：`agent_instructions_override` > 自动生成 `build_agent_instructions()`
+### 2. 双路径架构 (Dual-Path Architecture)
+- **原因**：文本会话和语音会话使用不同的传输协议，但都必须路由到同一个 Hosted Agent，避免"两套人格/两套知识库"的不一致
+- **文本路径**：MR/Browser 通过 HTTP 直接调用 Agent Responses API（`backend/app/services/agent_chat_service.py`）
+- **语音路径**：MR/Browser 通过 WebSocket 连接后端的 `voice_live_websocket.py` 代理，后端以 `azure.ai.voicelive.aio.connect(agent_name=..., project_name=...)` 建立到 Azure Voice Live 的会话，Voice Live 内部再路由到同一个 Hosted Agent
+- **同步机制**：`agent_sync_service.py` 负责确保 Hosted Agent 在 Azure AI Foundry 侧的配置与 HCP Profile 数据保持一致，避免文本/语音两条路径读到不同版本的 Agent 定义
 
-### 3. 配置优先级链
 ```
-VoiceLiveInstance (推荐) > HCP Profile 内联字段 (deprecated)
+文本会话:  MR/Browser ──HTTP──► Agent Responses API (agent_chat_service.py) ──► Hosted Agent (Foundry)
+语音会话:  MR/Browser ──WebSocket──► voice_live_websocket proxy ──azure.ai.voicelive.aio.connect(agent_name=...)──► Hosted Agent (Foundry)
 ```
-- `resolve_voice_config(profile)` 函数实现优先级解析
-- 内联字段保留向后兼容，新功能应使用 VoiceLiveInstance
+
+- **认证**：Entra ID (Azure AD) 优先，API Key 作为回退（D-01）；两条路径共享同一套凭据解析逻辑
+- 经典的 `asst_*` classic-agent 分支已被移除（D-06/D-08），未同步到 Hosted Agent 的 HCP 会被拒绝而非静默回退（D-08）
+
+### 3. 配置强制要求
+```
+每个 HCP Profile 必须分配一个 VoiceLiveInstance（无回退路径）
+```
+- `resolve_voice_config(profile)` 函数解析 HCP 关联的 `VoiceLiveInstance` 配置
+- HCP Profile 内联语音字段已被彻底删除（D-09），不再作为 fallback 存在——这不是"deprecated 但保留兼容"，而是字段本身已从模型中移除
 
 ### 4. 双通道并行
 - **WebSocket 通道**：语音数据 + 文本消息 + 控制事件

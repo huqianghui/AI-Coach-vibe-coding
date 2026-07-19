@@ -28,7 +28,7 @@
   "avatar_character": "lisa",
   "avatar_style": "casual-sitting",
   "voice_name": "zh-CN-XiaoxiaoMultilingualNeural",
-  "agent_id": null,               // Agent Mode 时非空
+  "agent_id": null,                // 同步成功后非空；未同步的 HCP 会被拒绝而非静默回退（D-08）
   "agent_version": null,
   // 每个 HCP 的个性化字段
   "turn_detection_type": "azure_semantic_vad",

@@ -25,12 +25,13 @@ async def handle_voice_live_websocket(websocket: WebSocket, db: AsyncSession):
     # 3. 加载配置 _load_connection_config()
     config = await _load_connection_config(db, hcp_profile_id, system_prompt)
 
-    # 4. 连接 Azure SDK
+    # 4. 连接 Azure SDK（agent_name/project_name 定位 Hosted Agent，取代旧的 model= 参数；D-05/D-06/D-08 起废弃 classic asst_* 分支）
     async with azure.ai.voicelive.aio.connect(
         endpoint=config["endpoint"],
-        credential=AzureKeyCredential(config["api_key"]),
-        model=config["model"],
-        api_version="2025-05-01-preview"
+        credential=get_credential(),  # Entra ID 优先，API Key 回退（D-01）
+        agent_name=config["agent_name"],
+        project_name=config["project_name"],
+        api_version=settings.voice_live_api_version  # "2026-07-15"（GA，见 backend/app/config.py）
     ) as azure_conn:
         # 5. 配置会话 RequestSession
         session_config = RequestSession(
