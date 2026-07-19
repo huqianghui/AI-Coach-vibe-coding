@@ -93,6 +93,13 @@ class Settings(BaseSettings):
     # Default Voice Live model (when creating new instances/profiles; override via .env)
     voice_live_default_model: str = "gpt-4o"
 
+    # Voice Live / Foundry Agents GA api-version (D-02): single source of truth for
+    # every azure-ai-voicelive connect() call site (WS proxy + WebRTC signaling).
+    # GA release dated 2026-07-13 (azure-ai-voicelive CHANGELOG.md, SDK 1.3.0).
+    # Do NOT hardcode "2026-01-01-preview" / "2025-05-01-preview" / any other
+    # api-version literal anywhere else in the codebase -- read this setting.
+    voice_live_api_version: str = "2026-07-15"
+
     # Default chat completion model for skill conversion/evaluation (override via .env)
     default_chat_model: str = "gpt-4o"
     # AI parameters for skill conversion/evaluation
