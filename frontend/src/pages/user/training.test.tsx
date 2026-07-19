@@ -215,7 +215,7 @@ describe("ScenarioSelection (Training) Page", () => {
         difficulty: "medium",
         status: "active",
         hcp_profile: {
-          voice_live_enabled: true,
+          voice_live_instance: { enabled: true },
           avatar_enabled: true,
         },
       },
@@ -269,7 +269,7 @@ describe("ScenarioSelection (Training) Page", () => {
         difficulty: "medium",
         status: "active",
         hcp_profile: {
-          voice_live_enabled: true,
+          voice_live_instance: { enabled: true },
           avatar_enabled: false,
         },
       },
@@ -323,7 +323,7 @@ describe("ScenarioSelection Filters and Actions", () => {
       difficulty: "medium",
       status: "active",
       hcp_profile: {
-        voice_live_enabled: true,
+        voice_live_instance: { enabled: true },
         avatar_enabled: false,
       },
     },
@@ -336,7 +336,7 @@ describe("ScenarioSelection Filters and Actions", () => {
       difficulty: "hard",
       status: "active",
       hcp_profile: {
-        voice_live_enabled: true,
+        voice_live_instance: { enabled: true },
         avatar_enabled: false,
       },
     },
@@ -424,7 +424,7 @@ describe("ScenarioSelection Filters and Actions", () => {
         difficulty: "hard",
         status: "active",
         hcp_profile: {
-          voice_live_enabled: true,
+          voice_live_instance: { enabled: true },
           avatar_enabled: true,
         },
       },
@@ -451,7 +451,7 @@ describe("ScenarioSelection Filters and Actions", () => {
         difficulty: "hard",
         status: "active",
         hcp_profile: {
-          voice_live_enabled: true,
+          voice_live_instance: { enabled: true },
           avatar_enabled: true,
         },
       },

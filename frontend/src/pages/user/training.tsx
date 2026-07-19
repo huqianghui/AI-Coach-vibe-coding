@@ -32,7 +32,9 @@ function getScenarioModes(
 ) {
   const modes = ["text"];
   const hcp = scenario.hcp_profile;
-  const voiceAvailable = Boolean(features?.voice_live_enabled && hcp?.voice_live_enabled);
+  const voiceAvailable = Boolean(
+    features?.voice_live_enabled && hcp?.voice_live_instance?.enabled,
+  );
   const avatarAvailable = Boolean(
     voiceAvailable && features?.avatar_enabled && hcp?.avatar_enabled,
   );
@@ -68,7 +70,7 @@ function getConferenceModes(
   const avatarAvailable = Boolean(
     features?.voice_live_enabled &&
       features?.avatar_enabled &&
-      hcp?.voice_live_enabled &&
+      hcp?.voice_live_instance?.enabled &&
       hcp?.avatar_enabled,
   );
   const modes = ["text"];

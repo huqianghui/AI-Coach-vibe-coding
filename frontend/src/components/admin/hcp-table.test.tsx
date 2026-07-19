@@ -57,20 +57,7 @@ function makeProfile(overrides: Partial<HcpProfile> = {}): HcpProfile {
     agent_sync_status: "synced",
     agent_sync_error: "",
     voice_live_instance_id: null,
-    voice_live_enabled: false,
-    voice_live_model: "gpt-4o",
-    voice_name: "",
-    voice_type: "",
-    voice_temperature: 0.9,
-    voice_custom: false,
-    avatar_character: "",
-    avatar_style: "",
-    avatar_customized: false,
-    turn_detection_type: "server_vad",
-    noise_suppression: false,
-    echo_cancellation: false,
-    eou_detection: false,
-    recognition_language: "auto",
+    voice_live_instance: null,
     agent_instructions_override: "",
     knowledge_config_count: 0,
     ...overrides,
@@ -206,24 +193,31 @@ describe("HcpTable", () => {
   });
 
   // ── Voice/Avatar Column ───────────────────────────────────
-  it("shows voice badges when voice_name is set", () => {
+  it("shows voice badges when a VL instance is assigned with voice_name set", () => {
     const profiles = [
       makeProfile({
-        voice_name: "en-US-AvaNeural",
-        avatar_character: "lisa",
-        avatar_style: "casual",
+        voice_live_instance_id: "vl-1",
+        voice_live_instance: {
+          id: "vl-1",
+          name: "Test Instance",
+          voice_live_model: "gpt-4o",
+          enabled: false,
+          voice_name: "en-US-AvaNeural",
+          avatar_character: "lisa",
+          avatar_style: "casual",
+        },
       }),
     ];
     render(
       <HcpTable profiles={profiles} isLoading={false} {...defaultHandlers} />,
     );
     expect(screen.getByText("Ava")).toBeInTheDocument(); // getVoiceLabel
-    expect(screen.getByText("lisa-casual")).toBeInTheDocument();
+    expect(screen.getByText(/lisa-casual/)).toBeInTheDocument();
   });
 
-  it("shows 'not configured' when no voice_name", () => {
+  it("shows 'not configured' when no VL instance is assigned", () => {
     const profiles = [
-      makeProfile({ voice_name: "" }),
+      makeProfile({ voice_live_instance_id: null, voice_live_instance: null }),
     ];
     render(
       <HcpTable profiles={profiles} isLoading={false} {...defaultHandlers} />,
@@ -231,14 +225,19 @@ describe("HcpTable", () => {
     expect(screen.getByText("hcp.notConfigured")).toBeInTheDocument();
   });
 
-  it("shows VL model badge when voice_live_enabled is true", () => {
+  it("shows VL model badge when the assigned instance is enabled", () => {
     const profiles = [
       makeProfile({
-        voice_name: "en-US-AvaNeural",
-        avatar_character: "lisa",
-        avatar_style: "casual",
-        voice_live_enabled: true,
-        voice_live_model: "gpt-4o",
+        voice_live_instance_id: "vl-1",
+        voice_live_instance: {
+          id: "vl-1",
+          name: "Test Instance",
+          voice_live_model: "gpt-4o",
+          enabled: true,
+          voice_name: "en-US-AvaNeural",
+          avatar_character: "lisa",
+          avatar_style: "casual",
+        },
       }),
     ];
     render(

@@ -33,12 +33,12 @@ function getAvailableModes(
   const hcp = scenario?.hcp_profile;
   const voiceAvailable = scenario?.mode === "conference"
     ? Boolean(features?.voice_enabled)
-    : Boolean(features?.voice_live_enabled && hcp?.voice_live_enabled);
+    : Boolean(features?.voice_live_enabled && hcp?.voice_live_instance?.enabled);
   const avatarAvailable = scenario?.mode === "conference"
     ? Boolean(
         features?.voice_live_enabled &&
           features?.avatar_enabled &&
-          hcp?.voice_live_enabled &&
+          hcp?.voice_live_instance?.enabled &&
           hcp?.avatar_enabled,
       )
     : Boolean(voiceAvailable && features?.avatar_enabled && hcp?.avatar_enabled);

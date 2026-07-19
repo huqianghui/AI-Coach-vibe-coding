@@ -125,12 +125,17 @@ describe("useCreateHcpProfile", () => {
       wrapper: createWrapper(),
     });
 
-    result.current.mutate({ name: "Dr. Li", specialty: "Oncology" });
+    result.current.mutate({
+      name: "Dr. Li",
+      specialty: "Oncology",
+      voice_live_instance_id: "vl-1",
+    });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(createHcpProfile).toHaveBeenCalledWith({
       name: "Dr. Li",
       specialty: "Oncology",
+      voice_live_instance_id: "vl-1",
     });
   });
 });

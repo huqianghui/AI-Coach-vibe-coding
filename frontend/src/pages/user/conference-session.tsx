@@ -302,8 +302,7 @@ export default function ConferenceSession() {
     const map = new Map<string, string>();
     audienceHcps.forEach((hcp, index) => {
       const profile = audienceVoiceProfileQueries[index]?.data;
-      const profileVoiceName =
-        profile?.voice_live_instance?.voice_name || profile?.voice_name;
+      const profileVoiceName = profile?.voice_live_instance?.voice_name;
       const voiceName = hcp.voiceName || profileVoiceName;
       if (hcp.hcpProfileId && voiceName?.trim()) {
         map.set(hcp.hcpProfileId, voiceName);
@@ -313,9 +312,13 @@ export default function ConferenceSession() {
   }, [audienceHcps, audienceVoiceProfileQueries]);
 
   const activeAvatarCharacter =
-    activeAvatarHcp?.avatarCharacter || activeAvatarProfile?.avatar_character || "lori";
+    activeAvatarHcp?.avatarCharacter ||
+    activeAvatarProfile?.voice_live_instance?.avatar_character ||
+    "lori";
   const activeAvatarStyle =
-    activeAvatarHcp?.avatarStyle || activeAvatarProfile?.avatar_style || "casual";
+    activeAvatarHcp?.avatarStyle ||
+    activeAvatarProfile?.voice_live_instance?.avatar_style ||
+    "casual";
   const activeAvatarName =
     activeAvatarHcp?.hcpName ?? activeAvatarProfile?.name ?? currentSpeaker;
 

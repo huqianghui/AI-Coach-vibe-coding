@@ -525,12 +525,12 @@ export default function UnifiedSession() {
             isFullScreen={false}
             avatarCharacter={
               isDigitalHumanMode(currentMode)
-                ? scenario?.hcp_profile?.avatar_character
+                ? scenario?.hcp_profile?.voice_live_instance?.avatar_character
                 : undefined
             }
             avatarStyle={
               isDigitalHumanMode(currentMode)
-                ? scenario?.hcp_profile?.avatar_style
+                ? scenario?.hcp_profile?.voice_live_instance?.avatar_style
                 : undefined
             }
             className="flex-1"

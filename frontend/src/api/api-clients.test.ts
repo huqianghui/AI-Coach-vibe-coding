@@ -67,7 +67,11 @@ describe("HCP Profiles API", () => {
   });
 
   it("createHcpProfile calls POST /hcp-profiles", async () => {
-    const newProfile = { name: "New", specialty: "Oncology" };
+    const newProfile = {
+      name: "New",
+      specialty: "Oncology",
+      voice_live_instance_id: "vl-1",
+    };
     const created = { id: "2", ...newProfile };
     mockClient.post.mockResolvedValue({ data: created });
 

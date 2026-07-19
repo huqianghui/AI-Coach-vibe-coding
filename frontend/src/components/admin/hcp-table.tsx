@@ -293,19 +293,24 @@ export function HcpTable({
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    {profile.voice_name ? (
+                    {profile.voice_live_instance?.voice_name ? (
                       <span className="flex flex-wrap items-center gap-1">
                         <Badge variant="outline" className="text-xs">
-                          {getVoiceLabel(profile.voice_name)}
+                          {getVoiceLabel(profile.voice_live_instance.voice_name)}
                         </Badge>
                         <Badge variant="outline" className="text-xs">
-                          {profile.avatar_character}-{profile.avatar_style}
+                          {profile.voice_live_instance.avatar_character}-
+                          {profile.voice_live_instance.avatar_style}
                         </Badge>
-                        {profile.voice_live_enabled && profile.voice_live_model && (
-                          <Badge variant="outline" className="text-xs">
-                            {getModelLabel(profile.voice_live_model, t)}
-                          </Badge>
-                        )}
+                        {profile.voice_live_instance.enabled &&
+                          profile.voice_live_instance.voice_live_model && (
+                            <Badge variant="outline" className="text-xs">
+                              {getModelLabel(
+                                profile.voice_live_instance.voice_live_model,
+                                t,
+                              )}
+                            </Badge>
+                          )}
                       </span>
                     ) : (
                       <span className="text-xs text-muted-foreground">
