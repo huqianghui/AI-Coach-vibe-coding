@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { InstructionsSection } from "@/components/admin/instructions-section";
+import { AgentFoundationModelSelect } from "@/components/admin/agent-foundation-model-select";
 import { ConnectKbDialog } from "@/components/admin/connect-kb-dialog";
 import {
   useHcpKnowledgeConfigs,
@@ -74,6 +75,10 @@ export function AgentConfigLeftPanel({
   const [knowledgeToolsExpanded, setKnowledgeToolsExpanded] = useState(false);
   const [showRemoveDialog, setShowRemoveDialog] = useState(false);
   const [connectKbDialogOpen, setConnectKbDialogOpen] = useState(false);
+  // D-14: Foundation Model selection is not part of HcpFormValues (confirmed
+  // by 29-07-SUMMARY.md — voice_live_model lives only on VoiceLiveInstanceSummary).
+  // Tracked as local UI state only; not persisted to any hcp_profile field.
+  const [foundationModel, setFoundationModel] = useState("");
 
   const { data: kbConfigs } = useHcpKnowledgeConfigs(profile?.id);
   const removeKbMutation = useRemoveKnowledgeConfig();
@@ -217,7 +222,23 @@ export function AgentConfigLeftPanel({
         </CardContent>
       </Card>
 
-      {/* 2. Instructions Section */}
+      {/* 2. Agent Foundation Model (D-14) — decoupled from the VL Instance Summary above */}
+      <Card>
+        <CardContent className="pt-4 pb-3">
+          <Label className="text-xs font-semibold">
+            {t("admin:hcp.modelDeployment")}
+          </Label>
+          <div className="mt-2">
+            <AgentFoundationModelSelect
+              value={foundationModel}
+              onValueChange={setFoundationModel}
+              disabled={isNew}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 3. Instructions Section */}
       <InstructionsSection
         form={form}
         profileId={profile?.id}
@@ -225,7 +246,7 @@ export function AgentConfigLeftPanel({
         onAutoInstructionsChange={onAutoInstructionsChange}
       />
 
-      {/* 3. Knowledge & Tools (collapsible skeleton) */}
+      {/* 4. Knowledge & Tools (collapsible skeleton) */}
       <Card>
         <CardHeader
           className="cursor-pointer select-none pb-2"

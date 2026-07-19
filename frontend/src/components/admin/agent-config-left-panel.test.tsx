@@ -92,6 +92,12 @@ vi.mock("@/components/admin/connect-kb-dialog", () => ({
   ),
 }));
 
+vi.mock("@/components/admin/agent-foundation-model-select", () => ({
+  AgentFoundationModelSelect: ({ value }: { value: string }) => (
+    <div data-testid="agent-foundation-model-select" data-value={value} />
+  ),
+}));
+
 let capturedInstructionsProps: Record<string, unknown> | null = null;
 vi.mock("@/components/admin/instructions-section", () => ({
   InstructionsSection: (props: Record<string, unknown>) => {
@@ -188,12 +194,14 @@ describe("AgentConfigLeftPanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("does not render a VoiceLiveModelSelect component", () => {
+  it("does not render the old VoiceLiveModelSelect component (replaced by AgentFoundationModelSelect, D-14)", () => {
     render(<TestWrapper instanceId="inst-001" />);
     expect(screen.queryByTestId("model-select")).not.toBeInTheDocument();
+    // The admin:hcp.modelDeployment label is intentionally reused (D-14) as
+    // the header for the new Agent Foundation Model dropdown card.
     expect(
-      screen.queryByText("admin:hcp.modelDeployment"),
-    ).not.toBeInTheDocument();
+      screen.getByTestId("agent-foundation-model-select"),
+    ).toBeInTheDocument();
   });
 
   it("does not render a voice mode Switch toggle", () => {
