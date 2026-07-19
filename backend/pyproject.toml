@@ -67,7 +67,8 @@ include = ["app*"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 timeout = 60
-addopts = "-m 'not integration'"
+# TODO: raise to 95 per project testing standard once coverage improves (see 29-10-SUMMARY.md for baseline)
+addopts = "-m 'not integration' --cov=app --cov-fail-under=89"
 markers = [
     "integration: mark test as requiring real Azure credentials (deselect with '-m \"not integration\"')",
 ]
