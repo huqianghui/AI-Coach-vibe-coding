@@ -4,10 +4,10 @@ milestone: v1.0
 milestone_name: milestone
 status: Milestone complete
 stopped_at: Completed 28-04-PLAN.md
-last_updated: "2026-07-18T14:09:54.243Z"
+last_updated: "2026-07-19T08:33:20.926Z"
 last_activity: 2026-07-18
 progress:
-  total_phases: 30
+  total_phases: 31
   completed_phases: 26
   total_plans: 143
   completed_plans: 133
@@ -317,6 +317,7 @@ None yet.
 - Phase 26 added: Scoring Architecture Refactor — LLM primary for content (5 dimensions), CU for voice only (4 dimensions), remove mock fallback
 - Phase 26 added: Add voice-live-webrtc transport option as alternative to WebSocket (preview feature, dropdown selector, preserve existing WS default)
 - Phase 28 added: 上传资料转成 SOP Skill 并注册到 AI Foundry；培训过程中将 Skill 挂给 HCP Agent 与用户对话
+- Phase 29 added: Voice Live API 重构与适配 — SDK 1.3.0 + GA 2026-07-15、双路径架构（文本直连 Agent / 语音 Voice Live→Agent）、删 monkey-patch 与 classic agent、VoiceLiveInstance 可选化、移除 HCP 内联 voice 字段、模型目录拆分、文档与测试全面更新
 
 ### Quick Tasks Completed
 
@@ -332,6 +333,6 @@ None yet.
 ## Session Continuity
 
 Last activity: 2026-07-18
-Last session: 2026-07-18T10:49:09.459Z
+Last session: 2026-07-19T08:33:20.913Z
 Stopped at: Completed 28-04-PLAN.md
 Resume file: None
