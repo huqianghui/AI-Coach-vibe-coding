@@ -538,30 +538,22 @@ def test_resolve_voice_config_with_vl_instance():
 
 
 def test_resolve_voice_config_inline_fallback():
-    """resolve_voice_config returns inline HcpProfile fields when no VL instance."""
+    """resolve_voice_config returns a hardcoded safe-defaults dict when no VL instance
+    is assigned -- D-12: does not read any deprecated HcpProfile column (they no longer
+    exist on the model post-Plan-29-05 migration)."""
     from app.services.voice_live_instance_service import resolve_voice_config
 
-    mock_profile = MagicMock()
+    mock_profile = MagicMock(spec=["voice_live_instance", "id"])
     mock_profile.voice_live_instance = None
     mock_profile.id = "hcp-inline"
-    mock_profile.voice_live_enabled = True
-    mock_profile.voice_live_model = "gpt-4o"
-    mock_profile.voice_name = "en-US-AvaNeural"
-    mock_profile.voice_type = "azure-standard"
-    mock_profile.voice_temperature = 0.9
-    mock_profile.voice_custom = False
-    mock_profile.avatar_character = "lori"
-    mock_profile.avatar_style = "casual"
-    mock_profile.avatar_customized = False
-    mock_profile.turn_detection_type = "server_vad"
-    mock_profile.noise_suppression = False
-    mock_profile.echo_cancellation = False
-    mock_profile.eou_detection = False
-    mock_profile.recognition_language = "auto"
 
     result = resolve_voice_config(mock_profile)
 
     assert result["voice_name"] == "en-US-AvaNeural"
+    assert result["voice_live_enabled"] is False
+    assert result["avatar_enabled"] is False
+    assert result["avatar_character"] == "lori"
+    assert result["avatar_style"] == "casual"
     assert result["model_instruction"] == ""
     assert result["response_temperature"] == 0.8  # default
     assert result["custom_lexicon_enabled"] is False  # default
@@ -1045,19 +1037,9 @@ class TestRealVoiceLiveInstanceService:
         assert config["voice_live_enabled"] is True
         assert config["voice_live_model"] == "gpt-4o"
 
-    @pytest.mark.skip(
-        reason=(
-            "D-09/D-13: HcpProfile no longer has inline voice/avatar columns -- "
-            "resolve_voice_config's no-VL-instance fallback branch (in "
-            "voice_live_instance_service.py, owned by Plan 29-06) still reads "
-            "profile.voice_live_enabled/voice_name/etc. and will raise AttributeError. "
-            "voice_live_instance_id is now required at the API layer (D-13) so this "
-            "path should only be reachable for legacy rows; Plan 29-06 must update "
-            "the fallback to return safe defaults instead of reading deleted columns."
-        )
-    )
     async def test_resolve_voice_config_inline_fallback_real_db(self, db_session):
-        """resolve_voice_config returns inline HcpProfile fields when no VL instance."""
+        """resolve_voice_config returns the hardcoded safe-defaults dict when no VL
+        instance is assigned (D-12)."""
         from app.services.voice_live_instance_service import resolve_voice_config
 
         user = _seed_user(db_session)
@@ -1080,11 +1062,11 @@ class TestRealVoiceLiveInstanceService:
 
         config = resolve_voice_config(loaded_hcp)
 
-        assert config["voice_name"] == "en-US-AvaNeural"  # HcpProfile default
-        assert config["model_instruction"] == ""  # inline fallback
-        assert config["response_temperature"] == 0.8  # inline default
-        assert config["custom_lexicon_enabled"] is False  # inline default
-        assert config["voice_live_enabled"] is True  # HcpProfile default
+        assert config["voice_name"] == "en-US-AvaNeural"  # safe-defaults dict
+        assert config["model_instruction"] == ""  # safe-defaults dict
+        assert config["response_temperature"] == 0.8  # safe-defaults dict
+        assert config["custom_lexicon_enabled"] is False  # safe-defaults dict
+        assert config["voice_live_enabled"] is False  # D-12: no VL instance = voice disabled
 
     async def test_full_lifecycle_real_db(self, db_session):
         """End-to-end lifecycle: create -> assign -> update -> unassign -> delete."""
