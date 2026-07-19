@@ -388,24 +388,41 @@ async def test_create_profile_sync_failure(mock_sync, aclient, db_session):
 # ---------------------------------------------------------------------------
 
 
+def _make_vl_instance(**overrides):
+    """MagicMock VoiceLiveInstance with concrete values for every field
+    resolve_voice_config() reads (MagicMock auto-attrs are not JSON-safe)."""
+    inst = MagicMock()
+    inst.enabled = True
+    inst.voice_live_model = "gpt-4o"
+    inst.voice_name = "en-US-AvaNeural"
+    inst.voice_type = "azure-standard"
+    inst.voice_temperature = 0.9
+    inst.voice_custom = None
+    inst.avatar_character = None
+    inst.avatar_style = None
+    inst.avatar_customized = None
+    inst.turn_detection_type = "server_vad"
+    inst.noise_suppression = False
+    inst.echo_cancellation = False
+    inst.eou_detection = False
+    inst.recognition_language = None
+    inst.model_instruction = ""
+    inst.response_temperature = None
+    inst.proactive_engagement = False
+    inst.auto_detect_language = False
+    inst.playback_speed = 1.0
+    inst.custom_lexicon_enabled = False
+    inst.custom_lexicon_url = ""
+    inst.avatar_enabled = False
+    for k, v in overrides.items():
+        setattr(inst, k, v)
+    return inst
+
+
 def test_build_voice_live_metadata_basic():
-    """Standard profile produces correct Voice Live metadata JSON."""
+    """Profile with linked VoiceLiveInstance produces correct Voice Live metadata JSON."""
     profile = MagicMock()
-    profile.voice_live_instance = None  # Force inline fallback path
-    profile.voice_live_enabled = True
-    profile.voice_name = "en-US-AvaNeural"
-    profile.voice_type = "azure-standard"
-    profile.voice_temperature = 0.9
-    profile.turn_detection_type = "server_vad"
-    profile.noise_suppression = False
-    profile.echo_cancellation = False
-    profile.eou_detection = False
-    profile.voice_live_model = "gpt-4o"
-    profile.voice_custom = None
-    profile.avatar_character = None
-    profile.avatar_style = None
-    profile.avatar_customized = None
-    profile.recognition_language = None
+    profile.voice_live_instance = _make_vl_instance()
 
     result = build_voice_live_metadata(profile)
 
@@ -434,21 +451,13 @@ def test_build_voice_live_metadata_basic():
 def test_build_voice_live_metadata_with_noise_echo():
     """Noise suppression and echo cancellation flags appear in metadata."""
     profile = MagicMock()
-    profile.voice_live_instance = None  # Force inline fallback path
-    profile.voice_live_enabled = True
-    profile.voice_name = "en-US-JennyNeural"
-    profile.voice_type = "azure-standard"
-    profile.voice_temperature = 0.7
-    profile.turn_detection_type = "server_vad"
-    profile.noise_suppression = True
-    profile.echo_cancellation = True
-    profile.eou_detection = True
-    profile.voice_live_model = "gpt-4o"
-    profile.voice_custom = None
-    profile.avatar_character = None
-    profile.avatar_style = None
-    profile.avatar_customized = None
-    profile.recognition_language = None
+    profile.voice_live_instance = _make_vl_instance(
+        voice_name="en-US-JennyNeural",
+        voice_temperature=0.7,
+        noise_suppression=True,
+        echo_cancellation=True,
+        eou_detection=True,
+    )
 
     result = build_voice_live_metadata(profile)
 
@@ -518,21 +527,10 @@ def test_chunk_metadata_value_long():
 def test_build_voice_live_metadata_custom_voice():
     """Custom voice type omits temperature field."""
     profile = MagicMock()
-    profile.voice_live_instance = None  # Force inline fallback path
-    profile.voice_live_enabled = True
-    profile.voice_name = "my-custom-voice"
-    profile.voice_type = "custom-neural"
-    profile.voice_temperature = 0.9
-    profile.turn_detection_type = "server_vad"
-    profile.noise_suppression = False
-    profile.echo_cancellation = False
-    profile.eou_detection = False
-    profile.voice_live_model = "gpt-4o"
-    profile.voice_custom = None
-    profile.avatar_character = None
-    profile.avatar_style = None
-    profile.avatar_customized = None
-    profile.recognition_language = None
+    profile.voice_live_instance = _make_vl_instance(
+        voice_name="my-custom-voice",
+        voice_type="custom-neural",
+    )
 
     result = build_voice_live_metadata(profile)
 

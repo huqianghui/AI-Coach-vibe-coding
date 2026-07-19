@@ -59,32 +59,39 @@ def _make_mock_avatar_config():
 
 
 def _make_mock_hcp_profile():
-    """Create a mock HCP profile with per-HCP voice/avatar settings."""
+    """Create a mock HCP profile with a linked VoiceLiveInstance carrying
+    per-HCP voice/avatar settings (inline HcpProfile columns were dropped)."""
     profile = MagicMock()
     profile.agent_id = "asst_test123"
     profile.agent_sync_status = "synced"
-    # VoiceLiveInstance reference — None to use inline fields (fallback path)
-    profile.voice_live_instance_id = None
-    profile.voice_live_instance = None
-    # Voice Live flags
-    profile.voice_live_enabled = True
-    profile.voice_live_model = "gpt-4o-realtime-preview"
-    # Voice settings
-    profile.voice_name = "zh-CN-YunxiNeural"
-    profile.voice_type = "azure-standard"
-    profile.voice_temperature = 0.7
-    profile.voice_custom = False
-    # Avatar settings
-    profile.avatar_character = "harry"
-    profile.avatar_style = "business"
-    profile.avatar_customized = False
-    # Conversation parameters
-    profile.turn_detection_type = "azure_semantic_vad"
-    profile.noise_suppression = True
-    profile.echo_cancellation = False
-    profile.eou_detection = False
-    profile.recognition_language = "zh-CN"
     profile.agent_instructions_override = ""
+
+    inst = MagicMock()
+    inst.enabled = True
+    inst.voice_live_model = "gpt-4o-realtime-preview"
+    inst.voice_name = "zh-CN-YunxiNeural"
+    inst.voice_type = "azure-standard"
+    inst.voice_temperature = 0.7
+    inst.voice_custom = False
+    inst.avatar_character = "harry"
+    inst.avatar_style = "business"
+    inst.avatar_customized = False
+    inst.turn_detection_type = "azure_semantic_vad"
+    inst.noise_suppression = True
+    inst.echo_cancellation = False
+    inst.eou_detection = False
+    inst.recognition_language = "zh-CN"
+    inst.model_instruction = ""
+    inst.response_temperature = None
+    inst.proactive_engagement = False
+    inst.auto_detect_language = False
+    inst.playback_speed = 1.0
+    inst.custom_lexicon_enabled = False
+    inst.custom_lexicon_url = ""
+    inst.avatar_enabled = True
+
+    profile.voice_live_instance_id = "vl-inst-test-1"
+    profile.voice_live_instance = inst
     return profile
 
 
