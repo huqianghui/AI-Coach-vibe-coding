@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useEffect } from "react";
 import { useForm, FormProvider } from "react-hook-form";
 import type { VoiceLiveInstance } from "@/types/voice-live";
 import type { HcpFormValues } from "@/pages/admin/hcp-profile-editor";
@@ -74,9 +75,20 @@ vi.mock("@/hooks/use-voice-live-instances", () => ({
   }),
 }));
 
-vi.mock("@/components/admin/voice-live-model-select", () => ({
-  VoiceLiveModelSelect: ({ value }: { value: string }) => (
-    <div data-testid="model-select">{value}</div>
+let mockKbConfigs: Array<{ id: string; index_name: string }> = [];
+const mockRemoveKbMutate = vi.fn();
+
+vi.mock("@/hooks/use-knowledge-base", () => ({
+  useHcpKnowledgeConfigs: () => ({ data: mockKbConfigs }),
+  useRemoveKnowledgeConfig: () => ({
+    mutate: mockRemoveKbMutate,
+    isPending: false,
+  }),
+}));
+
+vi.mock("@/components/admin/connect-kb-dialog", () => ({
+  ConnectKbDialog: ({ open }: { open: boolean }) => (
+    <div data-testid="connect-kb-dialog" data-open={open} />
   ),
 }));
 
@@ -94,17 +106,15 @@ import { AgentConfigLeftPanel } from "./agent-config-left-panel";
 function TestWrapper({
   instanceId = null,
   isNew = false,
-  voiceModeEnabled = false,
   profile,
-  onVoiceModeChange,
   onAutoInstructionsChange,
+  withValidationError = false,
 }: {
   instanceId?: string | null;
   isNew?: boolean;
-  voiceModeEnabled?: boolean;
   profile?: { id: string; name: string };
-  onVoiceModeChange?: (enabled: boolean) => void;
   onAutoInstructionsChange?: (instructions: string) => void;
+  withValidationError?: boolean;
 }) {
   const form = useForm<HcpFormValues>({
     defaultValues: {
@@ -122,23 +132,19 @@ function TestWrapper({
       probe_topics: [],
       difficulty: "medium",
       voice_live_instance_id: instanceId,
-      voice_live_enabled: true,
-      voice_live_model: "gpt-4o",
-      voice_name: "",
-      voice_type: "",
-      voice_temperature: 0.9,
-      voice_custom: false,
-      avatar_character: "",
-      avatar_style: "",
-      avatar_customized: false,
-      turn_detection_type: "server_vad",
-      noise_suppression: false,
-      echo_cancellation: false,
-      eou_detection: false,
-      recognition_language: "auto",
       agent_instructions_override: "",
     },
   });
+
+  useEffect(() => {
+    if (withValidationError) {
+      form.setError("voice_live_instance_id", {
+        type: "custom",
+        message: "hcp.vlInstanceValidationError",
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <FormProvider {...form}>
@@ -146,8 +152,6 @@ function TestWrapper({
         form={form}
         profile={profile as never}
         isNew={isNew}
-        voiceModeEnabled={voiceModeEnabled}
-        onVoiceModeChange={onVoiceModeChange ?? vi.fn()}
         onAutoInstructionsChange={onAutoInstructionsChange}
       />
     </FormProvider>
@@ -159,63 +163,56 @@ describe("AgentConfigLeftPanel", () => {
     vi.clearAllMocks();
     capturedInstructionsProps = null;
     mockInstances = [MOCK_INSTANCE];
+    mockKbConfigs = [];
   });
 
-  // ── Rendering ───────────────────────────────────────────────
-  it("renders model deployment section", () => {
-    render(<TestWrapper />);
-    expect(screen.getByText("admin:hcp.modelDeployment")).toBeInTheDocument();
-    expect(screen.getByTestId("model-select")).toBeInTheDocument();
+  // ── D-11: VL Instance Summary Card ────────────────────────
+  it("shows assigned-state badges when an instance is selected", () => {
+    render(<TestWrapper instanceId="inst-001" />);
+    expect(screen.getAllByText("Test Voice Config").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("gpt-4o").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("en-US-AvaNeural").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("lisa · casual").length).toBeGreaterThan(0);
   });
 
-  it("renders voice mode toggle", () => {
-    render(<TestWrapper />);
-    expect(screen.getByText("admin:hcp.voiceModeToggle")).toBeInTheDocument();
-    expect(screen.getByText("admin:hcp.voiceModeDescription")).toBeInTheDocument();
-  });
-
-  it("renders instructions section", () => {
-    render(<TestWrapper />);
-    expect(screen.getByTestId("instructions-section")).toBeInTheDocument();
-  });
-
-  it("renders knowledge & tools section", () => {
-    render(<TestWrapper />);
-    expect(screen.getByText("admin:hcp.knowledgeAndTools")).toBeInTheDocument();
-  });
-
-  // ── Voice Mode Toggle ──────────────────────────────────────
-  it("calls onVoiceModeChange when toggle is clicked", async () => {
-    const user = userEvent.setup();
-    const onVoiceModeChange = vi.fn();
-    render(
-      <TestWrapper
-        voiceModeEnabled={false}
-        onVoiceModeChange={onVoiceModeChange}
-      />,
-    );
-    const toggle = screen.getByRole("switch", {
-      name: "admin:hcp.voiceModeToggle",
-    });
-    await user.click(toggle);
-    expect(onVoiceModeChange).toHaveBeenCalledWith(true);
-  });
-
-  // ── Voice Mode enabled UI ─────────────────────────────────
-  it("shows VL instance select when voice mode is enabled", () => {
-    render(<TestWrapper voiceModeEnabled={true} />);
-    expect(screen.getByText("admin:hcp.vlInstanceLabel")).toBeInTheDocument();
-  });
-
-  it("hides VL instance select when voice mode is disabled", () => {
-    render(<TestWrapper voiceModeEnabled={false} />);
+  it("shows empty-state title, required badge, and body when no instance is assigned", () => {
+    render(<TestWrapper instanceId={null} />);
     expect(
-      screen.queryByText("admin:hcp.vlInstanceLabel"),
+      screen.getByText("admin:hcp.vlInstanceEmptyTitle"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("admin:hcp.vlInstanceRequiredBadge"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("admin:hcp.vlInstanceEmptyBody"),
+    ).toBeInTheDocument();
+  });
+
+  it("does not render a VoiceLiveModelSelect component", () => {
+    render(<TestWrapper instanceId="inst-001" />);
+    expect(screen.queryByTestId("model-select")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("admin:hcp.modelDeployment"),
     ).not.toBeInTheDocument();
   });
 
-  it("shows VL management link when voice mode is enabled", () => {
-    render(<TestWrapper voiceModeEnabled={true} />);
+  it("does not render a voice mode Switch toggle", () => {
+    render(<TestWrapper instanceId="inst-001" />);
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("admin:hcp.voiceModeToggle"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders inline validation error when voice_live_instance_id has a form error", () => {
+    render(<TestWrapper instanceId={null} withValidationError />);
+    expect(
+      screen.getByText("admin:hcp.vlInstanceValidationError"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows VL management link", () => {
+    render(<TestWrapper />);
     expect(
       screen.getByText("admin:voiceLive.goToVlManagement"),
     ).toBeInTheDocument();
@@ -223,12 +220,11 @@ describe("AgentConfigLeftPanel", () => {
 
   it("navigates to VL management when link is clicked", async () => {
     const user = userEvent.setup();
-    render(<TestWrapper voiceModeEnabled={true} />);
+    render(<TestWrapper />);
     await user.click(screen.getByText("admin:voiceLive.goToVlManagement"));
     expect(mockNavigate).toHaveBeenCalledWith("/admin/voice-live");
   });
 
-  // ── New profile hint ──────────────────────────────────────
   it("shows disabled hint for new profiles", () => {
     render(<TestWrapper isNew={true} />);
     expect(
@@ -243,45 +239,74 @@ describe("AgentConfigLeftPanel", () => {
     ).not.toBeInTheDocument();
   });
 
-  // ── Remove instance button ────────────────────────────────
+  // ── Remove instance button + dialog (D-11 unassign flow) ──
   it("shows remove button (X) when instance is selected", () => {
-    render(
-      <TestWrapper
-        instanceId="inst-001"
-        voiceModeEnabled={true}
-      />,
-    );
+    render(<TestWrapper instanceId="inst-001" />);
     expect(
       screen.getByTitle("admin:voiceLive.removeInstance"),
     ).toBeInTheDocument();
   });
 
   it("does not show remove button when no instance is selected", () => {
-    render(
-      <TestWrapper
-        instanceId={null}
-        voiceModeEnabled={true}
-      />,
-    );
+    render(<TestWrapper instanceId={null} />);
     expect(
       screen.queryByTitle("admin:voiceLive.removeInstance"),
     ).not.toBeInTheDocument();
   });
 
+  it("shows remove confirmation dialog when X button is clicked", async () => {
+    const user = userEvent.setup();
+    render(
+      <TestWrapper
+        instanceId="inst-001"
+        profile={{ id: "hcp-1", name: "Dr. Test" }}
+      />,
+    );
+
+    await user.click(screen.getByTitle("admin:voiceLive.removeInstance"));
+    const removeTexts = screen.getAllByText("admin:voiceLive.removeInstance");
+    expect(removeTexts.length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText("common:cancel")).toBeInTheDocument();
+  });
+
+  it("calls unassign mutation when remove is confirmed", async () => {
+    const user = userEvent.setup();
+    render(
+      <TestWrapper
+        instanceId="inst-001"
+        profile={{ id: "hcp-1", name: "Dr. Test" }}
+      />,
+    );
+
+    await user.click(screen.getByTitle("admin:voiceLive.removeInstance"));
+    const removeButtons = screen.getAllByText(
+      "admin:voiceLive.removeInstance",
+    );
+    // Second occurrence is the destructive confirm button inside the dialog
+    await user.click(removeButtons[1]!.closest("button")!);
+    expect(mockUnassignMutate).toHaveBeenCalledWith(
+      "hcp-1",
+      expect.objectContaining({
+        onSuccess: expect.any(Function),
+        onError: expect.any(Function),
+      }),
+    );
+  });
+
   // ── Knowledge & Tools expand/collapse ─────────────────────
+  it("renders knowledge & tools section", () => {
+    render(<TestWrapper />);
+    expect(screen.getByText("admin:hcp.knowledgeAndTools")).toBeInTheDocument();
+  });
+
   it("expands knowledge & tools section when header is clicked", async () => {
     const user = userEvent.setup();
     render(<TestWrapper />);
-    // Initially collapsed — placeholders should not be visible
     expect(
-      screen.queryByText("admin:hcp.knowledgePlaceholder"),
+      screen.queryByText("admin:hcp.toolsPlaceholder"),
     ).not.toBeInTheDocument();
 
-    // Click to expand
     await user.click(screen.getByText("admin:hcp.knowledgeAndTools"));
-    expect(
-      screen.getByText("admin:hcp.knowledgePlaceholder"),
-    ).toBeInTheDocument();
     expect(
       screen.getByText("admin:hcp.toolsPlaceholder"),
     ).toBeInTheDocument();
@@ -292,45 +317,21 @@ describe("AgentConfigLeftPanel", () => {
     render(<TestWrapper />);
     const header = screen.getByText("admin:hcp.knowledgeAndTools");
 
-    // Expand
     await user.click(header);
     expect(
-      screen.getByText("admin:hcp.knowledgePlaceholder"),
+      screen.getByText("admin:hcp.toolsPlaceholder"),
     ).toBeInTheDocument();
 
-    // Collapse
     await user.click(header);
     expect(
-      screen.queryByText("admin:hcp.knowledgePlaceholder"),
+      screen.queryByText("admin:hcp.toolsPlaceholder"),
     ).not.toBeInTheDocument();
-  });
-
-  // ── Remove Dialog ─────────────────────────────────────────
-  it("shows remove confirmation dialog when X button is clicked", async () => {
-    const user = userEvent.setup();
-    render(
-      <TestWrapper
-        instanceId="inst-001"
-        voiceModeEnabled={true}
-        profile={{ id: "hcp-1", name: "Dr. Test" }}
-      />,
-    );
-
-    await user.click(screen.getByTitle("admin:voiceLive.removeInstance"));
-    // Dialog has both title and button with same key, so check for multiple
-    const removeTexts = screen.getAllByText("admin:voiceLive.removeInstance");
-    // At least 2: the dialog title + the destructive button inside dialog
-    expect(removeTexts.length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByText("common:cancel")).toBeInTheDocument();
   });
 
   // ── Instructions section props ────────────────────────────
   it("passes form and profileId to InstructionsSection", () => {
     render(
-      <TestWrapper
-        isNew={false}
-        profile={{ id: "hcp-1", name: "Dr. Test" }}
-      />,
+      <TestWrapper isNew={false} profile={{ id: "hcp-1", name: "Dr. Test" }} />,
     );
     expect(capturedInstructionsProps).toBeTruthy();
     expect(capturedInstructionsProps!.profileId).toBe("hcp-1");

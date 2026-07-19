@@ -105,20 +105,6 @@ function TestWrapper({
       probe_topics: [],
       difficulty: "medium",
       voice_live_instance_id: instanceId,
-      voice_live_enabled: true,
-      voice_live_model: "gpt-4o",
-      voice_name: "en-US-AvaNeural",
-      voice_type: "azure-standard",
-      voice_temperature: 0.9,
-      voice_custom: false,
-      avatar_character: "lisa",
-      avatar_style: "casual",
-      avatar_customized: false,
-      turn_detection_type: "server_vad",
-      noise_suppression: false,
-      echo_cancellation: false,
-      eou_detection: false,
-      recognition_language: "auto",
       agent_instructions_override: "",
     },
   });
@@ -147,11 +133,12 @@ describe("VoiceAvatarTab (two-panel layout)", () => {
     expect(screen.getByTestId("playground-preview-panel")).toBeInTheDocument();
   });
 
-  it("passes form, isNew, and voiceModeEnabled to AgentConfigLeftPanel", () => {
+  it("passes form, isNew, and onAutoInstructionsChange to AgentConfigLeftPanel", () => {
     render(<TestWrapper instanceId="inst-001" isNew={false} />);
     expect(capturedLeftPanelProps).toBeTruthy();
     expect(capturedLeftPanelProps!.isNew).toBe(false);
-    expect(typeof capturedLeftPanelProps!.onVoiceModeChange).toBe("function");
+    expect(capturedLeftPanelProps!.voiceModeEnabled).toBeUndefined();
+    expect(capturedLeftPanelProps!.onVoiceModeChange).toBeUndefined();
     expect(typeof capturedLeftPanelProps!.onAutoInstructionsChange).toBe("function");
   });
 
@@ -196,17 +183,13 @@ describe("VoiceAvatarTab (two-panel layout)", () => {
     expect(capturedPlaygroundProps!.agentId).toBe("agent-1");
   });
 
-  it("initializes voiceModeEnabled=true when form has a voice_live_instance_id", () => {
+  it("derives voiceModeEnabled=true for PlaygroundPreviewPanel from a bound VL instance (D-11)", () => {
     render(<TestWrapper instanceId="inst-001" />);
-    expect(capturedLeftPanelProps).toBeTruthy();
-    expect(capturedLeftPanelProps!.voiceModeEnabled).toBe(true);
     expect(capturedPlaygroundProps!.voiceModeEnabled).toBe(true);
   });
 
-  it("initializes voiceModeEnabled=false when form has no voice_live_instance_id", () => {
+  it("derives voiceModeEnabled=false for PlaygroundPreviewPanel when no VL instance is bound (D-11)", () => {
     render(<TestWrapper instanceId={null} />);
-    expect(capturedLeftPanelProps).toBeTruthy();
-    expect(capturedLeftPanelProps!.voiceModeEnabled).toBe(false);
     expect(capturedPlaygroundProps!.voiceModeEnabled).toBe(false);
   });
 });

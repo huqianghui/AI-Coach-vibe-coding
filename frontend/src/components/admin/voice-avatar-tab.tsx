@@ -13,11 +13,6 @@ interface VoiceAvatarTabProps {
 }
 
 export function VoiceAvatarTab({ form, profile, isNew }: VoiceAvatarTabProps) {
-  // Lift voiceModeEnabled up so Playground can switch between text chat and voice mode
-  const [voiceModeEnabled, setVoiceModeEnabled] = useState(
-    Boolean(form.getValues("voice_live_instance_id")),
-  );
-
   // Auto-generated instructions from InstructionsSection (used as fallback systemPrompt)
   const [autoInstructions, setAutoInstructions] = useState("");
   const handleAutoInstructionsChange = useCallback((instructions: string) => {
@@ -29,6 +24,8 @@ export function VoiceAvatarTab({ form, profile, isNew }: VoiceAvatarTabProps) {
   const instances = data?.items ?? [];
   const vlInstanceId = form.watch("voice_live_instance_id");
   const selectedInstance = instances.find((i) => i.id === vlInstanceId);
+  // Voice mode is implied solely by having an assigned VL Instance (D-11)
+  const voiceModeEnabled = Boolean(vlInstanceId);
 
   // systemPrompt: use override if set, otherwise use auto-generated instructions
   const overridePrompt = form.watch("agent_instructions_override");
@@ -42,8 +39,6 @@ export function VoiceAvatarTab({ form, profile, isNew }: VoiceAvatarTabProps) {
           form={form}
           profile={profile}
           isNew={isNew}
-          voiceModeEnabled={voiceModeEnabled}
-          onVoiceModeChange={setVoiceModeEnabled}
           onAutoInstructionsChange={handleAutoInstructionsChange}
         />
       </div>

@@ -33,8 +33,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { VoiceLiveModelSelect } from "@/components/admin/voice-live-model-select";
 import { InstructionsSection } from "@/components/admin/instructions-section";
 import { ConnectKbDialog } from "@/components/admin/connect-kb-dialog";
 import {
@@ -53,8 +51,6 @@ interface AgentConfigLeftPanelProps {
   form: UseFormReturn<HcpFormValues>;
   profile?: HcpProfile;
   isNew: boolean;
-  voiceModeEnabled: boolean;
-  onVoiceModeChange: (enabled: boolean) => void;
   onAutoInstructionsChange?: (instructions: string) => void;
 }
 
@@ -62,8 +58,6 @@ export function AgentConfigLeftPanel({
   form,
   profile,
   isNew,
-  voiceModeEnabled,
-  onVoiceModeChange,
   onAutoInstructionsChange,
 }: AgentConfigLeftPanelProps) {
   const { t } = useTranslation(["admin", "common"]);
@@ -86,31 +80,23 @@ export function AgentConfigLeftPanel({
 
   // --- VL Instance assign/unassign logic (migrated from voice-avatar-tab.tsx) ---
   const handleInstanceChange = (value: string) => {
-    if (value === "__none__") {
-      if (currentId && profile?.id) {
-        setShowRemoveDialog(true);
-      } else {
-        form.setValue("voice_live_instance_id", null, { shouldDirty: true });
-      }
-    } else {
-      if (profile?.id) {
-        assignMutation.mutate(
-          { instanceId: value, hcpProfileId: profile.id },
-          {
-            onSuccess: () => {
-              form.setValue("voice_live_instance_id", value, {
-                shouldDirty: true,
-              });
-              toast.success(t("admin:voiceLive.instanceAssigned"));
-            },
-            onError: () => {
-              toast.error(t("admin:voiceLive.assignError"));
-            },
+    if (profile?.id) {
+      assignMutation.mutate(
+        { instanceId: value, hcpProfileId: profile.id },
+        {
+          onSuccess: () => {
+            form.setValue("voice_live_instance_id", value, {
+              shouldDirty: true,
+            });
+            toast.success(t("admin:voiceLive.instanceAssigned"));
           },
-        );
-      } else {
-        form.setValue("voice_live_instance_id", value, { shouldDirty: true });
-      }
+          onError: () => {
+            toast.error(t("admin:voiceLive.assignError"));
+          },
+        },
+      );
+    } else {
+      form.setValue("voice_live_instance_id", value, { shouldDirty: true });
     }
   };
 
@@ -129,104 +115,99 @@ export function AgentConfigLeftPanel({
     });
   };
 
-  const handleVoiceModeToggle = (checked: boolean) => {
-    onVoiceModeChange(checked);
-    if (!checked) {
-      form.setValue("voice_live_instance_id", null, { shouldDirty: true });
-    }
-  };
-
   return (
     <div className="space-y-4">
-      {/* 1. Model Deployment */}
-      <Card>
-        <CardContent className="pt-4 pb-3">
-          <Label className="text-xs font-semibold">
-            {t("admin:hcp.modelDeployment")}
-          </Label>
-          <div className="mt-2">
-            <VoiceLiveModelSelect
-              value={form.watch("voice_live_model")}
-              onValueChange={(v) => form.setValue("voice_live_model", v)}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 2. Voice Mode */}
+      {/* 1. VL Instance Summary (D-11) */}
       <Card>
         <CardContent className="pt-4 pb-3 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label className="text-xs font-semibold">
-                {t("admin:hcp.voiceModeToggle")}
-              </Label>
+          <Label className="text-xs font-semibold">
+            {t("admin:hcp.vlInstanceLabel")}
+          </Label>
+
+          {currentId && selectedInstance ? (
+            <div className="space-y-2">
+              <p className="text-sm font-semibold truncate">
+                {selectedInstance.name}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                <Badge variant="secondary" className="text-[10px]">
+                  {selectedInstance.voice_live_model}
+                </Badge>
+                <Badge variant="secondary" className="text-[10px]">
+                  {selectedInstance.voice_name}
+                </Badge>
+                <Badge variant="secondary" className="text-[10px]">
+                  {selectedInstance.avatar_character} · {selectedInstance.avatar_style}
+                </Badge>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <div className="flex items-center gap-1.5">
+                <p className="text-xs font-semibold text-muted-foreground">
+                  {t("admin:hcp.vlInstanceEmptyTitle")}
+                </p>
+                <Badge variant="destructive" className="text-[10px]">
+                  {t("admin:hcp.vlInstanceRequiredBadge")}
+                </Badge>
+              </div>
               <p className="text-[10px] text-muted-foreground">
-                {t("admin:hcp.voiceModeDescription")}
+                {t("admin:hcp.vlInstanceEmptyBody")}
               </p>
             </div>
-            <Switch
-              checked={voiceModeEnabled}
-              onCheckedChange={handleVoiceModeToggle}
-              aria-label={t("admin:hcp.voiceModeToggle")}
-            />
+          )}
+
+          <div className="flex items-center gap-2">
+            <Select
+              value={currentId ?? undefined}
+              onValueChange={handleInstanceChange}
+              disabled={isNew}
+            >
+              <SelectTrigger className="h-9 text-sm flex-1 min-w-0 truncate">
+                <SelectValue placeholder={t("admin:hcp.vlInstanceRequired")} />
+              </SelectTrigger>
+              <SelectContent>
+                {instances.map((inst) => (
+                  <SelectItem key={inst.id} value={inst.id}>
+                    <span className="flex items-center gap-1.5 max-w-full">
+                      <span className="truncate">{inst.name}</span>
+                      <Badge variant="secondary" className="text-[10px] shrink-0">
+                        {inst.voice_live_model}
+                      </Badge>
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {currentId && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-9 shrink-0 text-muted-foreground hover:text-destructive"
+                onClick={() => setShowRemoveDialog(true)}
+                title={t("admin:voiceLive.removeInstance")}
+                aria-label={t("admin:voiceLive.removeInstance")}
+              >
+                <X className="size-4" />
+              </Button>
+            )}
           </div>
 
-          {voiceModeEnabled && (
-            <div className="space-y-2 pt-1">
-              <Label className="text-xs text-muted-foreground">
-                {t("admin:hcp.vlInstanceLabel")}
-              </Label>
-              <div className="flex items-center gap-2">
-                <Select
-                  value={currentId ?? "__none__"}
-                  onValueChange={handleInstanceChange}
-                  disabled={isNew}
-                >
-                  <SelectTrigger className="h-9 text-sm flex-1 min-w-0 truncate">
-                    <SelectValue
-                      placeholder={t("admin:hcp.vlInstanceNone")}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">
-                      {t("admin:hcp.vlInstanceNone")}
-                    </SelectItem>
-                    {instances.map((inst) => (
-                      <SelectItem key={inst.id} value={inst.id}>
-                        <span className="flex items-center gap-1.5 max-w-full">
-                          <span className="truncate">{inst.name}</span>
-                          <Badge variant="secondary" className="text-[10px] shrink-0">
-                            {inst.voice_live_model}
-                          </Badge>
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {currentId && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="size-9 shrink-0 text-muted-foreground hover:text-destructive"
-                    onClick={() => setShowRemoveDialog(true)}
-                    title={t("admin:voiceLive.removeInstance")}
-                  >
-                    <X className="size-4" />
-                  </Button>
-                )}
-              </div>
-              <Button
-                variant="link"
-                size="sm"
-                className="h-auto p-0 text-xs"
-                onClick={() => navigate("/admin/voice-live")}
-              >
-                <ExternalLink className="size-3 mr-1" />
-                {t("admin:voiceLive.goToVlManagement")}
-              </Button>
-            </div>
+          {form.formState.errors.voice_live_instance_id && (
+            <p className="text-destructive text-sm">
+              {t("admin:hcp.vlInstanceValidationError")}
+            </p>
           )}
+
+          <Button
+            variant="link"
+            size="sm"
+            className="h-auto p-0 text-xs"
+            onClick={() => navigate("/admin/voice-live")}
+          >
+            <ExternalLink className="size-3 mr-1" />
+            {t("admin:voiceLive.goToVlManagement")}
+          </Button>
 
           {isNew && (
             <p className="text-[10px] text-muted-foreground">
@@ -236,7 +217,7 @@ export function AgentConfigLeftPanel({
         </CardContent>
       </Card>
 
-      {/* 3. Instructions Section */}
+      {/* 2. Instructions Section */}
       <InstructionsSection
         form={form}
         profileId={profile?.id}
@@ -244,7 +225,7 @@ export function AgentConfigLeftPanel({
         onAutoInstructionsChange={onAutoInstructionsChange}
       />
 
-      {/* 4. Knowledge & Tools (collapsible skeleton) */}
+      {/* 3. Knowledge & Tools (collapsible skeleton) */}
       <Card>
         <CardHeader
           className="cursor-pointer select-none pb-2"
