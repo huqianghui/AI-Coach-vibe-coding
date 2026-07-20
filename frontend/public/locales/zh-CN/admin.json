@@ -121,6 +121,7 @@
     "foundationModelLoading": "正在加载模型列表…",
     "foundationModelError": "加载模型列表失败",
     "foundationModelEmpty": "当前 AI Foundry 项目未部署可用模型",
+    "foundationModelStale": "当前显示缓存的模型列表 -- 暂时无法从 AI Foundry 刷新",
     "voiceModeToggle": "切换到语音优先体验",
     "voiceModeDescription": "启用 Voice Live 实现与此 Agent 的实时语音交互",
     "vlInstanceLabel": "Voice Live 实例",

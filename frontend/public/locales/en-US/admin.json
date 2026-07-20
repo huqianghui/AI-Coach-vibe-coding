@@ -121,6 +121,7 @@
     "foundationModelLoading": "Loading model list…",
     "foundationModelError": "Failed to load model list",
     "foundationModelEmpty": "No deployed models available in the current AI Foundry project",
+    "foundationModelStale": "Showing cached model list -- unable to refresh from AI Foundry right now",
     "voiceModeToggle": "Switch to voice-first experience",
     "voiceModeDescription": "Enable Voice Live for real-time voice interaction with this agent",
     "vlInstanceLabel": "Voice Live Instance",

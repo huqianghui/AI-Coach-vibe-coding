@@ -35,7 +35,9 @@ export function AgentFoundationModelSelect({
     );
   }
 
-  if (isError || data?.error) {
+  const models = data?.models ?? [];
+
+  if (isError || (data?.error && models.length === 0)) {
     return (
       <div className="flex items-center gap-2">
         <p className="text-xs text-destructive flex-1">
@@ -54,8 +56,6 @@ export function AgentFoundationModelSelect({
     );
   }
 
-  const models = data?.models ?? [];
-
   if (models.length === 0) {
     return (
       <p className="text-xs text-muted-foreground">
@@ -65,17 +65,24 @@ export function AgentFoundationModelSelect({
   }
 
   return (
-    <Select value={value} onValueChange={onValueChange} disabled={disabled}>
-      <SelectTrigger className="h-8 text-xs">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {models.map((model) => (
-          <SelectItem key={model.id} value={model.id}>
-            {model.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <div className="flex flex-col gap-1">
+      <Select value={value} onValueChange={onValueChange} disabled={disabled}>
+        <SelectTrigger className="h-8 text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {models.map((model) => (
+            <SelectItem key={model.id} value={model.id}>
+              {model.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {data?.stale && (
+        <p className="text-[10px] text-amber-600 dark:text-amber-400">
+          {t("hcp.foundationModelStale")}
+        </p>
+      )}
+    </div>
   );
 }
