@@ -19,16 +19,26 @@ let accessToken = "";
 let adminToken = "";
 let backendAvailable = false;
 
+interface VoiceLiveInstanceSummary {
+  id: string;
+  name: string;
+  voice_name: string;
+  voice_type: string;
+  avatar_character: string;
+  avatar_style: string;
+  avatar_enabled: boolean;
+}
+
 interface HcpProfile {
   id: string;
   name: string;
-  avatar_character: string;
-  avatar_style: string;
-  voice_name: string;
-  voice_type: string;
   agent_id?: string;
   agent_sync_status?: string;
   is_active: boolean;
+  // Voice/avatar config now lives on the linked Voice Live Instance --
+  // Phase 29 dropped the 14 inline voice/avatar columns from HCP profiles.
+  voice_live_instance_id?: string | null;
+  voice_live_instance?: VoiceLiveInstanceSummary | null;
 }
 
 interface VoiceLiveTokenResponse {
@@ -205,9 +215,11 @@ describe("Voice Live Token API — Real Backend Integration", () => {
 
     const profiles = await getHcpProfiles(adminToken);
 
-    // Find an HCP with avatar enabled
+    // Find an HCP with avatar enabled via its linked Voice Live Instance
     const avatarProfile = profiles.items.find(
-      (p) => p.avatar_character && p.avatar_character.length > 0,
+      (p) =>
+        p.voice_live_instance?.avatar_character &&
+        p.voice_live_instance.avatar_character.length > 0,
     );
 
     if (!avatarProfile) {
