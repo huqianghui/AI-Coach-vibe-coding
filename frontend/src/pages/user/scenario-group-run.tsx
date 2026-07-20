@@ -19,7 +19,7 @@ const TRAINING_MODES = [
   { value: "digital_human_realtime_model", label: "数字人", icon: User },
 ] as const;
 
-function getAvailableModes(
+export function getAvailableModes(
   scenario: Scenario | null | undefined,
   features:
     | {
@@ -39,9 +39,11 @@ function getAvailableModes(
         features?.voice_live_enabled &&
           features?.avatar_enabled &&
           hcp?.voice_live_instance?.enabled &&
-          hcp?.avatar_enabled,
+          hcp?.voice_live_instance?.avatar_enabled,
       )
-    : Boolean(voiceAvailable && features?.avatar_enabled && hcp?.avatar_enabled);
+    : Boolean(
+        voiceAvailable && features?.avatar_enabled && hcp?.voice_live_instance?.avatar_enabled,
+      );
 
   if (voiceAvailable) {
     modes.push("voice_realtime_model");
