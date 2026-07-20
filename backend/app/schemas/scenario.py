@@ -1,10 +1,6 @@
 """Scenario request/response schemas."""
 
-from datetime import datetime
-
-from pydantic import BaseModel, ConfigDict, Field
-
-from app.schemas.voice_live_instance import VoiceLiveInstanceSummary
+from pydantic import BaseModel, Field
 
 
 class ModeratorRemarks(BaseModel):
@@ -52,48 +48,3 @@ class ScenarioUpdate(BaseModel):
     conference_prompt_config: ConferencePromptConfig | None = None
     skill_id: str | None = None
     pass_threshold: int | None = None
-
-
-class HcpProfileSummary(BaseModel):
-    """Lightweight HCP profile embedded in scenario response (avatar metadata).
-
-    NOTE: not used as any router response_model as of Phase 30 -- see
-    backend/app/api/scenarios.py::HcpProfileBrief for the live equivalent.
-    Kept in sync for consistency.
-    """
-
-    id: str
-    name: str
-    specialty: str
-    avatar_url: str = ""
-    personality_type: str = "friendly"
-    voice_live_instance_id: str | None = None
-    voice_live_instance: VoiceLiveInstanceSummary | None = None
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class ScenarioResponse(BaseModel):
-    """Scenario response with all fields."""
-
-    id: str
-    name: str
-    description: str
-    tags: str  # JSON string from DB
-    mode: str
-    difficulty: str
-    status: str
-    hcp_profile_id: str
-    hcp_profile: HcpProfileSummary | None = None
-    key_messages: str  # JSON string from DB
-    conference_prompt_config: str
-    conference_prompt_version: int = 1
-    skill_id: str
-    skill_version_id: str | None = None
-    rubric_id: str
-    pass_threshold: int
-    created_by: str
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)

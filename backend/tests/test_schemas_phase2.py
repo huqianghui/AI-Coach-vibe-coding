@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas.hcp_profile import HcpProfileCreate, HcpProfileResponse, HcpProfileUpdate
-from app.schemas.scenario import ScenarioCreate, ScenarioResponse, ScenarioUpdate
+from app.schemas.scenario import ScenarioCreate, ScenarioUpdate
 from app.schemas.score import ScoreDetailResponse, SessionScoreResponse
 from app.schemas.session import MessageResponse, SendMessageRequest, SessionCreate, SessionResponse
 
@@ -68,32 +68,10 @@ class TestScenarioUpdateSchema:
         assert data.rubric_id == "new-rubric-id"
 
 
-class TestScenarioResponseSchema:
-    """Tests for ScenarioResponse from_attributes."""
-
-    async def test_from_attributes(self):
-        resp = ScenarioResponse(
-            id="s1",
-            name="Test",
-            description="Desc",
-            tags='["product:Drug", "area:Onc"]',
-            mode="f2f",
-            difficulty="medium",
-            status="active",
-            hcp_profile_id="p1",
-            key_messages='["KM1"]',
-            conference_prompt_config="{}",
-            skill_id="skill-1",
-            rubric_id="rubric-1",
-            pass_threshold=70,
-            created_by="user1",
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
-        )
-        assert resp.id == "s1"
-        assert resp.key_messages == '["KM1"]'
-        assert resp.rubric_id == "rubric-1"
-        assert resp.skill_id == "skill-1"
+# NOTE: ScenarioResponse was removed (Phase 30 review, WR-03) as a dead,
+# manually-synced duplicate of the live ScenarioOut schema in
+# backend/app/api/scenarios.py. Its from_attributes contract is covered there
+# via backend/tests/test_scenarios_api.py instead.
 
 
 class TestHcpProfileSchemas:
