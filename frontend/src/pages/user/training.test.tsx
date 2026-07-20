@@ -430,8 +430,13 @@ describe("ScenarioSelection Filters and Actions", () => {
     expect(screen.getByTestId("modes-sc-2")).toHaveTextContent(
       "text,voice_realtime_model,digital_human_realtime_model",
     );
+    // Default mode is avatar-first when both voice and digital human are available,
+    // matching the shared `getAvailableModes` utility (@/lib/scenario-modes, WR-02
+    // Phase 30 review) also used by scenario-group-run.tsx. Previously this file had
+    // its own conference-only implementation that defaulted to voice-first here --
+    // exactly the kind of silent drift the shared utility now prevents.
     expect(screen.getByTestId("default-mode-sc-2")).toHaveTextContent(
-      "voice_realtime_model",
+      "digital_human_realtime_model",
     );
   });
 
