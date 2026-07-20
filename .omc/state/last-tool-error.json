@@ -1,7 +1,7 @@
 {
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"node \\\"/Users/huqianghui/Downloads/1.github/AI-Coach-vibe-coding/.claude/get-shit-done/bin/gsd-tools.cjs\\\" config-get workflow.security_asvs --raw 2>/dev/null; echo \\\"---\\\"; node \\\"/Users/...",
-  "error": "Exit code 1\n---",
-  "timestamp": "2026-07-18T14:30:37.375Z",
+  "tool_name": "Read",
+  "tool_input_preview": "{\"file_path\":\"/Users/huqianghui/Downloads/1.github/AI-Coach-vibe-coding/backend/tests/test_agent_sync_service.py\"}",
+  "error": "File content (26294 tokens) exceeds maximum allowed tokens (25000). Use offset and limit parameters to read specific portions of the file, or search for specific content instead of reading the whole file.",
+  "timestamp": "2026-07-19T18:08:20.270Z",
   "retry_count": 1
 }

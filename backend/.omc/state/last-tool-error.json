@@ -1,7 +1,7 @@
 {
   "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"sed -n 200,260p /Users/huqianghui/Downloads/1.github/AI-Coach-vibe-coding/backend/app/services/voice_live_service.py; echo ===; git -C /Users/huqianghui/Downloads/1.github/AI-Coach-vibe-co...",
-  "error": "Exit code 1\n        \"agent\" if is_agent else \"model\",\n        voice_live_model,\n        voice_name,\n        avatar_character_val,\n        avatar_style_val,\n        agent_id or \"none\",\n    )\n\n    # SECURITY: Never expose the raw API key to the frontend.\n    # All Voice Live connections go through the backend WebSocket proxy which\n    # reads credentials from DB directly. The token broker only returns metadata.\n    auth_type = \"key\" if voice_live_key else \"bearer\"\n    token_value = \"***configured*...",
-  "timestamp": "2026-07-18T02:21:55.128Z",
+  "tool_input_preview": "{\"command\":\"sed -n 505,560p tests/test_hcp_agent_sync_integration.py; echo ====; sed -n 55,145p tests/test_voice_live_per_hcp.py\",\"description\":\"Read custom_voice test and per-HCP token test fixture\"}",
+  "error": "Exit code 1\n    assert len(result[\"key\"]) == 512\n    assert len(result[\"key.1\"]) == 512\n    assert len(result[\"key.2\"]) == 176\n    # Reassembled value matches original\n    reassembled = result[\"key\"] + result[\"key.1\"] + result[\"key.2\"]\n    assert reassembled == long_value\n\n\n# ---------------------------------------------------------------------------\n# Test 14: build_voice_live_metadata — non-azure-standard voice omits temperature\n# ---------------------------------------------------------------...",
+  "timestamp": "2026-07-19T15:19:19.692Z",
   "retry_count": 1
 }
