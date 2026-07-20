@@ -4,6 +4,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.voice_live_instance import VoiceLiveInstanceSummary
+
 
 class ModeratorRemarks(BaseModel):
     """Localized moderator remarks for conference flow phases."""
@@ -53,16 +55,20 @@ class ScenarioUpdate(BaseModel):
 
 
 class HcpProfileSummary(BaseModel):
-    """Lightweight HCP profile embedded in scenario response (avatar metadata)."""
+    """Lightweight HCP profile embedded in scenario response (avatar metadata).
+
+    NOTE: not used as any router response_model as of Phase 30 -- see
+    backend/app/api/scenarios.py::HcpProfileBrief for the live equivalent.
+    Kept in sync for consistency.
+    """
 
     id: str
     name: str
     specialty: str
-    avatar_character: str = "lori"
-    avatar_style: str = "casual"
-    voice_live_enabled: bool = False
+    avatar_url: str = ""
+    personality_type: str = "friendly"
     voice_live_instance_id: str | None = None
-    avatar_enabled: bool = False
+    voice_live_instance: VoiceLiveInstanceSummary | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
