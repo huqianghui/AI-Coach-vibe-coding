@@ -24,6 +24,7 @@ const mockScenario: Scenario = {
   description: "Practice session",
   product: "DrugX",
   therapeutic_area: "Oncology",
+  tags: ["product:DrugX", "area:Oncology"],
   mode: "f2f",
   difficulty: "medium",
   status: "active",
