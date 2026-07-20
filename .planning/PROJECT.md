@@ -99,4 +99,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-07-20 after Phase 29 completion — Voice Live GA migration (azure-ai-voicelive pinned 1.3.0b1 with explicit GA api-version 2026-07-15, hosted-agent-only connect path with classic asst_* branch and monkey-patch deleted, 14 inline HCP voice/avatar columns dropped in favor of mandatory VoiceLiveInstance, Agent Foundation Model catalog split from Voice Live model catalog, docs/voice-live-avatar unified to 17-file tree, backend/frontend coverage regression gates enforced)*
+*Last updated: 2026-07-20 after Phase 30 completion — Scenario API D-10 VoiceLiveInstance propagation fix (scenario responses now nest hcp_profile.voice_live_instance instead of hardcoded flat avatar defaults, stray flat avatar_enabled removed from frontend HcpProfile type, voice/digital-human mode gating restored in training.tsx + scenario-group-run.tsx with new gating test matrix, verified 13/13 must-haves incl. real-browser avatar rendering check)*
