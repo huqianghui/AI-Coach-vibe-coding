@@ -36,7 +36,7 @@ function getScenarioModes(
     features?.voice_live_enabled && hcp?.voice_live_instance?.enabled,
   );
   const avatarAvailable = Boolean(
-    voiceAvailable && features?.avatar_enabled && hcp?.avatar_enabled,
+    voiceAvailable && features?.avatar_enabled && hcp?.voice_live_instance?.avatar_enabled,
   );
 
   if (voiceAvailable) {
@@ -71,7 +71,7 @@ function getConferenceModes(
     features?.voice_live_enabled &&
       features?.avatar_enabled &&
       hcp?.voice_live_instance?.enabled &&
-      hcp?.avatar_enabled,
+      hcp?.voice_live_instance?.avatar_enabled,
   );
   const modes = ["text"];
   if (voiceAvailable) {
