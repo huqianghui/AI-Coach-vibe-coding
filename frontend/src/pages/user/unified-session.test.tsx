@@ -29,10 +29,18 @@ const mockScenario = {
     name: "Dr. Zhang",
     specialty: "Oncology",
     personality_type: "friendly",
-    avatar_character: "lisa",
-    avatar_style: "casual-sitting",
-    voice_live_enabled: true,
-    avatar_enabled: true,
+    avatar_url: "",
+    voice_live_instance_id: "vl-1",
+    voice_live_instance: {
+      id: "vl-1",
+      name: "Test VL Instance",
+      voice_live_model: "gpt-realtime",
+      enabled: true,
+      voice_name: "en-US-JennyNeural",
+      avatar_character: "lisa",
+      avatar_style: "casual-sitting",
+      avatar_enabled: true,
+    },
   },
   key_messages: ["Key point 1", "Key point 2"],
   skill_id: "skill-1",
@@ -195,11 +203,20 @@ vi.mock("@/components/voice/avatar-view", () => ({
   AvatarView: ({
     hcpName,
     isDigitalHumanMode,
+    avatarCharacter,
+    avatarStyle,
   }: {
     hcpName: string;
     isDigitalHumanMode: boolean;
+    avatarCharacter?: string;
+    avatarStyle?: string;
   }) => (
-    <div data-testid="avatar-view" data-digital-human={String(isDigitalHumanMode)}>
+    <div
+      data-testid="avatar-view"
+      data-digital-human={String(isDigitalHumanMode)}
+      data-avatar-character={avatarCharacter ?? ""}
+      data-avatar-style={avatarStyle ?? ""}
+    >
       {hcpName}
     </div>
   ),
@@ -250,8 +267,6 @@ describe("UnifiedSession", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSession.mode = "voice_realtime_model";
-    mockScenario.hcp_profile.voice_live_enabled = true;
-    mockScenario.hcp_profile.avatar_enabled = true;
     mockStartSession.mockResolvedValue({
       avatarEnabled: true,
       model: "gpt-4o-realtime",
@@ -358,6 +373,14 @@ describe("UnifiedSession", () => {
       expect(screen.getByTestId("avatar-view")).toHaveAttribute(
         "data-digital-human",
         "true",
+      );
+      expect(screen.getByTestId("avatar-view")).toHaveAttribute(
+        "data-avatar-character",
+        "lisa",
+      );
+      expect(screen.getByTestId("avatar-view")).toHaveAttribute(
+        "data-avatar-style",
+        "casual-sitting",
       );
     });
   });
