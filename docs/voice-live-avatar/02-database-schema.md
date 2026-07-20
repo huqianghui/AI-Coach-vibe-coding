@@ -96,22 +96,31 @@ class ServiceConfig(TimestampMixin, Base):
 # backend/app/services/voice_live_instance_service.py
 def resolve_voice_config(profile: HcpProfile) -> dict:
     """
-    强制要求: profile.voice_live_instance 必须存在（D-09/D-10，无内联字段回退）
-    未分配 VoiceLiveInstance 的 HCP 视为配置错误，而非静默降级
+    D-10 要求所有 HCP 都分配 VoiceLiveInstance，但该函数不会因为未分配而抛出异常。
+    未分配 VoiceLiveInstance 的 HCP（例如 unassign 到 reassign 之间的短暂窗口）会返回
+    硬编码的安全默认值字典（voice_live_enabled=False），而不是读取已被 D-09 迁移删除的
+    内联 HcpProfile 列，也不会抛出 ConfigurationError（D-12）。
     返回: 包含所有 voice/avatar 配置的扁平字典
     """
-    if not profile.voice_live_instance:
-        raise ConfigurationError(f"HCP {profile.id} 未分配 VoiceLiveInstance")
-
     inst = profile.voice_live_instance
+    if inst:
+        return {
+            "voice_live_enabled": inst.enabled,
+            "voice_live_model": inst.voice_live_model,
+            "voice_name": inst.voice_name,
+            "avatar_character": inst.avatar_character,
+            "avatar_style": inst.avatar_style,
+            "avatar_enabled": inst.avatar_enabled,
+            "turn_detection_type": inst.turn_detection_type,
+            # ... 全部字段
+        }
+
+    # 安全默认值（voice_live_enabled=False），而非异常
     return {
-        "voice_live_model": inst.voice_live_model,
-        "voice_name": inst.voice_name,
-        "avatar_character": inst.avatar_character,
-        "avatar_style": inst.avatar_style,
-        "avatar_enabled": inst.avatar_enabled,
-        "turn_detection_type": inst.turn_detection_type,
-        # ... 全部字段
+        "voice_live_enabled": False,
+        "voice_live_model": "gpt-4o",
+        "voice_name": "en-US-AvaNeural",
+        # ... 其余字段同样为安全默认值
     }
 ```
 
