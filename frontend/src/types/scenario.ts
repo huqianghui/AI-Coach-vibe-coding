@@ -1,8 +1,18 @@
-import type { HcpProfile } from "./hcp";
+import type { VoiceLiveInstanceSummary } from "./hcp";
 
 export interface ModeratorRemarks {
   zh: string;
   en: string;
+}
+
+export interface HcpProfileSummary {
+  id: string;
+  name: string;
+  specialty: string;
+  avatar_url: string;
+  personality_type: string;
+  voice_live_instance_id: string | null;
+  voice_live_instance?: VoiceLiveInstanceSummary | null;
 }
 
 export interface ConferencePromptConfig {
@@ -23,7 +33,7 @@ export interface Scenario {
   difficulty: "easy" | "medium" | "hard";
   status: "draft" | "active" | "archived";
   hcp_profile_id: string;
-  hcp_profile?: HcpProfile;
+  hcp_profile?: HcpProfileSummary;
   key_messages: string[];
   conference_prompt_config?: ConferencePromptConfig;
   skill_id: string | null;

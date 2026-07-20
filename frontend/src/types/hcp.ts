@@ -25,7 +25,6 @@ export interface HcpProfile {
   // Voice Live Instance reference
   voice_live_instance_id: string | null;
   voice_live_instance?: VoiceLiveInstanceSummary | null;
-  avatar_enabled?: boolean;
   // Agent override (D-02)
   agent_instructions_override: string;
   // Knowledge Base config count (Phase 17)
