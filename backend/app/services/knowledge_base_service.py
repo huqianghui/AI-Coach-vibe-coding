@@ -22,8 +22,10 @@ from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.hcp_knowledge_config import HcpKnowledgeConfig
+from app.models.hcp_profile import HcpProfile
 from app.schemas.knowledge_base import KnowledgeConfigCreate
 
 logger = logging.getLogger(__name__)
@@ -598,12 +600,13 @@ async def _trigger_agent_resync(db: AsyncSession, hcp_profile_id: str) -> None:
     from the admin UI (D-11 retry flow depends on agent_sync_status/
     agent_sync_error being accurate).
     """
-    from sqlalchemy import select as sa_select
-
-    from app.models.hcp_profile import HcpProfile
     from app.services import agent_sync_service
 
-    result = await db.execute(sa_select(HcpProfile).where(HcpProfile.id == hcp_profile_id))
+    result = await db.execute(
+        select(HcpProfile)
+        .options(selectinload(HcpProfile.voice_live_instance))
+        .where(HcpProfile.id == hcp_profile_id)
+    )
     profile = result.scalar_one_or_none()
     if not profile or not profile.agent_id:
         return
