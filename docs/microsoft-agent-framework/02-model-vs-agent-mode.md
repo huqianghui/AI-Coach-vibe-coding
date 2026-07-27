@@ -372,6 +372,9 @@ Turn 1 因此**没有产生任何文本回复**（回复长度 = 0）。这是 A
 授权链路上的问题），与本 quick task 要修正的 SDK/文档问题是两个独立层面的故障——不在本次任务
 范围内修复，已记录为待跟进项（见本 quick task 的 `deferred-items.md`）。
 
+> **后续更新（同日 2026-07-27）**：该 403 已在当天通过三层修复彻底解决，端到端 grounding
+> 实测成功——完整修复记录见下方**第 7 节**。本小节保留为修复前的原始故障记录。
+
 ### 6.5 Turn 2（对照问题，同一连接）真实事件与结果
 
 ```
@@ -398,8 +401,98 @@ Turn 1 因此**没有产生任何文本回复**（回复长度 = 0）。这是 A
 `doc 06 §4` 描述的 RemoteTool 连接授权配置问题，而不是 Voice Live SDK 或本文档 §1-5 涉及的
 `connect()` 调用形态问题。
 
+> **后续更新（同日 2026-07-27）**：上述"未验证的环节"已在第 7 节的三层修复后完成验证——
+> `response.mcp_call.completed` 真实触发，最终回复包含知识库内容和 `【5:0†source】` 引用标记，
+> **端到端 grounding 确认成功**。
+
 ### 6.7 版本适用范围
 
 以上 6.1-6.6 的全部结果均基于 `azure-ai-voicelive==1.3.0b1`（当前锁定/安装版本）实测得出。
 若/当 `1.3.0` GA 发布到 PyPI 后升级，应重新运行 `tests/test_agent_foundry_iq_grounding.py`
 验证结果是否发生变化 —— 尤其是 API Key 403 这一发现，需要在新版本上确认是否依然存在。
+
+---
+
+## 7. Foundry IQ grounding 403 完整修复记录（2026-07-27，做法B：基础设施层一次性赋权）
+
+> 第 6 节实测暴露的 KB MCP 403 已于同日修复并复测成功。本节记录**完整的三层故障链和修复方式**，
+> 作为以后新建 AI Search / Foundry 项目 / 知识库时的提醒清单。核心教训：
+> **"在 Foundry Portal 里能看到并绑定知识库" ≠ "运行时有权限调用它"** ——
+> 绑定是数据面操作，授权是控制面 RBAC，Portal 之外没有任何一层会自动帮你赋权。
+
+### 7.1 三层故障链总览
+
+| 层 | 故障点 | 症状 | 修复 |
+|----|--------|------|------|
+| 1 | AI Search 服务 `authOptions=apiKeyOnly` + Foundry 项目 MI 无角色 | MCP 端点 403/401（enumerating tools 阶段） | 脚本 [`infra/azure/scripts/grant-search-rbac.sh`](../../infra/azure/scripts/grant-search-rbac.sh) |
+| 2 | Foundry 项目上**没有** `RemoteTool` 类型连接（只有 CognitiveSearch/ApiKey 连接） | 授权后仍 401 —— Agent 的 MCP 工具没有可用的 MI 认证连接 | 重新运行 `agent_sync_service.sync_agent_for_profile()`（Agent 升到 version 10） |
+| 3 | KB 定义 `models[].azureOpenAIParameters` 用 **apiKey** 调 AOAI，而该 AOAI 资源 `disableLocalAuth=true` | `mcp_call` 触发但 `knowledge_base_retrieve` 内部报 `Key based authentication is disabled for this resource` | KB 定义改为 MI 认证 + 给 Search 服务 MI 授 AOAI 角色 |
+
+### 7.2 层 1 与层 3 的 RBAC：一次性脚本
+
+[`infra/azure/scripts/grant-search-rbac.sh`](../../infra/azure/scripts/grant-search-rbac.sh)（幂等，可重复运行）做四件事：
+
+1. 解析 Foundry 项目（`avarda-demo-prj`）的系统 MI principalId
+2. 把 Search 服务 auth 从 `apiKeyOnly` 改为 `aadOrApiKey`（保留 API key 兼容，同时启用 Entra ID 数据面认证）
+3. 给项目 MI 授两个角色（Search 资源范围）：`Search Index Data Reader`（读文档）+ `Search Service Contributor`（枚举/执行 KB 的 agentic retrieval MCP 工具）
+4. 给 **Search 服务自身的系统 MI** 授 `Cognitive Services OpenAI User`（AOAI 资源范围）——KB 的 agentic retrieval 要用这个身份去调 `models[]` 里的 AOAI 部署
+
+前置：`az login --tenant fdpo.onmicrosoft.com`（Microsoft Non-Production 租户）。
+注意 RBAC 传播需要 5-10 分钟，授权后立即测试可能仍然 401。
+
+### 7.3 层 2 与层 3 的两个"脚本管不到"的坑
+
+**层 2 —— RemoteTool 连接缺失（仅靠 RBAC 修不好）**：Agent 的 MCP 工具认证走的是项目上的
+`RemoteTool` 类型连接（`authType: "ProjectManagedIdentity"`, `audience: "https://search.azure.com/"`，
+见 `backend/app/services/knowledge_base_service.py`）。本次排查发现项目上只有一条
+CognitiveSearch/ApiKey 连接（这种类型会导致 403）、**根本没有 RemoteTool 连接**——因为该 Agent
+是在后端加入 RemoteTool 逻辑之前同步的。修复方式是重新触发一次 agent 同步：
+
+```python
+# cd backend && .venv/bin/python3 - <<'EOF' 形式运行
+profile = (await db.execute(
+    select(HcpProfile)
+    .where(HcpProfile.id == "<profile-id>")
+    .options(selectinload(HcpProfile.voice_live_instance))  # 避免 MissingGreenlet
+)).scalar_one()
+await sync_agent_for_profile(db, profile)   # find-or-create RemoteTool 连接并更新 Agent
+```
+
+**层 3 —— KB 定义里残留的 apiKey（数据面 PUT，ARM/RBAC 都管不到）**：KB 是在 Portal 里创建的，
+`models[].azureOpenAIParameters` 默认写入了 AOAI 的 API key。当该 AOAI 资源后来被设置
+`disableLocalAuth=true` 后，检索时报 `Key based authentication is disabled`。修复：GET KB 定义 →
+把 `apiKey` 和 `authIdentity` 都置 `null`（= 使用 Search 服务系统 MI）→ PUT 回去：
+
+```bash
+# GET/PUT https://<search>/knowledgebases/<kb-name>?api-version=2026-05-01-preview
+# body 中: "azureOpenAIParameters": {..., "apiKey": null, "authIdentity": null}
+```
+
+### 7.4 修复后复测结果（同一测试脚本，Entra ID 认证）
+
+```
+Turn 1（知识库问题）事件链:
+  mcp_list_tools.in_progress → mcp_list_tools.completed
+  → response.mcp_call.in_progress → response.mcp_call_arguments.delta/done
+  → response.mcp_call.completed          ← 之前在这一步之前就 403
+  → response.text.delta ×260 → response.done (COMPLETED)
+回复长度: 417 字符，含知识库内容与引用标记 【5:0†source】
+
+Turn 2（对照问题）: 无任何 mcp_* 事件，正常纯文本回复 —— 符合预期
+```
+
+**结论**：第 6.6 节"未能确认端到端 grounding"的缺口已闭合——Voice Live Agent 模式下
+Foundry IQ 知识库检索**端到端可用**：KB 相关问题自动触发 MCP 检索、检索成功、
+检索内容带引用写入最终回复；无关问题不触发检索。
+
+### 7.5 新环境搭建提醒清单
+
+以后新建 AI Search / Foundry 项目 / 知识库组合时，按顺序检查：
+
+- [ ] Search 服务 `authOptions` 是 `aadOrApiKey`（不是 `apiKeyOnly`）
+- [ ] Foundry 项目系统 MI 在 Search 资源上有 `Search Index Data Reader` + `Search Service Contributor`
+- [ ] Search 服务系统 MI 在 KB `models[]` 引用的 AOAI 资源上有 `Cognitive Services OpenAI User`
+- [ ] （前三项直接跑 `infra/azure/scripts/grant-search-rbac.sh`）
+- [ ] Foundry 项目上存在 `RemoteTool` 连接（`authType=ProjectManagedIdentity`）——没有就重跑 agent 同步
+- [ ] KB 定义 `models[].apiKey` 为 `null`（若 AOAI 已 `disableLocalAuth=true`）
+- [ ] 等 5-10 分钟 RBAC 传播后，跑 `tests/test_agent_foundry_iq_grounding.py` 验证
