@@ -294,3 +294,112 @@ async with connect(
 - 依赖 Azure AI Foundry Agent Service（额外的服务依赖）
 - Agent 配置在 Azure 侧管理，调试链路更长
 - 多租户场景仍建议 Entra ID（API Key 安全粒度粗）
+
+---
+
+## 6. Agent 模式 + Foundry IQ 知识库 grounding：真实实测（2026-07-27，SDK 1.3.0b1）
+
+> 本节数据全部来自对 `tests/test_agent_foundry_iq_grounding.py` 的一次真实运行，未加工、未软化。
+> 与第 3 节（2026-04-08，SDK `1.2.0b5`）是两次独立的、跨 SDK 版本的实测，互不覆盖。
+
+### 6.1 前置条件（实测前已确认，无需额外配置）
+
+直接查询 `backend/ai_coach.db`（2026-07-27）确认：
+
+```
+hcp_profiles: id=cb6bce84-5cbc-49c5-8624-f5d56fc5255e, name="Dr. Wang Fang",
+              agent_id="Dr-Wang-Fang", agent_sync_status="synced"
+hcp_knowledge_configs: hcp_profile_id=<同上>, index_name="omada-product-parameters-kb",
+              is_enabled=1, server_label="knowledge-base-omada-product-parameters-kb"
+```
+
+`Dr-Wang-Fang` Agent 已同步、已挂载一个启用的 Foundry IQ 知识库 —— 无需通过管理员 UI 做任何
+额外配置（挂载机制见 [doc 06](./06-agent-tools-and-knowledge-grounding.md)）。
+
+### 6.2 测试脚本与运行环境
+
+- 脚本：[`tests/test_agent_foundry_iq_grounding.py`](./tests/test_agent_foundry_iq_grounding.py)
+- 运行命令：`cd backend && .venv/bin/python3 ../docs/microsoft-agent-framework/tests/test_agent_foundry_iq_grounding.py`
+- 真实运行时的 SDK 版本：`1.3.0b1`（`azure-ai-voicelive.__version__` 直接打印确认）
+- `connect()` 调用形态：`connect(endpoint=, credential=, api_version="2026-07-15", agent_name="Dr-Wang-Fang", project_name=<AZURE_FOUNDRY_DEFAULT_PROJECT>)` —— 与第 4.2 节完全一致的扁平化 kwargs
+
+### 6.3 意外的真实发现：API Key 在当前环境下对 Agent 模式返回 403
+
+按第 4.2 节的代码原样发起连接（`AzureKeyCredential` + 扁平化 `agent_name=`/`project_name=`）时，
+**握手阶段直接返回 403**，未能建立 WebSocket 连接：
+
+```
+ConnectionError: Failed to establish WebSocket connection: 403, message='Invalid response status',
+url='wss://.../voice-live/realtime?api-version=2026-07-15&agent-name=Dr-Wang-Fang&agent-project-name=avarda-demo-prj'
+```
+
+进一步排查确认：
+- 同一个 API Key 用于 **Model 模式**连接同样返回 403（不是 Agent 模式特有问题）
+- 该 Key 与生产代码 `config_service.get_effective_key(db, "azure_voice_live")` 实际使用的 Key
+  **完全一致**（长度、内容比对相同）——不是 Key 配置错误或过期不同步
+- 同一进程内改用 `DefaultAzureCredential()`（Entra ID）连接**立即成功**
+
+**结论**：这与第 3 节（2026-04-08）"API Key + Agent 模式可行"的历史实测结论**不再一致**——
+当前（2026-07-27）该 Azure 资源上 API Key 认证对 Voice Live 端点整体（Model 模式和 Agent 模式
+均受影响）返回 403。这可能是 Azure 侧后续针对该资源关闭/收紧了 Key 认证通道（与本项目
+`260717-x5f`/`260718-cy6` 两次 quick task 中在 Skills/Agents API 上观察到的
+`AuthenticationTypeDisabled` 现象方向一致，但本次未拿到明确的错误 code，仅有 403 状态码，
+暂不能完全确认根因）。**本次 grounding 实测因此改用 Entra ID 完成**，详见下节。
+
+### 6.4 Turn 1（知识库问题）真实事件与结果
+
+```
+事件序列: conversation.item.created ×2, response.created, mcp_list_tools.in_progress,
+          conversation.item.done, response.done (status=FAILED)
+```
+
+关键信号：**`mcp_list_tools.in_progress` 确实触发** —— 证明 Voice Live Agent 模式会话
+在收到知识库相关问题后，自动尝试调用 Agent 已挂载的 MCP 知识库工具，完全不需要在 Voice Live
+侧做任何额外的知识库配置。但该次 MCP 调用本身失败，`response.done` 的 `status_details` 给出
+了具体错误：
+
+```
+Foundry agent service API error: Access denied when connecting to the MCP server at
+https://ai-search-southeast-asia.search.windows.net:443/knowledgebases/omada-product-parameters-kb/mcp
+?api-version=**** while enumerating tools (HTTP 403 Forbidden). Please verify:
+(1) your credentials have the necessary permissions to access this server,
+(2) any IP allowlists or network policies permit requests from this service, and
+(3) the server's access control configuration allows the requested operation.
+```
+
+Turn 1 因此**没有产生任何文本回复**（回复长度 = 0）。这是 AI Search 侧 MCP 端点对 Agent 的
+`RemoteTool` 连接返回的 403（`doc 06 §4` 描述的 `project_connection_id`/`ProjectManagedIdentity`
+授权链路上的问题），与本 quick task 要修正的 SDK/文档问题是两个独立层面的故障——不在本次任务
+范围内修复，已记录为待跟进项（见本 quick task 的 `deferred-items.md`）。
+
+### 6.5 Turn 2（对照问题，同一连接）真实事件与结果
+
+```
+事件序列: conversation.item.created ×2, response.created, response.output_item.added,
+          response.content_part.added, response.text.delta ×416, response.text.done,
+          response.content_part.done, response.output_item.done, response.done (status=COMPLETED)
+```
+
+**没有出现任何 `mcp_list_tools.*`/`response.mcp_call*` 事件** —— 与预期一致：无关问题不会
+触发知识库检索工具调用。收到完整文本回复（长度 604 字符），节选：
+
+> "从管理学角度看，**跨部门沟通最常见的挑战**通常不是'信息不够'，而是**目标不一致、语言不一致、
+> 责任边界不清**。……常见问题主要有几类：1. 部门目标不同……2. 信息传递失真……3. 职责边界模糊……"
+
+### 6.6 结论：确认还是推翻研究假设？
+
+**部分确认**：Voice Live Agent 模式会话确实**透明地**触发了 Agent 已同步挂载的 Foundry IQ
+知识库 MCP 工具（`mcp_list_tools.in_progress` 在 KB 相关问题上真实触发、在无关问题上不触发），
+证实了研究结论"Voice Live 侧无需任何知识库配置，Agent 挂载什么工具就用什么工具"这一**触发机制**
+是真实的，不是假设。
+
+**但未能确认端到端的 grounding 成功**：本次实测中，工具调用本身在 AI Search MCP 端点层面被拒绝
+（403），因此无法验证"检索到的知识库内容真的被写进了最终回复文本"这一环节。这个未验证的环节属于
+`doc 06 §4` 描述的 RemoteTool 连接授权配置问题，而不是 Voice Live SDK 或本文档 §1-5 涉及的
+`connect()` 调用形态问题。
+
+### 6.7 版本适用范围
+
+以上 6.1-6.6 的全部结果均基于 `azure-ai-voicelive==1.3.0b1`（当前锁定/安装版本）实测得出。
+若/当 `1.3.0` GA 发布到 PyPI 后升级，应重新运行 `tests/test_agent_foundry_iq_grounding.py`
+验证结果是否发生变化 —— 尤其是 API Key 403 这一发现，需要在新版本上确认是否依然存在。
