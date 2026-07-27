@@ -14,6 +14,25 @@
 
 ---
 
+## 1.1 SDK 版本状态（2026-07-27 校正）
+
+> 本文档最初基于 `azure-ai-voicelive==1.2.0b5` 编写。该版本早已被淘汰——`connect()` 的
+> Agent 模式调用形态在 `1.2.0 GA` 就已经变化，本项目当前实际安装/锁定的版本又比那更新一个
+> 完整的 minor 版本。以下是真实的版本链（校验方式：`backend/.venv` 内 `pip show`
+> + `inspect.signature(connect)` 直接内省，非查文档）：
+
+| 版本 | 状态 | 发布日期 | 关键变化 |
+|------|------|---------|---------|
+| `1.2.0b5` | 已废弃（本文档最初基线） | 2026-04-06 | `AgentSessionConfig` + `connect(agent_config=...)` |
+| `1.2.0` GA | 已废弃 | 2026-05-22 | **移除 `AgentSessionConfig`**；`connect()` 改为扁平化 `agent_name`/`project_name` kwargs |
+| `1.3.0b1` | **当前锁定版本** — `backend/pyproject.toml` 锁定，`backend/.venv` 实际安装 | 2026-05-28 | 支持显式传递 `api_version="2026-07-15"`（本项目所有 `connect()` 调用点的标准做法） |
+| `1.3.0` GA | 仅存在于 CHANGELOG，**尚未发布到 PyPI**（截至 2026-07-27） | CHANGELOG 标注 2026-07-20 | 升级前必须先用 `pip index versions azure-ai-voicelive` 确认 PyPI 已可安装 |
+
+**结论**：本文档下面所有 Python 代码示例均已按 `1.3.0b1` 实际安装的 `connect()` 签名重写，
+不再包含任何 `AgentSessionConfig` 导入或 `agent_config=` kwarg。
+
+---
+
 ## 2. 数据流对比
 
 ### 2.1 Model 模式
@@ -47,10 +66,8 @@
    │                              │                         │
    │── connect(                   │                         │── instructions（预配置）
    │     credential=Key/EntraID,  │                         │── knowledge base（知识库）
-   │     agent_config={           │                         │── tools（工具集）
-   │       agent_name="Dr-Wang",  │                         │── conversation history
-   │       project_name="...",    │                         │
-   │     }                        │                         │
+   │     agent_name="Dr-Wang",    │                         │── tools（工具集）
+   │     project_name="...",      │                         │── conversation history
    │   ) ─────────────────────>   │                         │
    │                              │                         │
    │                              │── 验证调用方权限 ─────>  │
@@ -71,6 +88,11 @@
 ---
 
 ## 3. Agent 模式的认证：实测结果（2026-04-08）
+
+> **版本说明（2026-07-27）**：本节数据是在 `AgentSessionConfig` 时代的 SDK `1.2.0b5` 上测出的。
+> 其认证结论（API Key 可用于 Agent 模式）在当前 `1.3.0b1` 上依然成立，但下面 §4 展示该结论的
+> 代码示例已经全部改写为当前 SDK 的扁平化 kwargs 形态——历史 POC 的原始代码形态本身已不可用。
+> 关于当前 SDK 上的最新实测（含 Foundry IQ grounding），见文末新增的第 6 节。
 
 > **重要更新**：微软文档声称 "Agent invocation doesn't support key-based authentication"，
 > 但 SDK 1.2.0b5 的 POC 实测表明 **API Key + Agent 模式是可行的**。
@@ -173,7 +195,7 @@ async with connect(
     endpoint=endpoint,
     credential=credential,
     model="gpt-4o",                       # 指定模型
-    # api_version 使用 SDK 默认值（1.2.0b5 默认 "2026-01-01-preview"）
+    api_version="2026-07-15",             # 显式传递，本项目从不依赖 SDK 内置默认值
 ) as connection:
     # 通过 session.update 发送 instructions
     await connection.send({
@@ -189,47 +211,42 @@ async with connect(
 
 ```python
 from azure.core.credentials import AzureKeyCredential
-from azure.ai.voicelive.aio import connect, AgentSessionConfig
+from azure.ai.voicelive.aio import connect
 
-credential = AzureKeyCredential(api_key)  # API Key 也可以！(SDK 1.2.0b5+)
-
-agent_config: AgentSessionConfig = {
-    "agent_name": "Dr-Wang-Fang",
-    "project_name": "ai-coach-project",
-}
+credential = AzureKeyCredential(api_key)  # API Key 在 Agent 模式下仍然可用
 
 async with connect(
     endpoint=endpoint,
     credential=credential,
-    agent_config=agent_config,            # 指定 Agent，不指定 model
+    api_version="2026-07-15",      # 显式传递，不依赖 SDK 默认值
+    agent_name="Dr-Wang-Fang",      # 扁平化 kwarg，取代已移除的 AgentSessionConfig
+    project_name="ai-coach-project",
 ) as connection:
-    # 不需要发送 instructions — Agent 自带
-    # Agent 的知识库、工具、人格设定都预配置好了
+    # 不需要发送 instructions -- Agent 自带
     await connection.send({
         "type": "session.update",
         "session": {"modalities": ["text", "audio"]}
     })
 ```
 
+以上代码与生产代码 `backend/app/services/voice_live_websocket.py:691-697` 的调用形态完全一致。
+
 ### 4.3 Agent 模式代码（Entra ID — 多租户生产推荐）
 
 ```python
 from azure.identity.aio import DefaultAzureCredential
-from azure.ai.voicelive.aio import connect, AgentSessionConfig
+from azure.ai.voicelive.aio import connect
 
 credential = DefaultAzureCredential()     # Entra ID 认证
-
-agent_config: AgentSessionConfig = {
-    "agent_name": "Dr-Wang-Fang",
-    "project_name": "ai-coach-project",
-    # "agent_version": "v1.0",            # 可选：锁定版本
-    # "conversation_id": "xxx",            # 可选：恢复对话
-}
 
 async with connect(
     endpoint=endpoint,
     credential=credential,
-    agent_config=agent_config,
+    api_version="2026-07-15",
+    agent_name="Dr-Wang-Fang",
+    project_name="ai-coach-project",
+    # agent_version="v1.0",               # 可选：锁定版本
+    # conversation_id="xxx",              # 可选：恢复对话
 ) as connection:
     # Agent 配置来自 AI Foundry，无需在代码中指定 instructions
     pass
@@ -241,9 +258,10 @@ async with connect(
 |------|-----------|-----------|
 | `credential` | `AzureKeyCredential(key)` | `AzureKeyCredential(key)` 或 `DefaultAzureCredential()` |
 | `model` | 必填（如 `"gpt-4o"`） | 不填（Agent 自带模型配置） |
-| `agent_config` | 不填 | 必填（`agent_name` + `project_name`） |
+| `agent_name` | 不填 | 必填（须与 `project_name` 同时提供，否则 SDK 抛 `ValueError`） |
+| `project_name` | 不填 | 必填（须与 `agent_name` 同时提供，否则 SDK 抛 `ValueError`） |
 | `session.update` 中的 `instructions` | 必填（调用方提供） | 可选（覆盖 Agent 默认 instructions） |
-| SDK 最低版本 | `1.1.0` | **`1.2.0b5`**（需要 `AgentSessionConfig`） |
+| SDK 最低版本 | `1.1.0` | 扁平化 kwargs 自 `1.2.0 GA` 起可用（早期 `1.2.0b3`/`b4` 时代的 `AgentSessionConfig` 已被移除）；本项目当前锁定 `1.3.0b1` |
 
 ---
 
@@ -269,7 +287,7 @@ async with connect(
 - Agent 自带工具（Function Calling），由 Azure 托管执行
 - 对话能力更强（Agent 有完整的上下文管理）
 - 集中管理 — 在 AI Foundry Portal 修改 Agent 配置，无需改代码
-- **API Key 认证可行**（SDK 1.2.0b5+，不必引入 Entra ID）
+- **API Key 认证可行**（自 SDK `1.2.0 GA` 起以扁平化 kwargs 形式延续，不必引入 Entra ID；本项目当前锁定 `1.3.0b1`）
 
 **劣势**：
 - 需要 SDK >= 1.2.0b5（当前仍为 beta 版）
