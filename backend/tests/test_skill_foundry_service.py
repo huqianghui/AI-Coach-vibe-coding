@@ -28,7 +28,9 @@ def reset_credential_cache():
     sfs._cached_credential = None
 
 
-def make_skill(name: str = "My Skill", skill_id: str | None = None, foundry_skill_name: str = "") -> Skill:
+def make_skill(
+    name: str = "My Skill", skill_id: str | None = None, foundry_skill_name: str = ""
+) -> Skill:
     """Build an in-memory Skill instance (not persisted) for pure unit tests."""
     return Skill(
         id=skill_id or str(uuid.uuid4()),
@@ -246,7 +248,8 @@ async def test_sync_skill_to_foundry_first_sync_uses_unique_name():
 
     with (
         patch(
-            "app.services.skill_foundry_service.get_skills_client", new=AsyncMock(return_value=client)
+            "app.services.skill_foundry_service.get_skills_client",
+            new=AsyncMock(return_value=client),
         ),
         patch(
             "app.services.skill_foundry_service.skill_zip_service.export_skill_zip",
@@ -264,9 +267,9 @@ async def test_sync_skill_to_foundry_first_sync_uses_unique_name():
     # First-sync uses the id-suffixed unique name, not the bare sanitized name alone
     from app.services.skill_foundry_service import _sanitize_skill_name
 
-    assert call_args.args[0] != _sanitize_skill_name(skill.name) or expected_name == _sanitize_skill_name(
+    assert call_args.args[0] != _sanitize_skill_name(
         skill.name
-    )
+    ) or expected_name == _sanitize_skill_name(skill.name)
 
 
 @pytest.mark.asyncio
@@ -280,7 +283,8 @@ async def test_sync_skill_to_foundry_success_sets_fields():
 
     with (
         patch(
-            "app.services.skill_foundry_service.get_skills_client", new=AsyncMock(return_value=client)
+            "app.services.skill_foundry_service.get_skills_client",
+            new=AsyncMock(return_value=client),
         ),
         patch(
             "app.services.skill_foundry_service.skill_zip_service.export_skill_zip",
@@ -313,7 +317,8 @@ async def test_sync_skill_to_foundry_exception_sets_failed_never_raises():
 
     with (
         patch(
-            "app.services.skill_foundry_service.get_skills_client", new=AsyncMock(return_value=client)
+            "app.services.skill_foundry_service.get_skills_client",
+            new=AsyncMock(return_value=client),
         ),
         patch(
             "app.services.skill_foundry_service.skill_zip_service.export_skill_zip",
@@ -344,7 +349,8 @@ async def test_sync_skill_to_foundry_timeout_sets_failed_never_raises():
 
     with (
         patch(
-            "app.services.skill_foundry_service.get_skills_client", new=AsyncMock(return_value=client)
+            "app.services.skill_foundry_service.get_skills_client",
+            new=AsyncMock(return_value=client),
         ),
         patch(
             "app.services.skill_foundry_service.skill_zip_service.export_skill_zip",
@@ -376,7 +382,8 @@ async def test_sync_skill_to_foundry_zip_security_failure_sets_failed():
 
     with (
         patch(
-            "app.services.skill_foundry_service.get_skills_client", new=AsyncMock(return_value=client)
+            "app.services.skill_foundry_service.get_skills_client",
+            new=AsyncMock(return_value=client),
         ),
         patch(
             "app.services.skill_foundry_service.skill_zip_service.export_skill_zip",
@@ -407,7 +414,8 @@ async def test_sync_skill_to_foundry_called_twice_same_name():
 
     with (
         patch(
-            "app.services.skill_foundry_service.get_skills_client", new=AsyncMock(return_value=client)
+            "app.services.skill_foundry_service.get_skills_client",
+            new=AsyncMock(return_value=client),
         ),
         patch(
             "app.services.skill_foundry_service.skill_zip_service.export_skill_zip",
@@ -426,8 +434,11 @@ async def test_sync_skill_to_foundry_called_twice_same_name():
         client.beta.skills.create_from_files = MagicMock(return_value=result2)
         await sync_skill_to_foundry(mock_db, skill)
 
-    assert client.beta.skills.create_from_files.call_count == 1  # reassigned mock only tracks 2nd call
-    # Verify both calls used the identical name by checking persisted foundry_skill_name never changed
+    assert (
+        client.beta.skills.create_from_files.call_count == 1
+    )  # reassigned mock only tracks 2nd call
+    # Verify both calls used the identical name by checking that the persisted
+    # foundry_skill_name never changed.
     assert skill.foundry_skill_name == "repeat-skill-abcd1234"
 
 
@@ -703,7 +714,9 @@ async def test_archive_skill_calls_delete_skill_from_foundry_once(db_session):
         published = await skill_service.publish_skill(db_session, skill.id, user_id)
 
     mock_delete = AsyncMock()
-    with patch("app.services.skill_service.skill_foundry_service.delete_skill_from_foundry", mock_delete):
+    with patch(
+        "app.services.skill_service.skill_foundry_service.delete_skill_from_foundry", mock_delete
+    ):
         archived = await skill_service.archive_skill(db_session, published.id, user_id)
 
     assert archived.status == "archived"
@@ -723,7 +736,9 @@ async def test_delete_skill_calls_delete_skill_from_foundry_once(db_session):
     skill = await skill_service.create_skill(db_session, data, user_id)
 
     mock_delete = AsyncMock()
-    with patch("app.services.skill_service.skill_foundry_service.delete_skill_from_foundry", mock_delete):
+    with patch(
+        "app.services.skill_service.skill_foundry_service.delete_skill_from_foundry", mock_delete
+    ):
         await skill_service.delete_skill(db_session, skill.id)
 
     mock_delete.assert_awaited_once()
@@ -748,7 +763,10 @@ async def test_restore_skill_does_not_call_any_foundry_function(db_session):
     mock_delete = AsyncMock()
     with (
         patch("app.services.skill_service.skill_foundry_service.sync_skill_to_foundry", mock_sync),
-        patch("app.services.skill_service.skill_foundry_service.delete_skill_from_foundry", mock_delete),
+        patch(
+            "app.services.skill_service.skill_foundry_service.delete_skill_from_foundry",
+            mock_delete,
+        ),
     ):
         await skill_service.archive_skill(db_session, published.id, user_id)
         restored = await skill_service.restore_skill(db_session, published.id, user_id)

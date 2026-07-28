@@ -163,6 +163,13 @@ async def _admin_scenario(client, admin_id, admin_token) -> str:
         },
         headers={"Authorization": f"Bearer {admin_token}"},
     )
+    hcp_id = hcp.json()["id"]
+    async with TestSessionLocal() as db:
+        profile = await db.get(HcpProfile, hcp_id)
+        profile.agent_id = "dr-cov-agent"
+        profile.agent_version = "1"
+        profile.agent_sync_status = "synced"
+        await db.commit()
     # Create rubric + skill via DB (no API endpoint needed)
     async with TestSessionLocal() as db:
         rubric = ScoringRubric(
@@ -201,7 +208,7 @@ async def _admin_scenario(client, admin_id, admin_token) -> str:
         json={
             "name": "Cov Scenario",
             "tags": ["product:Brukinsa"],
-            "hcp_profile_id": hcp.json()["id"],
+            "hcp_profile_id": hcp_id,
             "rubric_id": rubric_id,
             "skill_id": "test-skill-id",
             "key_messages": ["Superior PFS", "Better safety"],

@@ -74,7 +74,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-concurrency = ["greenlet"]
+concurrency = ["greenlet", "thread"]
 
 [tool.ruff]
 target-version = "py311"

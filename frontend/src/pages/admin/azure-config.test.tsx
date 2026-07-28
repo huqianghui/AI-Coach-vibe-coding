@@ -5,13 +5,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { toast } from "sonner";
 import AzureConfigPage from "./azure-config";
 
-vi.mock("react-i18next", () => ({
-  useTranslation: () => ({
-    t: (key: string, opts?: { defaultValue?: string }) =>
-      opts?.defaultValue ?? key,
-    i18n: { changeLanguage: vi.fn(), language: "en" },
-  }),
-}));
+vi.mock("react-i18next", async () => {
+  const { createTestTranslator } = await import("@/test/i18n-mock");
+  return {
+    useTranslation: (namespace?: string | string[]) => ({
+      t: createTestTranslator(namespace),
+      i18n: { changeLanguage: vi.fn(), language: "en-US" },
+    }),
+  };
+});
 
 vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
@@ -159,7 +161,7 @@ describe("AzureConfigPage", () => {
 
   it("renders the page title", () => {
     renderWithProviders();
-    expect(screen.getByText("azureConfig.title")).toBeInTheDocument();
+    expect(screen.getByText("Azure Service Configuration")).toBeInTheDocument();
   });
 
   it("renders Test All Services button", () => {
@@ -169,8 +171,8 @@ describe("AzureConfigPage", () => {
 
   it("renders AI Foundry master config section", () => {
     renderWithProviders();
-    expect(screen.getByText("azureConfig.aiFoundry.title")).toBeInTheDocument();
-    expect(screen.getByText("azureConfig.aiFoundry.description")).toBeInTheDocument();
+    expect(screen.getByText("Azure AI Foundry")).toBeInTheDocument();
+    expect(screen.getByText("Unified AI endpoint — all services derive from this single configuration")).toBeInTheDocument();
   });
 
   it("renders all 8 Azure service names", () => {
@@ -207,7 +209,7 @@ describe("AzureConfigPage", () => {
     mockServiceConfigsReturn = { data: undefined, isLoading: true };
     renderWithProviders();
     // Should not show the title when loading
-    expect(screen.queryByText("azureConfig.title")).not.toBeInTheDocument();
+    expect(screen.queryByText("Azure Service Configuration")).not.toBeInTheDocument();
     // Should not render service cards
     expect(screen.queryByText("Azure OpenAI")).not.toBeInTheDocument();
   });
@@ -215,7 +217,7 @@ describe("AzureConfigPage", () => {
   it("shows loading skeleton when foundry config is loading", () => {
     mockFoundryReturn = { data: undefined, isLoading: true };
     renderWithProviders();
-    expect(screen.queryByText("azureConfig.title")).not.toBeInTheDocument();
+    expect(screen.queryByText("Azure Service Configuration")).not.toBeInTheDocument();
   });
 
   // ---- Toggle service ----
@@ -384,7 +386,7 @@ describe("AzureConfigPage", () => {
   it("calls foundry update mutation when saving foundry config", async () => {
     renderWithProviders();
     // The "Save" button in AI Foundry section
-    const saveButtons = screen.getAllByText("azureConfig.saveConfig");
+    const saveButtons = screen.getAllByText("Save Configuration");
     expect(saveButtons.length).toBeGreaterThanOrEqual(1);
     await userEvent.click(saveButtons[0]!);
 
@@ -409,7 +411,7 @@ describe("AzureConfigPage", () => {
     await userEvent.clear(regionInput);
     await userEvent.type(regionInput, "eastus2");
 
-    const saveButtons = screen.getAllByText("azureConfig.saveConfig");
+    const saveButtons = screen.getAllByText("Save Configuration");
     await userEvent.click(saveButtons[0]!);
 
     expect(mockFoundryMutate).toHaveBeenCalledWith(
@@ -422,7 +424,7 @@ describe("AzureConfigPage", () => {
 
   it("shows success toast on foundry save success", async () => {
     renderWithProviders();
-    const saveButtons = screen.getAllByText("azureConfig.saveConfig");
+    const saveButtons = screen.getAllByText("Save Configuration");
     await userEvent.click(saveButtons[0]!);
 
     // Extract and call the onSuccess callback
@@ -430,12 +432,12 @@ describe("AzureConfigPage", () => {
     const callbacks = call[1] as { onSuccess: () => void; onError: () => void };
     callbacks.onSuccess();
 
-    expect(toast.success).toHaveBeenCalledWith("AI Foundry configuration saved");
+    expect(toast.success).toHaveBeenCalledWith("Configuration saved");
   });
 
   it("shows error toast on foundry save failure", async () => {
     renderWithProviders();
-    const saveButtons = screen.getAllByText("azureConfig.saveConfig");
+    const saveButtons = screen.getAllByText("Save Configuration");
     await userEvent.click(saveButtons[0]!);
 
     const call = mockFoundryMutate.mock.calls[0]!;
@@ -472,8 +474,8 @@ describe("AzureConfigPage", () => {
     await userEvent.click(openaiBtn);
 
     // The expanded content should show "Model" label and Test/Save buttons
-    expect(screen.getByText("azureConfig.model")).toBeInTheDocument();
-    expect(screen.getByText("Test Connection")).toBeInTheDocument();
+    expect(screen.getByText("Model/Deployment")).toBeInTheDocument();
+    expect(screen.getAllByText("Test Connection").length).toBeGreaterThanOrEqual(1);
   });
 
   it("expands a service with endpoint override to show endpoint and api key inputs", async () => {
@@ -505,7 +507,7 @@ describe("AzureConfigPage", () => {
 
     // Find the save button inside the expanded area (not the foundry save)
     // The expanded content has its own "azureConfig.saveConfig" button
-    const saveButtons = screen.getAllByText("azureConfig.saveConfig");
+    const saveButtons = screen.getAllByText("Save Configuration");
     // The second one is inside the expanded content
     const expandedSave = saveButtons[saveButtons.length - 1]!.closest("button")!;
     await userEvent.click(expandedSave);
@@ -530,7 +532,7 @@ describe("AzureConfigPage", () => {
       screen.getByText("Azure OpenAI").closest("button")!,
     );
 
-    const saveButtons = screen.getAllByText("azureConfig.saveConfig");
+    const saveButtons = screen.getAllByText("Save Configuration");
     await userEvent.click(saveButtons[saveButtons.length - 1]!.closest("button")!);
 
     // Get the latest call with onSuccess callback
@@ -552,7 +554,7 @@ describe("AzureConfigPage", () => {
       screen.getByText("Azure OpenAI").closest("button")!,
     );
 
-    const saveButtons = screen.getAllByText("azureConfig.saveConfig");
+    const saveButtons = screen.getAllByText("Save Configuration");
     await userEvent.click(saveButtons[saveButtons.length - 1]!.closest("button")!);
 
     const lastCall = mockServiceMutate.mock.calls[
@@ -581,7 +583,7 @@ describe("AzureConfigPage", () => {
 
     // The expanded row has its own Test Connection button; the first one is
     // the AI Foundry top-level test, so pick the one inside the expanded area.
-    const testButtons = screen.getAllByText("azureConfig.testConnection");
+    const testButtons = screen.getAllByText("Test Connection");
     const expandedTestBtn = testButtons[testButtons.length - 1]!.closest("button")!;
     await userEvent.click(expandedTestBtn);
 
@@ -601,7 +603,7 @@ describe("AzureConfigPage", () => {
       screen.getByText("Azure OpenAI").closest("button")!,
     );
 
-    const testButtons = screen.getAllByText("azureConfig.testConnection");
+    const testButtons = screen.getAllByText("Test Connection");
     await userEvent.click(testButtons[testButtons.length - 1]!.closest("button")!);
 
     await vi.waitFor(() => {
@@ -616,11 +618,13 @@ describe("AzureConfigPage", () => {
       screen.getByText("Azure OpenAI").closest("button")!,
     );
 
-    const testButtons = screen.getAllByText("azureConfig.testConnection");
+    const testButtons = screen.getAllByText("Test Connection");
     await userEvent.click(testButtons[testButtons.length - 1]!.closest("button")!);
 
     await vi.waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith("azureConfig.connectionFailed");
+      expect(toast.error).toHaveBeenCalledWith(
+        "Connection test failed. Verify the endpoint and API key are correct.",
+      );
     });
   });
 
@@ -722,7 +726,7 @@ describe("AzureConfigPage", () => {
     renderWithProviders();
     // Find the password input for API key
     const apiKeyInput = screen.getByPlaceholderText(
-      "azureConfig.aiFoundry.apiKeyPlaceholder",
+      "Enter API key",
     );
     expect(apiKeyInput).toHaveAttribute("type", "password");
 
@@ -748,7 +752,7 @@ describe("AzureConfigPage", () => {
   it("shows auto-detected region input when region exists", () => {
     renderWithProviders();
     expect(
-      screen.getByText("Region (auto-detected)"),
+      screen.getByText("Azure Region"),
     ).toBeInTheDocument();
   });
 
@@ -760,10 +764,10 @@ describe("AzureConfigPage", () => {
 
     // Expand
     await userEvent.click(openaiBtn);
-    expect(screen.getByText("azureConfig.model")).toBeInTheDocument();
+    expect(screen.getByText("Model/Deployment")).toBeInTheDocument();
 
     // Collapse
     await userEvent.click(openaiBtn);
-    expect(screen.queryByText("azureConfig.model")).not.toBeInTheDocument();
+    expect(screen.queryByText("Model/Deployment")).not.toBeInTheDocument();
   });
 });

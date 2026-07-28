@@ -44,6 +44,13 @@ if (typeof Element.prototype.scrollIntoView === "undefined") {
   Element.prototype.scrollIntoView = () => {};
 }
 
+// Polyfill pointer capture for Radix Select under jsdom.
+if (typeof Element.prototype.hasPointerCapture === "undefined") {
+  Element.prototype.hasPointerCapture = () => false;
+  Element.prototype.setPointerCapture = () => {};
+  Element.prototype.releasePointerCapture = () => {};
+}
+
 // Fix Node.js 25+ AbortSignal incompatibility with jsdom + react-router.
 // Node 25's native Request constructor rejects jsdom's AbortSignal polyfill.
 // Suppress the unhandled rejection to prevent false test failures.

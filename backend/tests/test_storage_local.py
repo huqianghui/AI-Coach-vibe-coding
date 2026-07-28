@@ -19,7 +19,7 @@ class TestLocalStorageBackend:
         """save() writes content and returns full path."""
         path = await storage.save("test/doc.pdf", b"pdf-content")
         assert os.path.isfile(path)
-        assert path == os.path.join(str(tmp_path), "test/doc.pdf")
+        assert path == os.path.normpath(os.path.join(str(tmp_path), "test/doc.pdf"))
 
     async def test_save_creates_subdirectories(self, storage, tmp_path):
         """save() creates nested directories automatically."""

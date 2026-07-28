@@ -8,6 +8,7 @@ from httpx import AsyncClient
 from app.models.hcp_profile import HcpProfile
 from app.models.message import SessionMessage
 from app.models.scenario import Scenario
+from app.models.scoring_rubric import ScoringRubric
 from app.models.session import CoachingSession
 from app.models.user import User
 from app.services.agents.adapters.mock import MockCoachingAdapter
@@ -66,8 +67,20 @@ async def _setup_session(
             name="Dr. Extended",
             specialty="Oncology",
             created_by=admin.id,
+            agent_id="dr-extended-agent",
+            agent_version="1",
+            agent_sync_status="synced",
         )
         session.add(hcp)
+        await session.flush()
+
+        rubric = ScoringRubric(
+            name="Extended Rubric",
+            scenario_type="f2f",
+            dimensions=json.dumps([]),
+            created_by=admin.id,
+        )
+        session.add(rubric)
         await session.flush()
 
         scenario = Scenario(
@@ -77,7 +90,7 @@ async def _setup_session(
             skill_id="test-skill-id",
             status="active",
             created_by=admin.id,
-            rubric_id="test-rubric-id",
+            rubric_id=rubric.id,
         )
         session.add(scenario)
         await session.flush()
@@ -93,6 +106,8 @@ async def _setup_session(
             scenario_id=scenario.id,
             status=status,
             key_messages_status=km_status,
+            agent_name="dr-extended-agent",
+            agent_version="1",
         )
         session.add(coaching_session)
         await session.flush()

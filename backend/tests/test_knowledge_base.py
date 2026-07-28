@@ -1205,7 +1205,9 @@ class TestKbAgentSyncIntegration:
         # VoiceLiveInstance so build_voice_live_metadata (called before the KB
         # resolution step under test) doesn't hit the dead no-VL-instance
         # fallback branch (which still reads the now-deleted columns).
-        vl_instance = VoiceLiveInstance(name="KB Sync Test Instance", created_by=sample_hcp.created_by)
+        vl_instance = VoiceLiveInstance(
+            name="KB Sync Test Instance", created_by=sample_hcp.created_by
+        )
         db_session.add(vl_instance)
         await db_session.flush()
         sample_hcp.voice_live_instance_id = vl_instance.id

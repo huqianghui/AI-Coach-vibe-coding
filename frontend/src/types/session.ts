@@ -19,6 +19,8 @@ export interface CoachingSession {
   overall_score: number | null;
   passed: boolean | null;
   mode: string;
+  agent_name: string | null;
+  agent_version: string | null;
   message_count: number;
   created_at: string;
   updated_at: string;

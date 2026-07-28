@@ -1,6 +1,7 @@
 """Session lifecycle management: create, message, end, key message detection."""
 
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from sqlalchemy import func, select
@@ -14,6 +15,42 @@ from app.utils.datetime import as_utc_aware, utc_now_naive
 from app.utils.exceptions import AppException, NotFoundException
 
 
+@dataclass(frozen=True)
+class PinnedAgentReference:
+    """Immutable hosted Prompt Agent identity owned by a coaching session."""
+
+    name: str
+    version: str
+
+
+async def resolve_pinned_agent(session: CoachingSession) -> PinnedAgentReference:
+    """Validate and return only the Agent identity persisted on a session."""
+    name = session.agent_name.strip() if session.agent_name else ""
+    version = session.agent_version.strip() if session.agent_version else ""
+    if not name:
+        raise AppException(
+            status_code=409,
+            code="AGENT_PIN_MISSING",
+            message="Session does not have a pinned Agent name",
+            details={"field": "agent_name"},
+        )
+    if not version:
+        raise AppException(
+            status_code=409,
+            code="AGENT_PIN_MISSING",
+            message="Session does not have a pinned Agent version",
+            details={"field": "agent_version"},
+        )
+    if name.lower().startswith("asst_"):
+        raise AppException(
+            status_code=409,
+            code="AGENT_PIN_INVALID",
+            message="Session is pinned to an unsupported classic Agent identity",
+            details={"field": "agent_name"},
+        )
+    return PinnedAgentReference(name=name, version=version)
+
+
 async def create_session(
     db: AsyncSession, scenario_id: str, user_id: str, mode: str = "text"
 ) -> CoachingSession:
@@ -22,7 +59,11 @@ async def create_session(
     Verifies the scenario exists and is active, initializes key_messages_status
     tracking from the scenario's key messages.
     """
-    result = await db.execute(select(Scenario).where(Scenario.id == scenario_id))
+    result = await db.execute(
+        select(Scenario)
+        .options(selectinload(Scenario.hcp_profile))
+        .where(Scenario.id == scenario_id)
+    )
     scenario = result.scalar_one_or_none()
     if scenario is None:
         raise NotFoundException("Scenario not found")
@@ -31,6 +72,45 @@ async def create_session(
             status_code=409,
             code="SCENARIO_NOT_ACTIVE",
             message="Scenario is not active",
+        )
+
+    profile = scenario.hcp_profile
+    if profile is None:
+        raise AppException(
+            status_code=409,
+            code="HCP_AGENT_SOURCE_MISSING",
+            message="Scenario does not have an HCP Agent source",
+        )
+    if profile.agent_sync_status != "synced":
+        raise AppException(
+            status_code=409,
+            code="HCP_AGENT_NOT_SYNCED",
+            message="Scenario HCP Agent is not synced",
+            details={"sync_status": profile.agent_sync_status},
+        )
+
+    agent_name = profile.agent_id.strip() if profile.agent_id else ""
+    agent_version = profile.agent_version.strip() if profile.agent_version else ""
+    if not agent_name:
+        raise AppException(
+            status_code=409,
+            code="AGENT_PIN_MISSING",
+            message="Scenario HCP does not have a hosted Agent name",
+            details={"field": "agent_name"},
+        )
+    if not agent_version:
+        raise AppException(
+            status_code=409,
+            code="AGENT_PIN_MISSING",
+            message="Scenario HCP does not have a hosted Agent version",
+            details={"field": "agent_version"},
+        )
+    if agent_name.lower().startswith("asst_"):
+        raise AppException(
+            status_code=409,
+            code="AGENT_PIN_INVALID",
+            message="Scenario HCP uses an unsupported classic Agent identity",
+            details={"field": "agent_name"},
         )
 
     # Initialize key messages tracking
@@ -60,6 +140,9 @@ async def create_session(
         status="created",
         mode=mode,
         key_messages_status=json.dumps(key_messages_status),
+        agent_name=agent_name,
+        agent_version=agent_version,
+        agent_response_id=None,
         # Skill audit trail: snapshot from scenario at session creation time
         skill_id=scenario.skill_id,
         skill_version_id=scenario.skill_version_id,

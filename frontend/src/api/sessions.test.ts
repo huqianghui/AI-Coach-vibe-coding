@@ -26,7 +26,7 @@ beforeEach(() => vi.clearAllMocks());
 
 describe("Sessions API client", () => {
   describe("createSession", () => {
-    it("calls POST /sessions with scenario_id and defaults mode to text", async () => {
+    it("calls POST /sessions with scenario_id and defaults to realtime voice", async () => {
       mockClient.post.mockResolvedValue({
         data: { id: "sess-new", status: "created", scenario_id: "sc-1", mode: "text" },
       });
@@ -35,7 +35,7 @@ describe("Sessions API client", () => {
 
       expect(mockClient.post).toHaveBeenCalledWith("/sessions", {
         scenario_id: "sc-1",
-        mode: "text",
+        mode: "voice_realtime_model",
       });
       expect(result.id).toBe("sess-new");
       expect(result.status).toBe("created");

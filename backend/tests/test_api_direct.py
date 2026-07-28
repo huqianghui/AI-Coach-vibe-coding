@@ -4,7 +4,7 @@ Bypasses ASGI transport to guarantee coverage tracks async function execution.
 """
 
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -33,6 +33,7 @@ async def _create_vl_instance(db, user_id: str) -> str:
     db.add(inst)
     await db.flush()
     return inst.id
+
 
 _MOCK_LLM_RESULT = {
     "overall_score": 75.0,
@@ -288,7 +289,14 @@ class TestSessionsDirect:
         db.add(user)
         await db.flush()
 
-        hcp = HcpProfile(name="Dr. DSess", specialty="Onc", created_by=user.id)
+        hcp = HcpProfile(
+            name="Dr. DSess",
+            specialty="Onc",
+            created_by=user.id,
+            agent_id="dr-dsess-agent",
+            agent_version="1",
+            agent_sync_status="synced",
+        )
         db.add(hcp)
         await db.flush()
 
@@ -381,19 +389,12 @@ class TestSessionsDirect:
         Captures the async generator before EventSourceResponse wraps it,
         then iterates it to cover all lines inside event_generator().
         """
-        from app.services.agents.adapters.mock import MockCoachingAdapter
-        from app.services.agents.registry import registry
+        from app.services.agent_chat_service import AgentResponseEvent
         from app.services.session_service import create_session, save_message
 
-        # Register the mock LLM adapter under default provider name
-        adapter = MockCoachingAdapter()
-        registry.register("llm", adapter)
-        # Also register under the env default_llm_provider name
-        import app.api.sessions as _sm
-
-        _default = _sm.settings.default_llm_provider
-        if _default != adapter.name:
-            registry._categories.setdefault("llm", {})[_default] = adapter
+        async def stream_agent(*_args, **_kwargs):
+            yield AgentResponseEvent(kind="text", text="Hello doctor")
+            yield AgentResponseEvent(kind="completed", response_id="resp-direct")
 
         user, scenario = await self._seed_scenario(db_session)
         session = await create_session(db_session, scenario.id, user.id)
@@ -417,15 +418,15 @@ class TestSessionsDirect:
             from app.schemas.session import SendMessageRequest
 
             request = SendMessageRequest(message="Hello doctor, I want to discuss PFS data")
-            await sessions_module.send_message(
-                session_id=session.id, request=request, db=db_session, user=user
-            )
-
-            # Now iterate the captured generator to cover lines 106-186
-            assert captured_gen is not None
-            events = []
-            async for event in captured_gen:
-                events.append(event)
+            with patch("app.api.sessions.stream_agent_response", stream_agent):
+                await sessions_module.send_message(
+                    session_id=session.id, request=request, db=db_session, user=user
+                )
+                # Consume while the lazy SSE generator still sees the stream mock.
+                assert captured_gen is not None
+                events = []
+                async for event in captured_gen:
+                    events.append(event)
 
             # Verify we got expected event types
             event_types = [e["event"] for e in events]
@@ -441,17 +442,12 @@ class TestSessionsDirect:
         Forces the mock adapter to always emit a SUGGESTION event by
         patching random to guarantee the 30% branch is taken.
         """
-        from app.services.agents.adapters.mock import MockCoachingAdapter
-        from app.services.agents.registry import registry
+        from app.services.agent_chat_service import AgentResponseEvent
         from app.services.session_service import create_session, save_message
 
-        adapter = MockCoachingAdapter()
-        registry.register("llm", adapter)
-        import app.api.sessions as _sm
-
-        _default = _sm.settings.default_llm_provider
-        if _default != adapter.name:
-            registry._categories.setdefault("llm", {})[_default] = adapter
+        async def stream_agent(*_args, **_kwargs):
+            yield AgentResponseEvent(kind="text", text="PFS and safety")
+            yield AgentResponseEvent(kind="completed", response_id="resp-suggestion")
 
         user, scenario = await self._seed_scenario(db_session)
         session = await create_session(db_session, scenario.id, user.id)
@@ -474,20 +470,25 @@ class TestSessionsDirect:
             from app.schemas.session import SendMessageRequest
 
             request = SendMessageRequest(message="Tell me about the PFS Safety data please")
-            # Patch random so SUGGESTION is always emitted (random() < 0.3)
-            with patch("app.services.agents.adapters.mock.random") as mock_random:
-                mock_random.randint.return_value = 2
-                mock_random.random.return_value = 0.1  # < 0.3 → SUGGESTION
-                mock_random.choice.side_effect = lambda x: x[0]
-
+            suggestion = MagicMock()
+            suggestion.message = "Mention the trial endpoint"
+            suggestion.type.value = "key_message"
+            suggestion.trigger = "missing"
+            suggestion.relevance_score = 0.9
+            with (
+                patch("app.api.sessions.stream_agent_response", stream_agent),
+                patch(
+                    "app.api.sessions.generate_suggestions",
+                    new=AsyncMock(return_value=[suggestion]),
+                ),
+            ):
                 await sessions_module.send_message(
                     session_id=session.id, request=request, db=db_session, user=user
                 )
-
-            assert captured_gen is not None
-            events = []
-            async for event in captured_gen:
-                events.append(event)
+                assert captured_gen is not None
+                events = []
+                async for event in captured_gen:
+                    events.append(event)
 
             event_types = [e["event"] for e in events]
             # Must have "hint" from the SUGGESTION event (line 145)

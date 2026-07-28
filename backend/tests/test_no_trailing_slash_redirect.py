@@ -68,6 +68,9 @@ async def _seed_scenario(admin_id: str) -> str:
             name="Dr. Redirect",
             specialty="Oncology",
             created_by=admin_id,
+            agent_id="dr-redirect-agent",
+            agent_version="1",
+            agent_sync_status="synced",
         )
         session.add(profile)
         await session.flush()

@@ -20,10 +20,12 @@ export async function fetchVoiceLiveToken(hcpProfileId?: string): Promise<VoiceL
 export async function fetchWebRTCSession(
   hcpProfileId?: string,
   vlInstanceId?: string,
+  sessionId?: string,
 ): Promise<WebRTCSessionConfig> {
   const params: Record<string, string> = {};
   if (hcpProfileId) params.hcp_profile_id = hcpProfileId;
   if (vlInstanceId) params.vl_instance_id = vlInstanceId;
+  if (sessionId) params.session_id = sessionId;
   const res = await apiClient.post<WebRTCSessionConfig>(
     "/voice-live/webrtc/session",
     null,

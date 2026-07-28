@@ -64,6 +64,8 @@ class SessionResponse(BaseModel):
     overall_score: float | None
     passed: bool | None
     mode: str = "text"
+    agent_name: str | None = None
+    agent_version: str | None = None
     audio_url: str | None = None
     voice_score_status: str = "none"
     focus_instruction: str | None = None

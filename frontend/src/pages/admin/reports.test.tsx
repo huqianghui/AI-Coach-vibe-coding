@@ -3,13 +3,15 @@ import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import AdminReportsPage from "./reports";
 
-vi.mock("react-i18next", () => ({
-  useTranslation: () => ({
-    t: (key: string, opts?: { defaultValue?: string }) =>
-      opts?.defaultValue ?? key,
-    i18n: { changeLanguage: vi.fn(), language: "en" },
-  }),
-}));
+vi.mock("react-i18next", async () => {
+  const { createTestTranslator } = await import("@/test/i18n-mock");
+  return {
+    useTranslation: (namespace?: string | string[]) => ({
+      t: createTestTranslator(namespace),
+      i18n: { changeLanguage: vi.fn(), language: "en-US" },
+    }),
+  };
+});
 
 const mockExportSessionsMutate = vi.fn();
 const mockExportAdminMutate = vi.fn();
@@ -120,9 +122,9 @@ describe("AdminReportsPage", () => {
     renderPage();
     expect(screen.getByText("Total Sessions")).toBeInTheDocument();
     expect(screen.getByText("1247")).toBeInTheDocument();
-    expect(screen.getByText("Avg Score")).toBeInTheDocument();
+    expect(screen.getByText("Org Avg Score")).toBeInTheDocument();
     expect(screen.getByText("73.8")).toBeInTheDocument();
-    expect(screen.getByText("Completion Rate")).toBeInTheDocument();
+    expect(screen.getByText("Training Completion Rate")).toBeInTheDocument();
     expect(screen.getByText("68%")).toBeInTheDocument();
     expect(screen.getByText("Active Users")).toBeInTheDocument();
     expect(screen.getByText("156")).toBeInTheDocument();

@@ -20,9 +20,7 @@ from app.schemas.session import (
 )
 from app.schemas.suggestion import SuggestionResponse
 from app.services import session_service
-from app.services.agents.base import CoachEventType, CoachRequest
-from app.services.agents.registry import registry
-from app.services.prompt_builder import build_hcp_system_prompt
+from app.services.agent_chat_service import AgentChatError, stream_agent_response
 from app.services.report_service import generate_report
 from app.services.scoring_service import resolve_rubric_dimensions
 from app.services.suggestion_service import generate_suggestions, parse_key_messages_status
@@ -112,115 +110,82 @@ async def send_message(
             message="Session is no longer active",
         )
 
+    pinned_agent = await session_service.resolve_pinned_agent(session)
+
+    # Suggestions still use the rubric after the Agent response; the rubric is never
+    # supplied to Foundry as prompt or temporary instructions.
+    rubric_dims = await resolve_rubric_dimensions(db, session.scenario)
+    scoring_weights = {d["name"]: d["weight"] for d in rubric_dims}
+
     # Save MR message (transitions created -> in_progress)
     await session_service.save_message(db, session_id, "user", request.message)
 
     async def event_generator():
-        # Get LLM adapter
-        adapter = registry.get("llm", settings.default_llm_provider)
-        if adapter is None:
+        full_response = ""
+        response_id = None
+        try:
+            async for event in stream_agent_response(
+                db,
+                pinned_agent.name,
+                pinned_agent.version,
+                request.message,
+                session.agent_response_id,
+            ):
+                if event.kind == "text":
+                    full_response += event.text
+                    yield {"event": "text", "data": event.text}
+                elif event.kind == "completed":
+                    response_id = event.response_id
+        except AgentChatError as exc:
             yield {
                 "event": "error",
-                "data": "No LLM adapter available",
+                "data": json.dumps({"code": "AGENT_RESPONSE_FAILED", "message": str(exc)}),
             }
             return
 
-        # Build HCP system prompt
-        key_messages = json.loads(session.scenario.key_messages)
-
-        hcp_prompt = await build_hcp_system_prompt(
-            session.scenario.hcp_profile,
-            session.scenario,
-            key_messages,
-            db=db,
-        )
-
-        # Fetch conversation history for multi-turn dialogue
-        history_messages = await session_service.get_session_messages(db, session_id)
-        conversation_history = [{"role": m.role, "content": m.content} for m in history_messages]
-
-        # Phase 24: Update SOP progress and get focus instruction for this run (D-01, D-05, D-06)
-        msg_dicts_for_sop = [{"role": m.role, "content": m.content} for m in history_messages]
-        focus_instruction = await session_service.update_sop_progress(
-            db, session, msg_dicts_for_sop
-        )
-
-        # Phase 24: Prepend focus_instruction to scenario context for text-mode SSE (D-01)
-        scenario_context = hcp_prompt
-        if focus_instruction:
-            scenario_context = focus_instruction + "\n\n" + scenario_context
-        # Note: For agent-mode sessions (Azure Foundry SDK), focus_instruction should be
-        # passed as the `additional_instructions` parameter on the agent run.
-
-        # Build coach request
-        hcp_dict = None
-        if session.scenario.hcp_profile:
-            hcp_dict = session.scenario.hcp_profile.to_prompt_dict()
-
-        # Build scoring weights from rubric dimensions (D-05)
-        rubric_dims = await resolve_rubric_dimensions(db, session.scenario)
-        scoring_weights = {d["name"]: d["weight"] for d in rubric_dims}
-
-        coach_request = CoachRequest(
-            session_id=session_id,
-            message=request.message,
-            scenario_context=scenario_context,
-            hcp_profile=hcp_dict,
-            scoring_criteria=scoring_weights,
-            conversation_history=conversation_history,
-        )
-
-        full_response = ""
-        async for event in adapter.execute(coach_request):
-            if event.type == CoachEventType.TEXT:
-                full_response += event.content
-                yield {
-                    "event": "text",
-                    "data": event.content,
-                }
-            elif event.type == CoachEventType.SUGGESTION:
-                yield {
-                    "event": "hint",
-                    "data": json.dumps(
-                        {
-                            "content": event.content,
-                            "metadata": event.metadata,
-                        }
-                    ),
-                }
-            elif event.type == CoachEventType.DONE:
-                # Save complete HCP response
-                await session_service.save_message(db, session_id, "assistant", full_response)
-                # Key message detection (D-03)
-                km_status = await session_service.detect_key_messages(db, session, request.message)
-                yield {
-                    "event": "key_messages",
-                    "data": json.dumps(km_status),
-                }
-                # Generate real-time coaching suggestions (COACH-08)
-                km_status_list = parse_key_messages_status(session.key_messages_status)
-                messages_for_hints = await session_service.get_session_messages(db, session_id)
-                msg_dicts = [{"role": m.role, "content": m.content} for m in messages_for_hints]
-                suggestions = await generate_suggestions(
-                    messages=msg_dicts,
-                    key_messages_status=km_status_list,
-                    scoring_weights=scoring_weights,
-                )
-                for suggestion in suggestions:
-                    yield {
-                        "event": "hint",
-                        "data": json.dumps(
-                            {
-                                "content": suggestion.message,
-                                "metadata": {
-                                    "type": suggestion.type.value,
-                                    "trigger": suggestion.trigger,
-                                    "relevance": suggestion.relevance_score,
-                                },
-                            }
-                        ),
+        if not response_id:
+            yield {
+                "event": "error",
+                "data": json.dumps(
+                    {
+                        "code": "AGENT_RESPONSE_INCOMPLETE",
+                        "message": "Agent response ended without completion",
                     }
-                yield {"event": "done", "data": ""}
+                ),
+            }
+            return
+
+        # Persist successful conversation state atomically after terminal completion.
+        await session_service.save_message(db, session_id, "assistant", full_response)
+        session.agent_response_id = response_id
+        await db.flush()
+
+        km_status = await session_service.detect_key_messages(db, session, request.message)
+        yield {"event": "key_messages", "data": json.dumps(km_status)}
+
+        km_status_list = parse_key_messages_status(session.key_messages_status)
+        messages_for_hints = await session_service.get_session_messages(db, session_id)
+        msg_dicts = [{"role": m.role, "content": m.content} for m in messages_for_hints]
+        suggestions = await generate_suggestions(
+            messages=msg_dicts,
+            key_messages_status=km_status_list,
+            scoring_weights=scoring_weights,
+        )
+        for suggestion in suggestions:
+            yield {
+                "event": "hint",
+                "data": json.dumps(
+                    {
+                        "content": suggestion.message,
+                        "metadata": {
+                            "type": suggestion.type.value,
+                            "trigger": suggestion.trigger,
+                            "relevance": suggestion.relevance_score,
+                        },
+                    }
+                ),
+            }
+        yield {"event": "done", "data": ""}
 
     return EventSourceResponse(event_generator())
 

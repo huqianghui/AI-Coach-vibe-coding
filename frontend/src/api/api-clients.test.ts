@@ -22,6 +22,7 @@ import {
   endSession,
 } from "./sessions";
 import { triggerScoring, getSessionScore } from "./scoring";
+import { fetchWebRTCSession } from "./voice-live";
 
 vi.mock("./client", () => {
   const mock = {
@@ -162,7 +163,7 @@ describe("Sessions API", () => {
     const result = await createSession("sc-1");
     expect(mockClient.post).toHaveBeenCalledWith("/sessions", {
       scenario_id: "sc-1",
-      mode: "text",
+      mode: "voice_realtime_model",
     });
     expect(result.id).toBe("sess-1");
   });
@@ -226,5 +227,37 @@ describe("Scoring API", () => {
       "/scoring/sessions/sess-1/score",
     );
     expect(result.overall_score).toBe(75);
+  });
+});
+
+describe("Voice Live WebRTC API", () => {
+  it("serializes an optional Unified Training session only as session_id", async () => {
+    mockClient.post.mockResolvedValue({ data: { mode: "agent" } });
+
+    await fetchWebRTCSession("hcp-1", "vl-1", "session-1");
+
+    expect(mockClient.post).toHaveBeenCalledWith(
+      "/voice-live/webrtc/session",
+      null,
+      {
+        params: {
+          hcp_profile_id: "hcp-1",
+          vl_instance_id: "vl-1",
+          session_id: "session-1",
+        },
+      },
+    );
+  });
+
+  it("preserves the standalone query shape when sessionId is absent", async () => {
+    mockClient.post.mockResolvedValue({ data: { mode: "model" } });
+
+    await fetchWebRTCSession("hcp-1", "vl-1");
+
+    expect(mockClient.post).toHaveBeenCalledWith(
+      "/voice-live/webrtc/session",
+      null,
+      { params: { hcp_profile_id: "hcp-1", vl_instance_id: "vl-1" } },
+    );
   });
 });

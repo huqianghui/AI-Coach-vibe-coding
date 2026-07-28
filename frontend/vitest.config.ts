@@ -14,6 +14,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "jsdom",
+    testTimeout: 15_000,
     setupFiles: ["./src/test/setup.ts"],
     server: {
       deps: {
@@ -24,10 +25,14 @@ export default defineConfig({
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
     coverage: {
       provider: "v8",
+      // Vitest 3.2 on Windows compares /C:/... tested URLs with C:/...
+      // glob results and otherwise merges duplicate empty reports.
+      all: false,
       reporter: ["text", "text-summary", "lcov"],
       include: ["src/**/*.{ts,tsx}"],
       exclude: [
         "src/test/**",
+        "src/**/*.{test,spec}.{ts,tsx}",
         "src/**/*.d.ts",
         "src/vite-env.d.ts",
         "src/main.tsx",

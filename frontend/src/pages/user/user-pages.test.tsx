@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import type { ReactNode } from "react";
+import TrainingPage from "./training";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -102,7 +103,6 @@ function wrapper({ children }: { children: ReactNode }) {
 
 describe("TrainingPage (ScenarioSelection)", () => {
   it("renders the scenario selection page title", async () => {
-    const { default: TrainingPage } = await import("./training");
     render(<TrainingPage />, { wrapper });
 
     expect(
@@ -111,7 +111,6 @@ describe("TrainingPage (ScenarioSelection)", () => {
   });
 
   it("renders F2F and Conference tabs", async () => {
-    const { default: TrainingPage } = await import("./training");
     render(<TrainingPage />, { wrapper });
 
     expect(screen.getByText("scenarioSelection.tabF2F")).toBeInTheDocument();
@@ -121,7 +120,6 @@ describe("TrainingPage (ScenarioSelection)", () => {
   });
 
   it("shows empty state when no scenarios", async () => {
-    const { default: TrainingPage } = await import("./training");
     render(<TrainingPage />, { wrapper });
 
     expect(

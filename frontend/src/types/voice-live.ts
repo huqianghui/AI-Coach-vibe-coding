@@ -128,6 +128,7 @@ export interface WebRTCSessionConfig {
   mode: "agent" | "model";
   session_config: Record<string, unknown>;
   agent_id?: string;
+  agent_version?: string;
   project_name?: string;
   avatar_warning?: string;
 }

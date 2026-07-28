@@ -3,13 +3,15 @@ import { render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import AdminSettingsPage from "./settings";
 
-vi.mock("react-i18next", () => ({
-  useTranslation: () => ({
-    t: (key: string, opts?: { defaultValue?: string }) =>
-      opts?.defaultValue ?? key,
-    i18n: { changeLanguage: vi.fn(), language: "en" },
-  }),
-}));
+vi.mock("react-i18next", async () => {
+  const { createTestTranslator } = await import("@/test/i18n-mock");
+  return {
+    useTranslation: (namespace?: string | string[]) => ({
+      t: createTestTranslator(namespace),
+      i18n: { changeLanguage: vi.fn(), language: "en-US" },
+    }),
+  };
+});
 
 describe("AdminSettingsPage", () => {
   it("renders the page title and description", () => {
@@ -85,7 +87,7 @@ describe("AdminSettingsPage", () => {
     render(<AdminSettingsPage />);
     // The select trigger shows "Chinese (Simplified)" because of the default value
     expect(
-      screen.getByText("Chinese (Simplified)"),
+      screen.getByText("Chinese"),
     ).toBeInTheDocument();
   });
 });

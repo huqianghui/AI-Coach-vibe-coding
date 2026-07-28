@@ -71,6 +71,7 @@ class WebRTCSessionResponse(BaseModel):
     mode: str  # "agent" | "model"
     session_config: dict  # Voice, turn detection, noise suppression settings
     agent_id: str | None = None
+    agent_version: str | None = None
     project_name: str | None = None
     avatar_warning: str | None = None  # Warning when avatar unavailable with WebRTC
 

@@ -204,7 +204,7 @@ describe("VoiceSessionPage", () => {
     expect(screen.queryByTestId("voice-session")).not.toBeInTheDocument();
   });
 
-  it("error state back button navigates to /user/scenarios", async () => {
+  it("error state back button navigates to unified training", async () => {
     vi.resetModules();
     vi.doMock("react-i18next", () => ({
       useTranslation: () => ({
@@ -238,7 +238,7 @@ describe("VoiceSessionPage", () => {
 
     const backButton = screen.getByText("back");
     await userEvent.click(backButton);
-    expect(mockNavigate).toHaveBeenCalledWith("/user/scenarios");
+    expect(mockNavigate).toHaveBeenCalledWith("/user/training");
   });
 
   it("renders VoiceSession component with correct props after session load", async () => {

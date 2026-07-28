@@ -28,6 +28,7 @@ const mockScenario: Scenario = {
   difficulty: "medium",
   status: "active",
   hcp_profile_id: "hcp-1",
+  tags: ["product:DrugX", "area:Oncology"],
   hcp_profile: {
     id: "hcp-1",
     name: "Dr. Jane Doe",

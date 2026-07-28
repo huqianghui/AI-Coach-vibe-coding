@@ -185,7 +185,7 @@ describe("AdminDashboard", () => {
 
   it("renders score distribution chart", () => {
     renderDashboard();
-    expect(screen.getByText("Score Distribution")).toBeInTheDocument();
+    expect(screen.getByText("scoreDistribution")).toBeInTheDocument();
     expect(screen.getByTestId("score-bar-chart")).toBeInTheDocument();
   });
 
@@ -211,7 +211,7 @@ describe("AdminDashboard", () => {
 
   it("renders top performers section", () => {
     renderDashboard();
-    expect(screen.getByText("Top Performers")).toBeInTheDocument();
+    expect(screen.getByText("topPerformers")).toBeInTheDocument();
   });
 
   it("renders all top performer names", () => {
@@ -248,7 +248,7 @@ describe("AdminDashboard", () => {
 
   it("renders needs attention section", () => {
     renderDashboard();
-    expect(screen.getByText("Needs Attention")).toBeInTheDocument();
+    expect(screen.getByText("needsAttention")).toBeInTheDocument();
   });
 
   it("renders needs attention user names", () => {
@@ -274,13 +274,13 @@ describe("AdminDashboard", () => {
 
   it("renders training activity section", () => {
     renderDashboard();
-    expect(screen.getByText("Training Activity")).toBeInTheDocument();
+    expect(screen.getByText("trainingActivity")).toBeInTheDocument();
   });
 
   it("renders training activity description", () => {
     renderDashboard();
     expect(
-      screen.getByText("Sessions completed per day over the last 4 weeks"),
+      screen.getByText("trainingActivityDesc"),
     ).toBeInTheDocument();
   });
 
@@ -297,10 +297,10 @@ describe("AdminDashboard", () => {
 
   it("renders week labels for training activity", () => {
     renderDashboard();
-    expect(screen.getByText("Week 1")).toBeInTheDocument();
-    expect(screen.getByText("Week 2")).toBeInTheDocument();
-    expect(screen.getByText("Week 3")).toBeInTheDocument();
-    expect(screen.getByText("Week 4")).toBeInTheDocument();
+    expect(screen.getByText("week 1")).toBeInTheDocument();
+    expect(screen.getByText("week 2")).toBeInTheDocument();
+    expect(screen.getByText("week 3")).toBeInTheDocument();
+    expect(screen.getByText("week 4")).toBeInTheDocument();
   });
 
   it("renders non-zero heatmap values", () => {
@@ -325,8 +325,8 @@ describe("AdminDashboard", () => {
       isLoading: false,
     };
     renderDashboard();
-    expect(screen.getByText("Top Performers")).toBeInTheDocument();
-    expect(screen.getByText("Needs Attention")).toBeInTheDocument();
+    expect(screen.getByText("topPerformers")).toBeInTheDocument();
+    expect(screen.getByText("needsAttention")).toBeInTheDocument();
     // No user names should appear
     expect(screen.queryByText("Alice Zhang")).not.toBeInTheDocument();
   });

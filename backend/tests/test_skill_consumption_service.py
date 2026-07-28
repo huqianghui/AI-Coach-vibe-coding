@@ -75,7 +75,14 @@ async def _seed_user() -> str:
 
 async def _seed_hcp_profile(user_id: str) -> str:
     async with TestSessionLocal() as session:
-        hcp = HcpProfile(name="Dr. Test", specialty="Oncology", created_by=user_id)
+        hcp = HcpProfile(
+            name="Dr. Test",
+            specialty="Oncology",
+            created_by=user_id,
+            agent_id="dr-skill-consumption-agent",
+            agent_version="1",
+            agent_sync_status="synced",
+        )
         session.add(hcp)
         await session.commit()
         await session.refresh(hcp)

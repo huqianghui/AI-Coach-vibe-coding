@@ -28,6 +28,7 @@ async def _create_vl_instance(session, user_id: str) -> str:
     await session.refresh(inst)
     return inst.id
 
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
