@@ -18,19 +18,17 @@ vi.mock("./key-messages", () => ({
   ),
 }));
 
-const mockScenarioTags: Scenario["tags"] = ["product:DrugX", "area:Oncology"];
-
 const mockScenario: Scenario = {
   id: "sc-1",
   name: "Oncology Visit",
   description: "Practice session",
   product: "DrugX",
   therapeutic_area: "Oncology",
+  tags: ["product:DrugX", "area:Oncology"],
   mode: "f2f",
   difficulty: "medium",
   status: "active",
   hcp_profile_id: "hcp-1",
-  ...{ tags: mockScenarioTags },
   hcp_profile: {
     id: "hcp-1",
     name: "Dr. Jane Doe",
