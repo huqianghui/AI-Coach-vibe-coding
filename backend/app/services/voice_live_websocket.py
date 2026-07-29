@@ -42,7 +42,16 @@ ERROR_TYPE = "error"
 MAX_CLIENT_SYSTEM_PROMPT_LENGTH = 8_000
 MAX_VOICE_LIVE_INSTRUCTIONS_LENGTH = 16_000
 TRAINABLE_SESSION_STATUSES = frozenset({"created", "in_progress"})
-MODEL_SESSION_MODES = frozenset({"voice_realtime_model", "digital_human_realtime_model"})
+TRAINING_VOICE_SESSION_MODES = frozenset(
+    {
+        "voice_pipeline",
+        "digital_human_pipeline",
+        "voice_realtime_model",
+        "digital_human_realtime_model",
+        "voice_realtime_agent",
+        "digital_human_realtime_agent",
+    }
+)
 
 
 class AgentSyncRequiredError(ValueError):
@@ -338,30 +347,20 @@ async def _resolve_training_session_context(
             code="SESSION_MODE_UNSUPPORTED",
             message="Session is not an F2F training session",
         )
-    if session.mode not in MODEL_SESSION_MODES:
-        code = (
-            "SESSION_AGENT_SKILL_CONTEXT_UNSUPPORTED"
-            if session.mode.endswith("_agent")
-            else "SESSION_MODE_UNSUPPORTED"
-        )
+    if session.mode not in TRAINING_VOICE_SESSION_MODES:
         raise AppException(
             status_code=409,
-            code=code,
-            message=("Session-scoped Skill instructions require an explicit Voice Live model mode"),
+            code="SESSION_MODE_UNSUPPORTED",
+            message="Session is not configured for Voice Live training",
         )
 
-    focus_instruction = (session.focus_instruction or "").strip()
-    if not focus_instruction:
-        raise AppException(
-            status_code=409,
-            code="SESSION_SKILL_CONTEXT_UNAVAILABLE",
-            message="Session does not have a fixed Skill focus instruction",
-        )
+    pinned_agent = await session_service.resolve_pinned_agent(session)
 
     return {
         "hcp_profile_id": session.scenario.hcp_profile_id,
-        "focus_instruction": focus_instruction,
-        "avatar_enabled": session.mode == "digital_human_realtime_model",
+        "agent_name": pinned_agent.name,
+        "agent_version": pinned_agent.version,
+        "avatar_enabled": session.mode.startswith("digital_human"),
     }
 
 
@@ -441,7 +440,7 @@ async def handle_voice_live_websocket(
         avatar_enabled = session_data.get("avatar_enabled")
         avatar_enabled_override = avatar_enabled if isinstance(avatar_enabled, bool) else None
 
-        focus_instruction = ""
+        training_context = None
         if training_session_id is not None:
             if user_id is None:
                 await _send_error(
@@ -460,7 +459,6 @@ async def handle_voice_live_websocket(
 
             # Ignore all client-selected identity/prompt inputs on trusted training paths.
             hcp_profile_id = training_context["hcp_profile_id"]
-            focus_instruction = training_context["focus_instruction"]
             # Session mode is authoritative. Client avatar input is ignored on
             # this path; _load_connection_config still applies HCP/instance gates.
             avatar_enabled_override = training_context["avatar_enabled"]
@@ -530,29 +528,20 @@ async def handle_voice_live_websocket(
             return
 
         if training_session_id is not None:
-            # force_model_mode resolves the real model endpoint from the start;
-            # fail closed if a future config path nevertheless returns Agent mode.
-            if cfg.get("use_agent_mode"):
+            master = await config_service.get_master_config(db)
+            project_name = str(master.default_project or "").strip() if master else ""
+            if not project_name:
                 await _send_error(
                     ws,
-                    "Session-scoped Skill instructions require Voice Live model mode",
-                    "SESSION_AGENT_SKILL_CONTEXT_UNSUPPORTED",
+                    "Voice Live Agent project is not configured",
+                    "AGENT_PROJECT_MISSING",
                 )
                 return
-            if not str(cfg.get("instructions") or "").strip():
-                await _send_error(
-                    ws,
-                    "The Session HCP persona could not be resolved",
-                    "HCP_PERSONA_UNAVAILABLE",
-                )
-                return
-            try:
-                cfg["instructions"] = _compose_session_instructions(
-                    str(cfg.get("instructions") or ""), focus_instruction
-                )
-            except AppException as exc:
-                await _send_error(ws, exc.message, exc.code)
-                return
+            cfg["use_agent_mode"] = True
+            cfg["agent_name"] = training_context["agent_name"]
+            cfg["agent_version"] = training_context["agent_version"]
+            cfg["project_name"] = project_name
+            cfg["instructions"] = ""
         else:
             try:
                 cfg["instructions"] = _compose_session_instructions(
@@ -675,13 +664,16 @@ async def handle_voice_live_websocket(
                 # == "synced" -- any profile that doesn't meet that bar raises
                 # AgentSyncRequiredError before this code is reached (D-08).
                 agent_name = cfg["agent_name"]
+                agent_version = cfg.get("agent_version", "")
                 project_name = cfg["project_name"]
                 session_log.info(
                     "Voice Live connecting (agent mode): endpoint=%s, "
-                    "agent_name=%s, project_name=%s, api_version=%s, avatar=%s, "
+                    "agent_name=%s, agent_version=%s, project_name=%s, "
+                    "api_version=%s, avatar=%s, "
                     "session_modalities=%s",
                     cfg["endpoint"],
                     agent_name,
+                    agent_version,
                     project_name,
                     _api_version,
                     cfg["avatar_enabled"],
@@ -693,6 +685,7 @@ async def handle_voice_live_websocket(
                     credential=credential,
                     api_version=_api_version,
                     agent_name=agent_name,
+                    agent_version=agent_version,
                     project_name=project_name,
                 ) as azure_conn:
                     await azure_conn.session.update(session=session_config)

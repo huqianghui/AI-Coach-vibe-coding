@@ -100,6 +100,7 @@ async def get_voice_live_status(
 async def create_webrtc_session(
     hcp_profile_id: str | None = Query(None, description="HCP profile ID for per-HCP config"),
     vl_instance_id: str | None = Query(None, description="Voice Live instance ID"),
+    session_id: str | None = Query(None, description="Owned Unified Training session ID"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> WebRTCSessionResponse:
@@ -109,7 +110,13 @@ async def create_webrtc_session(
     then establishes a direct RTCPeerConnection for bidirectional audio.
     """
     try:
-        return await create_webrtc_session_config(db, hcp_profile_id, vl_instance_id)
+        return await create_webrtc_session_config(
+            db,
+            hcp_profile_id,
+            vl_instance_id,
+            session_id=session_id,
+            user_id=user.id,
+        )
     except ValueError as e:
         raise AppException(
             status_code=503,

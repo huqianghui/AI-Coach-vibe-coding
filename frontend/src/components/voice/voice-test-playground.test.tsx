@@ -6,9 +6,11 @@ import type { VoiceTestPlaygroundProps, SessionState } from "./voice-test-playgr
 // --- Mocks ---
 
 vi.mock("react-i18next", () => ({
-  useTranslation: (_ns?: string | string[]) => ({
-    t: (key: string, opts?: Record<string, unknown>) =>
-      (opts?.defaultValue as string) ?? key,
+  useTranslation: (ns?: string | string[]) => ({
+    t: (key: string) =>
+      key.includes(":")
+        ? key
+        : `${Array.isArray(ns) ? ns[0] : (ns ?? "")}${ns ? ":" : ""}${key}`,
     i18n: { changeLanguage: vi.fn(), language: "en" },
   }),
 }));
@@ -242,7 +244,13 @@ describe("VoiceTestPlayground", () => {
       );
     });
 
-    expect(mockConnect).toHaveBeenCalledWith("hcp-1", "Hello", "vl-1");
+    expect(mockConnect).toHaveBeenCalledWith({
+      enableAvatar: undefined,
+      hcpProfileId: "hcp-1",
+      sessionId: undefined,
+      systemPrompt: "Hello",
+      vlInstanceId: "vl-1",
+    });
   });
 
   it("shows voice controls after successful connection", async () => {
@@ -525,7 +533,7 @@ describe("VoiceTestPlayground", () => {
 
     const badge = screen.getByTestId("mode-badge");
     expect(badge).toBeInTheDocument();
-    expect(badge).toHaveTextContent("Model Mode");
+    expect(badge).toHaveTextContent("admin:hcp.modelMode");
   });
 
   it("shows Agent Mode badge after connecting in agent mode", async () => {
@@ -538,7 +546,7 @@ describe("VoiceTestPlayground", () => {
 
     const badge = screen.getByTestId("mode-badge");
     expect(badge).toBeInTheDocument();
-    expect(badge).toHaveTextContent("Agent Mode");
+    expect(badge).toHaveTextContent("admin:hcp.agentMode");
   });
 
   it("clears mode badge after stopping session", async () => {

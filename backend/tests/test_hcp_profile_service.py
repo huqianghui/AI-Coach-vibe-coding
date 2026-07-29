@@ -55,7 +55,8 @@ class TestCreateHcpProfile:
         data = HcpProfileCreate(
             name="Dr. Zhang",
             specialty="Oncology",
-            created_by=user_id, voice_live_instance_id=vl_id,
+            created_by=user_id,
+            voice_live_instance_id=vl_id,
         )
         profile = await create_hcp_profile(db_session, data, user_id)
 
@@ -70,7 +71,8 @@ class TestCreateHcpProfile:
         data = HcpProfileCreate(
             name="Dr. Li",
             specialty="Cardiology",
-            created_by=user_id, voice_live_instance_id=vl_id,
+            created_by=user_id,
+            voice_live_instance_id=vl_id,
             expertise_areas=["interventional", "heart failure"],
             objections=["Cost concerns"],
             probe_topics=["Long-term data"],
@@ -88,7 +90,8 @@ class TestCreateHcpProfile:
         data = HcpProfileCreate(
             name="Dr. A",
             specialty="Derm",
-            created_by=user_id, voice_live_instance_id=vl_id,
+            created_by=user_id,
+            voice_live_instance_id=vl_id,
         )
         profile = await create_hcp_profile(db_session, data, user_id)
 
@@ -105,7 +108,9 @@ class TestGetHcpProfiles:
         user_id = await _seed_user(db_session)
         vl_id = await _create_vl_instance(db_session, user_id)
         for name in ["Dr. Zhang", "Dr. Li"]:
-            data = HcpProfileCreate(name=name, specialty="Oncology", created_by=user_id, voice_live_instance_id=vl_id)
+            data = HcpProfileCreate(
+                name=name, specialty="Oncology", created_by=user_id, voice_live_instance_id=vl_id
+            )
             await create_hcp_profile(db_session, data, user_id)
 
         profiles, total = await get_hcp_profiles(db_session)
@@ -117,12 +122,22 @@ class TestGetHcpProfiles:
         vl_id = await _create_vl_instance(db_session, user_id)
         await create_hcp_profile(
             db_session,
-            HcpProfileCreate(name="Dr. Zhang", specialty="Oncology", created_by=user_id, voice_live_instance_id=vl_id),
+            HcpProfileCreate(
+                name="Dr. Zhang",
+                specialty="Oncology",
+                created_by=user_id,
+                voice_live_instance_id=vl_id,
+            ),
             user_id,
         )
         await create_hcp_profile(
             db_session,
-            HcpProfileCreate(name="Dr. Li", specialty="Cardiology", created_by=user_id, voice_live_instance_id=vl_id),
+            HcpProfileCreate(
+                name="Dr. Li",
+                specialty="Cardiology",
+                created_by=user_id,
+                voice_live_instance_id=vl_id,
+            ),
             user_id,
         )
 
@@ -135,12 +150,24 @@ class TestGetHcpProfiles:
         vl_id = await _create_vl_instance(db_session, user_id)
         await create_hcp_profile(
             db_session,
-            HcpProfileCreate(name="Active", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id, is_active=True),
+            HcpProfileCreate(
+                name="Active",
+                specialty="Onc",
+                created_by=user_id,
+                voice_live_instance_id=vl_id,
+                is_active=True,
+            ),
             user_id,
         )
         await create_hcp_profile(
             db_session,
-            HcpProfileCreate(name="Inactive", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id, is_active=False),
+            HcpProfileCreate(
+                name="Inactive",
+                specialty="Onc",
+                created_by=user_id,
+                voice_live_instance_id=vl_id,
+                is_active=False,
+            ),
             user_id,
         )
 
@@ -155,7 +182,9 @@ class TestGetHcpProfile:
     async def test_returns_profile_by_id(self, db_session):
         user_id = await _seed_user(db_session)
         vl_id = await _create_vl_instance(db_session, user_id)
-        data = HcpProfileCreate(name="Dr. X", specialty="Neuro", created_by=user_id, voice_live_instance_id=vl_id)
+        data = HcpProfileCreate(
+            name="Dr. X", specialty="Neuro", created_by=user_id, voice_live_instance_id=vl_id
+        )
         created = await create_hcp_profile(db_session, data, user_id)
 
         fetched = await get_hcp_profile(db_session, created.id)
@@ -172,7 +201,9 @@ class TestUpdateHcpProfile:
     async def test_updates_partial_fields(self, db_session):
         user_id = await _seed_user(db_session)
         vl_id = await _create_vl_instance(db_session, user_id)
-        data = HcpProfileCreate(name="Dr. Old", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id)
+        data = HcpProfileCreate(
+            name="Dr. Old", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id
+        )
         profile = await create_hcp_profile(db_session, data, user_id)
 
         update = HcpProfileUpdate(name="Dr. New", personality_type="skeptical")
@@ -185,7 +216,9 @@ class TestUpdateHcpProfile:
     async def test_updates_list_fields(self, db_session):
         user_id = await _seed_user(db_session)
         vl_id = await _create_vl_instance(db_session, user_id)
-        data = HcpProfileCreate(name="Dr. Y", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id)
+        data = HcpProfileCreate(
+            name="Dr. Y", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id
+        )
         profile = await create_hcp_profile(db_session, data, user_id)
 
         update = HcpProfileUpdate(expertise_areas=["new_area_1", "new_area_2"])
@@ -200,7 +233,9 @@ class TestDeleteHcpProfile:
     async def test_deletes_existing_profile(self, db_session):
         user_id = await _seed_user(db_session)
         vl_id = await _create_vl_instance(db_session, user_id)
-        data = HcpProfileCreate(name="Dr. Del", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id)
+        data = HcpProfileCreate(
+            name="Dr. Del", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id
+        )
         profile = await create_hcp_profile(db_session, data, user_id)
 
         await delete_hcp_profile(db_session, profile.id)
@@ -220,7 +255,9 @@ class TestAgentSyncOnCreate:
         """create_hcp_profile sets agent_id and sync_status=synced on sync success."""
         user_id = await _seed_user(db_session)
         vl_id = await _create_vl_instance(db_session, user_id)
-        data = HcpProfileCreate(name="Dr. Sync", specialty="Oncology", created_by=user_id, voice_live_instance_id=vl_id)
+        data = HcpProfileCreate(
+            name="Dr. Sync", specialty="Oncology", created_by=user_id, voice_live_instance_id=vl_id
+        )
 
         with patch(
             "app.services.hcp_profile_service.agent_sync_service.sync_agent_for_profile",
@@ -241,7 +278,9 @@ class TestAgentSyncOnUpdate:
         """update_hcp_profile sets sync_status=synced on re-sync success."""
         user_id = await _seed_user(db_session)
         vl_id = await _create_vl_instance(db_session, user_id)
-        data = HcpProfileCreate(name="Dr. Up", specialty="Neuro", created_by=user_id, voice_live_instance_id=vl_id)
+        data = HcpProfileCreate(
+            name="Dr. Up", specialty="Neuro", created_by=user_id, voice_live_instance_id=vl_id
+        )
 
         # Create with sync success
         with patch(
@@ -268,7 +307,9 @@ class TestAgentSyncOnUpdate:
         """update_hcp_profile sets agent_id if profile had no agent_id."""
         user_id = await _seed_user(db_session)
         vl_id = await _create_vl_instance(db_session, user_id)
-        data = HcpProfileCreate(name="Dr. NoAgent", specialty="Derm", created_by=user_id, voice_live_instance_id=vl_id)
+        data = HcpProfileCreate(
+            name="Dr. NoAgent", specialty="Derm", created_by=user_id, voice_live_instance_id=vl_id
+        )
 
         # Create with sync failure (no agent_id)
         with patch(
@@ -301,7 +342,9 @@ class TestDeleteWithAgent:
         """delete_hcp_profile calls agent_sync_service.delete_agent when agent_id exists."""
         user_id = await _seed_user(db_session)
         vl_id = await _create_vl_instance(db_session, user_id)
-        data = HcpProfileCreate(name="Dr. Del Agent", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id)
+        data = HcpProfileCreate(
+            name="Dr. Del Agent", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id
+        )
 
         with patch(
             "app.services.hcp_profile_service.agent_sync_service.sync_agent_for_profile",
@@ -325,7 +368,9 @@ class TestDeleteWithAgent:
         """delete_hcp_profile succeeds even if agent deletion fails."""
         user_id = await _seed_user(db_session)
         vl_id = await _create_vl_instance(db_session, user_id)
-        data = HcpProfileCreate(name="Dr. Del Fail", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id)
+        data = HcpProfileCreate(
+            name="Dr. Del Fail", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id
+        )
 
         with patch(
             "app.services.hcp_profile_service.agent_sync_service.sync_agent_for_profile",
@@ -355,7 +400,9 @@ class TestRetryAgentSync:
         """retry_agent_sync sets agent_id and sync_status=synced."""
         user_id = await _seed_user(db_session)
         vl_id = await _create_vl_instance(db_session, user_id)
-        data = HcpProfileCreate(name="Dr. Retry", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id)
+        data = HcpProfileCreate(
+            name="Dr. Retry", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id
+        )
 
         # Create with sync failure
         with patch(
@@ -383,7 +430,9 @@ class TestRetryAgentSync:
         """retry_agent_sync sets failed status on repeated failure."""
         user_id = await _seed_user(db_session)
         vl_id = await _create_vl_instance(db_session, user_id)
-        data = HcpProfileCreate(name="Dr. Retry2", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id)
+        data = HcpProfileCreate(
+            name="Dr. Retry2", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id
+        )
 
         # Create with sync failure
         with patch(

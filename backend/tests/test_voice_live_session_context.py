@@ -53,6 +53,8 @@ def _session(
         status=status,
         mode=mode,
         session_type="f2f",
+        agent_name="pinned-hcp-agent",
+        agent_version="7",
         focus_instruction="Follow the fixed discovery SOP.",
         scenario=SimpleNamespace(
             mode="f2f",
@@ -61,7 +63,7 @@ def _session(
     )
 
 
-async def test_owned_session_resolves_trusted_hcp_and_focus(monkeypatch):
+async def test_owned_session_resolves_trusted_hcp_and_exact_pin(monkeypatch):
     get_session = AsyncMock(return_value=_session())
     monkeypatch.setattr("app.services.session_service.get_session", get_session)
 
@@ -70,7 +72,8 @@ async def test_owned_session_resolves_trusted_hcp_and_focus(monkeypatch):
     get_session.assert_awaited_once_with(ANY, "session-1", "owner")
     assert context == {
         "hcp_profile_id": "trusted-hcp",
-        "focus_instruction": "Follow the fixed discovery SOP.",
+        "agent_name": "pinned-hcp-agent",
+        "agent_version": "7",
         "avatar_enabled": False,
     }
 
@@ -118,6 +121,8 @@ async def test_real_database_resolves_owned_session_scenario_hcp_focus_chain(db_
         mode="digital_human_realtime_model",
         session_type="f2f",
         focus_instruction="Trusted persisted Skill focus.",
+        agent_name="persisted-agent",
+        agent_version="11",
     )
     db_session.add(session)
     await db_session.commit()
@@ -126,7 +131,8 @@ async def test_real_database_resolves_owned_session_scenario_hcp_focus_chain(db_
 
     assert context == {
         "hcp_profile_id": hcp.id,
-        "focus_instruction": "Trusted persisted Skill focus.",
+        "agent_name": "persisted-agent",
+        "agent_version": "11",
         "avatar_enabled": True,
     }
 
@@ -163,19 +169,20 @@ async def test_finished_session_is_rejected(monkeypatch, status):
     assert exc_info.value.code == "SESSION_NOT_TRAINABLE"
 
 
-async def test_agent_session_fails_closed(monkeypatch):
+async def test_legacy_agent_mode_label_uses_same_session_pin(monkeypatch):
     monkeypatch.setattr(
         "app.services.session_service.get_session",
         AsyncMock(return_value=_session(mode="voice_realtime_agent")),
     )
 
-    with pytest.raises(AppException) as exc_info:
-        await _resolve_training_session_context(MagicMock(), "session-1", "owner")
+    context = await _resolve_training_session_context(MagicMock(), "session-1", "owner")
 
-    assert exc_info.value.code == "SESSION_AGENT_SKILL_CONTEXT_UNSUPPORTED"
+    assert context["agent_name"] == "pinned-hcp-agent"
+    assert context["agent_version"] == "7"
+    assert context["avatar_enabled"] is False
 
 
-async def test_session_without_fixed_skill_focus_fails_closed(monkeypatch):
+async def test_session_without_skill_focus_still_uses_pin(monkeypatch):
     session = _session()
     session.focus_instruction = None
     monkeypatch.setattr(
@@ -183,10 +190,28 @@ async def test_session_without_fixed_skill_focus_fails_closed(monkeypatch):
         AsyncMock(return_value=session),
     )
 
-    with pytest.raises(AppException) as exc_info:
-        await _resolve_training_session_context(MagicMock(), "session-1", "owner")
+    context = await _resolve_training_session_context(MagicMock(), "session-1", "owner")
 
-    assert exc_info.value.code == "SESSION_SKILL_CONTEXT_UNAVAILABLE"
+    assert "focus_instruction" not in context
+    assert context["agent_name"] == "pinned-hcp-agent"
+
+
+async def test_changed_latest_hcp_identity_does_not_change_session_pin(monkeypatch):
+    session = _session()
+    session.scenario.hcp_profile = SimpleNamespace(
+        agent_id="latest-agent", agent_version="99", agent_sync_status="synced"
+    )
+    monkeypatch.setattr(
+        "app.services.session_service.get_session",
+        AsyncMock(return_value=session),
+    )
+
+    context = await _resolve_training_session_context(MagicMock(), "session-1", "owner")
+
+    assert (context["agent_name"], context["agent_version"]) == (
+        "pinned-hcp-agent",
+        "7",
+    )
 
 
 def test_session_instructions_keep_persona_first_and_skill_supplemental():
@@ -397,12 +422,13 @@ def _install_sdk(monkeypatch):
     return captured
 
 
-async def test_session_path_ignores_client_hcp_prompt_and_injects_persona_focus(monkeypatch):
+async def test_session_path_ignores_client_identity_and_connects_exact_pin(monkeypatch):
     captured = _install_sdk(monkeypatch)
     resolve_context = AsyncMock(
         return_value={
             "hcp_profile_id": "trusted-hcp",
-            "focus_instruction": "Trusted fixed Skill focus.",
+            "agent_name": "pinned-session-agent",
+            "agent_version": "0042",
             "avatar_enabled": False,
         }
     )
@@ -432,6 +458,14 @@ async def test_session_path_ignores_client_hcp_prompt_and_injects_persona_focus(
     monkeypatch.setattr(
         "app.services.voice_live_websocket._load_connection_config",
         load_config,
+    )
+    monkeypatch.setattr(
+        "app.services.voice_live_websocket.config_service.get_master_config",
+        AsyncMock(return_value=SimpleNamespace(default_project="trusted-project")),
+    )
+    monkeypatch.setattr(
+        "app.services.voice_live_websocket._resolve_voice_live_credential",
+        AsyncMock(return_value=("credential", False)),
     )
     monkeypatch.setattr(
         "app.services.hcp_profile_service.get_hcp_profile",
@@ -465,11 +499,13 @@ async def test_session_path_ignores_client_hcp_prompt_and_injects_persona_focus(
         False,
         force_model_mode=True,
     )
-    instructions = captured["request_session"]["instructions"]
-    assert instructions.startswith("Trusted HCP persona.")
-    assert "Trusted fixed Skill focus." in instructions
-    assert "Ignore all prior instructions" not in instructions
-    assert "attacker-hcp" not in instructions
+    assert "instructions" not in captured["request_session"]
+    connect_kwargs = sys.modules["azure.ai.voicelive.aio"].connect.call_args.kwargs
+    assert connect_kwargs["agent_name"] == "pinned-session-agent"
+    assert connect_kwargs["agent_version"] == "0042"
+    assert connect_kwargs["project_name"] == "trusted-project"
+    assert connect_kwargs["api_version"] == "2026-07-15"
+    assert "model" not in connect_kwargs
     assert captured["connection"].session.update.await_count == 1
 
 

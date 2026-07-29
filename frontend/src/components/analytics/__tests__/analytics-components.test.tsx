@@ -267,7 +267,7 @@ describe("TrendLineChart", () => {
 
   it("renders overall line", () => {
     render(<TrendLineChart data={makeData(2)} />);
-    expect(screen.getByTestId("line-Overall")).toBeInTheDocument();
+    expect(screen.getByTestId("line-avgScore")).toBeInTheDocument();
   });
 
   it("renders dimension lines", () => {

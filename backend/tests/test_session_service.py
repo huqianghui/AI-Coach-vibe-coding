@@ -1,8 +1,11 @@
 """Tests for the session service: session lifecycle, messaging, key message detection."""
 
 import json
+from dataclasses import FrozenInstanceError
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from sqlalchemy import func, select
 
 from app.models.hcp_profile import HcpProfile
 from app.models.scenario import Scenario
@@ -18,6 +21,7 @@ from app.services.session_service import (
     get_session,
     get_session_messages,
     get_user_sessions,
+    resolve_pinned_agent,
     save_message,
 )
 from app.utils.exceptions import AppException, NotFoundException
@@ -39,6 +43,9 @@ async def _seed_user_and_scenario(db) -> tuple[str, str]:
         name="Dr. Wang",
         specialty="Oncology",
         created_by=user.id,
+        agent_id="hcp-session-agent",
+        agent_version="7",
+        agent_sync_status="synced",
     )
     db.add(hcp)
     await db.flush()
@@ -68,6 +75,97 @@ class TestCreateSession:
         assert session.status == "created"
         assert session.user_id == user_id
         assert session.scenario_id == scenario_id
+        assert session.agent_name == "hcp-session-agent"
+        assert session.agent_version == "7"
+        assert session.agent_response_id is None
+
+    async def test_existing_pin_is_immutable_and_new_session_uses_latest_profile(self, db_session):
+        user_id, scenario_id = await _seed_user_and_scenario(db_session)
+        original = await create_session(db_session, scenario_id, user_id)
+
+        scenario = await db_session.get(Scenario, scenario_id)
+        hcp = await db_session.get(HcpProfile, scenario.hcp_profile_id)
+        hcp.agent_id = "hcp-republished-agent"
+        hcp.agent_version = "8"
+        hcp.agent_sync_status = "synced"
+        await db_session.flush()
+
+        replacement = await create_session(db_session, scenario_id, user_id)
+        resolved_original = await resolve_pinned_agent(original)
+
+        assert (original.agent_name, original.agent_version) == ("hcp-session-agent", "7")
+        assert (resolved_original.name, resolved_original.version) == ("hcp-session-agent", "7")
+        assert (replacement.agent_name, replacement.agent_version) == (
+            "hcp-republished-agent",
+            "8",
+        )
+
+    async def test_missing_hcp_rejects_before_session_is_added(self):
+        scenario = MagicMock(
+            status="active",
+            hcp_profile=None,
+            key_messages="[]",
+            skill_id=None,
+            skill_version_id=None,
+        )
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = scenario
+        db = MagicMock()
+        db.execute = AsyncMock(return_value=result)
+        db.flush = AsyncMock()
+
+        with pytest.raises(AppException) as exc_info:
+            await create_session(db, "scenario-without-hcp", "user-id")
+
+        assert exc_info.value.status_code == 409
+        assert exc_info.value.code == "HCP_AGENT_SOURCE_MISSING"
+        db.add.assert_not_called()
+        db.flush.assert_not_awaited()
+
+    @pytest.mark.parametrize(
+        ("updates", "expected_code"),
+        [
+            ({"agent_sync_status": "pending"}, "HCP_AGENT_NOT_SYNCED"),
+            ({"agent_sync_status": "none"}, "HCP_AGENT_NOT_SYNCED"),
+            ({"agent_sync_status": "failed"}, "HCP_AGENT_NOT_SYNCED"),
+            ({"agent_id": ""}, "AGENT_PIN_MISSING"),
+            ({"agent_id": "   "}, "AGENT_PIN_MISSING"),
+            ({"agent_id": "asst_classic"}, "AGENT_PIN_INVALID"),
+            ({"agent_version": ""}, "AGENT_PIN_MISSING"),
+            ({"agent_version": "   "}, "AGENT_PIN_MISSING"),
+        ],
+    )
+    async def test_invalid_agent_source_rejects_before_session_flush(
+        self, db_session, updates, expected_code
+    ):
+        user_id, scenario_id = await _seed_user_and_scenario(db_session)
+        scenario = await db_session.get(Scenario, scenario_id)
+        hcp = await db_session.get(HcpProfile, scenario.hcp_profile_id)
+        for field, value in updates.items():
+            setattr(hcp, field, value)
+        await db_session.flush()
+        before = await db_session.scalar(select(func.count()).select_from(CoachingSession))
+
+        with pytest.raises(AppException) as exc_info:
+            await create_session(db_session, scenario_id, user_id)
+
+        after = await db_session.scalar(select(func.count()).select_from(CoachingSession))
+        assert exc_info.value.status_code == 409
+        assert exc_info.value.code == expected_code
+        assert after == before
+
+    async def test_agent_pin_normalizes_only_surrounding_whitespace(self, db_session):
+        user_id, scenario_id = await _seed_user_and_scenario(db_session)
+        scenario = await db_session.get(Scenario, scenario_id)
+        hcp = await db_session.get(HcpProfile, scenario.hcp_profile_id)
+        hcp.agent_id = "  hcp-exact-name  "
+        hcp.agent_version = "  0042  "
+        await db_session.flush()
+
+        session = await create_session(db_session, scenario_id, user_id)
+
+        assert session.agent_name == "hcp-exact-name"
+        assert session.agent_version == "0042"
 
     async def test_initializes_key_messages_status(self, db_session):
         user_id, scenario_id = await _seed_user_and_scenario(db_session)
@@ -129,6 +227,51 @@ class TestGetSession:
     async def test_raises_for_nonexistent_session(self, db_session):
         with pytest.raises(NotFoundException):
             await get_session(db_session, "nonexistent", "user")
+
+
+class TestResolvePinnedAgent:
+    """Tests for the fail-closed, session-only Agent pin resolver."""
+
+    async def test_returns_immutable_reference_for_valid_pin(self):
+        session = CoachingSession(agent_name="hcp-pinned", agent_version="12")
+
+        reference = await resolve_pinned_agent(session)
+
+        assert reference.name == "hcp-pinned"
+        assert reference.version == "12"
+        with pytest.raises(FrozenInstanceError):
+            reference.version = "13"
+
+    @pytest.mark.parametrize("field", ["agent_name", "agent_version"])
+    @pytest.mark.parametrize("value", [None, "", "   "])
+    async def test_rejects_missing_or_blank_pin_fields(self, field, value):
+        session = CoachingSession(agent_name="hcp-pinned", agent_version="12")
+        setattr(session, field, value)
+
+        with pytest.raises(AppException) as exc_info:
+            await resolve_pinned_agent(session)
+
+        assert exc_info.value.status_code == 409
+        assert exc_info.value.code == "AGENT_PIN_MISSING"
+        assert exc_info.value.details == {"field": field}
+
+    async def test_rejects_classic_assistant_identity(self):
+        session = CoachingSession(agent_name="  asst_legacy  ", agent_version="12")
+
+        with pytest.raises(AppException) as exc_info:
+            await resolve_pinned_agent(session)
+
+        assert exc_info.value.status_code == 409
+        assert exc_info.value.code == "AGENT_PIN_INVALID"
+
+    async def test_resolves_original_pin_without_hcp_relationship_or_lookup(self):
+        session = CoachingSession(agent_name="hcp-original", agent_version="3")
+        session.scenario = None
+
+        reference = await resolve_pinned_agent(session)
+
+        assert reference.name == "hcp-original"
+        assert reference.version == "3"
 
 
 class TestGetUserSessions:

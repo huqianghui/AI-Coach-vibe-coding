@@ -406,7 +406,7 @@ describe("UnifiedSession", () => {
     await waitFor(() => expect(mockStartSession).toHaveBeenCalledTimes(2));
   });
 
-  it("fails closed when a session model path unexpectedly returns Agent mode", async () => {
+  it("keeps a trusted session Agent connection active", async () => {
     mockStartSession.mockResolvedValueOnce({
       avatarEnabled: false,
       model: "",
@@ -417,8 +417,8 @@ describe("UnifiedSession", () => {
     fireEvent.click(screen.getByTestId("start-session-btn"));
 
     await waitFor(() => {
-      expect(mockStopSession).toHaveBeenCalled();
-      expect(screen.getByTestId("start-session-btn")).toBeInTheDocument();
+      expect(mockStopSession).not.toHaveBeenCalled();
+      expect(screen.queryByTestId("start-session-btn")).not.toBeInTheDocument();
     });
   });
 

@@ -305,13 +305,6 @@ export default function UnifiedSession() {
         setSessionStarted(false);
         return;
       }
-      if (result.mode !== "model") {
-        log.error("Session model path unexpectedly returned Agent mode");
-        await stopVoiceSession();
-        toast.error("当前训练仅支持服务端授权的模型模式，请重试。 ");
-        setSessionStarted(false);
-        return;
-      }
 
       if (result) {
         const resolvedMode = resolveConnectedMode(

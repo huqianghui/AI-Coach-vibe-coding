@@ -169,8 +169,8 @@ describe("HcpProfileEditorPage", () => {
 
   it("renders identity card with name and specialty fields", () => {
     renderEditor("/admin/hcp-profiles/new");
-    expect(screen.getByText("Name *")).toBeInTheDocument();
-    expect(screen.getByText("Specialty *")).toBeInTheDocument();
+    expect(screen.getByText("admin:hcp.name *")).toBeInTheDocument();
+    expect(screen.getByText("admin:hcp.specialty *")).toBeInTheDocument();
   });
 
   it("renders knowledge section", () => {
@@ -196,9 +196,9 @@ describe("HcpProfileEditorPage", () => {
 
   it("renders difficulty radio buttons", () => {
     renderEditor("/admin/hcp-profiles/new");
-    expect(screen.getByText("easy")).toBeInTheDocument();
-    expect(screen.getByText("medium")).toBeInTheDocument();
-    expect(screen.getByText("hard")).toBeInTheDocument();
+    expect(screen.getByText("common:difficultyEasy")).toBeInTheDocument();
+    expect(screen.getByText("common:difficultyMedium")).toBeInTheDocument();
+    expect(screen.getByText("common:difficultyHard")).toBeInTheDocument();
   });
 
   it("does not show test chat button in create mode", () => {
@@ -307,8 +307,8 @@ describe("HcpProfileEditorPage", () => {
 
   it("renders hospital and title fields", () => {
     renderEditor("/admin/hcp-profiles/new");
-    expect(screen.getByText("Hospital")).toBeInTheDocument();
-    expect(screen.getByText("Title")).toBeInTheDocument();
+    expect(screen.getByText("admin:hcp.hospital")).toBeInTheDocument();
+    expect(screen.getByText("admin:hcp.titleField")).toBeInTheDocument();
   });
 
   /* ---- Form pre-population in edit mode ---- */
@@ -353,7 +353,7 @@ describe("HcpProfileEditorPage", () => {
   it("updates expertise areas when typing comma-separated values", async () => {
     renderEditor("/admin/hcp-profiles/new");
     const expertiseInput = screen.getByPlaceholderText(
-      "e.g., Breast Cancer, Lung Cancer, Immunotherapy",
+      "admin:hcp.expertiseAreasPlaceholder",
     );
     await userEvent.type(expertiseInput, "Cancer, Lung");
     // The input should reflect typed text
@@ -380,7 +380,7 @@ describe("HcpProfileEditorPage", () => {
     await userEvent.type(nameInput, "Dr. Test");
 
     // Specialty is a Radix Select - use fireEvent to bypass pointer-events checks
-    const specialtyTrigger = screen.getByText("Select specialty").closest("button")!;
+    const specialtyTrigger = screen.getByText("admin:hcp.selectSpecialty").closest("button")!;
     fireEvent.click(specialtyTrigger);
     // Wait for options to appear and click Oncology
     const oncologyOption = await screen.findByText("Oncology");
@@ -412,7 +412,7 @@ describe("HcpProfileEditorPage", () => {
 
     const nameInput = screen.getByRole("textbox", { name: /name/i });
     await userEvent.type(nameInput, "Dr. Test");
-    const specialtyTrigger = screen.getByText("Select specialty").closest("button")!;
+    const specialtyTrigger = screen.getByText("admin:hcp.selectSpecialty").closest("button")!;
     fireEvent.click(specialtyTrigger);
     fireEvent.click(await screen.findByText("Oncology"));
     await userEvent.click(screen.getByText("admin:hcp.tabVoiceAvatar"));
@@ -437,7 +437,7 @@ describe("HcpProfileEditorPage", () => {
 
     const nameInput = screen.getByRole("textbox", { name: /name/i });
     await userEvent.type(nameInput, "Dr. Test");
-    const specialtyTrigger = screen.getByText("Select specialty").closest("button")!;
+    const specialtyTrigger = screen.getByText("admin:hcp.selectSpecialty").closest("button")!;
     fireEvent.click(specialtyTrigger);
     fireEvent.click(await screen.findByText("Oncology"));
     await userEvent.click(screen.getByText("admin:hcp.tabVoiceAvatar"));

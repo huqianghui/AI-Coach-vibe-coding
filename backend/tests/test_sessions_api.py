@@ -3,12 +3,29 @@
 import json
 from unittest.mock import patch
 
+import pytest
+
+from app.models.hcp_profile import HcpProfile
 from app.models.scoring_rubric import ScoringRubric
 from app.models.skill import Skill, SkillVersion
 from app.models.user import User
 from app.models.voice_live_instance import VoiceLiveInstance
+from app.services.agent_chat_service import AgentResponseEvent
 from app.services.auth import create_access_token, get_password_hash
 from tests.conftest import TestSessionLocal
+
+
+async def _mock_agent_stream(*_args, **_kwargs):
+    """Return a deterministic hosted-Agent stream for Session API tests."""
+    yield AgentResponseEvent(kind="text", text="Mock HCP response")
+    yield AgentResponseEvent(kind="completed", response_id="resp-session-api-test")
+
+
+@pytest.fixture(autouse=True)
+def mock_session_agent_stream():
+    """Keep Session API unit tests independent of Azure credentials."""
+    with patch("app.api.sessions.stream_agent_response", _mock_agent_stream):
+        yield
 
 
 async def _create_vl_instance(user_id: str) -> str:
@@ -69,6 +86,15 @@ async def _create_active_scenario(client, admin_id, admin_token) -> str:
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     hcp_id = hcp_resp.json()["id"]
+
+    # Session creation accepts only an authoritative hosted Prompt Agent.
+    # Keep this fixture deterministic instead of depending on external Foundry sync.
+    async with TestSessionLocal() as db:
+        hcp = await db.get(HcpProfile, hcp_id)
+        hcp.agent_id = "hcp-api-agent"
+        hcp.agent_version = "21"
+        hcp.agent_sync_status = "synced"
+        await db.commit()
 
     # Create rubric and skill via DB
     async with TestSessionLocal() as db:
@@ -156,6 +182,49 @@ class TestCreateSessionEndpoint:
         assert data["status"] == "created"
         assert data["scenario_id"] == scenario_id
         assert data["user_id"] == user_id
+        assert data["agent_name"] == "hcp-api-agent"
+        assert data["agent_version"] == "21"
+
+    async def test_request_agent_fields_cannot_override_server_snapshot(self, client):
+        admin_id, admin_token = await _create_admin_and_token()
+        scenario_id = await _create_active_scenario(client, admin_id, admin_token)
+        _, user_token = await _create_user_and_token("pin_override_user")
+
+        response = await client.post(
+            "/api/v1/sessions",
+            json={
+                "scenario_id": scenario_id,
+                "agent_name": "attacker-selected-agent",
+                "agent_version": "999",
+            },
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+        assert response.status_code == 201
+        assert response.json()["agent_name"] == "hcp-api-agent"
+        assert response.json()["agent_version"] == "21"
+
+    async def test_unsynced_hcp_returns_structured_error(self, client):
+        admin_id, admin_token = await _create_admin_and_token()
+        scenario_id = await _create_active_scenario(client, admin_id, admin_token)
+        _, user_token = await _create_user_and_token("unsynced_agent_user")
+        async with TestSessionLocal() as db:
+            from app.models.scenario import Scenario
+
+            scenario = await db.get(Scenario, scenario_id)
+            hcp = await db.get(HcpProfile, scenario.hcp_profile_id)
+            hcp.agent_sync_status = "failed"
+            await db.commit()
+
+        response = await client.post(
+            "/api/v1/sessions",
+            json={"scenario_id": scenario_id},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+        assert response.status_code == 409
+        assert response.json()["code"] == "HCP_AGENT_NOT_SYNCED"
+        assert response.json()["details"] == {"sync_status": "failed"}
 
     async def test_no_auth_returns_401(self, client):
         response = await client.post(

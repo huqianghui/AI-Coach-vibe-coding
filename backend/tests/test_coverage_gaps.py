@@ -22,6 +22,7 @@ from app.models.scoring_rubric import ScoringRubric
 from app.models.session import CoachingSession
 from app.models.skill import Skill, SkillVersion
 from app.models.user import User
+from app.services.agent_chat_service import AgentResponseEvent
 from app.services.auth import create_access_token, get_password_hash
 from tests.conftest import TestSessionLocal
 
@@ -87,6 +88,19 @@ def mock_llm_scoring():
         new_callable=AsyncMock,
         return_value=_MOCK_LLM_RESULT,
     ):
+        yield
+
+
+async def _mock_agent_stream(*_args, **_kwargs):
+    """Return a deterministic hosted-Agent stream for API coverage tests."""
+    yield AgentResponseEvent(kind="text", text="Mock HCP response")
+    yield AgentResponseEvent(kind="completed", response_id="resp-coverage-test")
+
+
+@pytest.fixture(autouse=True)
+def mock_session_agent_stream():
+    """Keep Session API unit tests independent of Azure credentials."""
+    with patch("app.api.sessions.stream_agent_response", _mock_agent_stream):
         yield
 
 
@@ -163,6 +177,13 @@ async def _admin_scenario(client, admin_id, admin_token) -> str:
         },
         headers={"Authorization": f"Bearer {admin_token}"},
     )
+    hcp_id = hcp.json()["id"]
+    async with TestSessionLocal() as db:
+        profile = await db.get(HcpProfile, hcp_id)
+        profile.agent_id = "dr-cov-agent"
+        profile.agent_version = "1"
+        profile.agent_sync_status = "synced"
+        await db.commit()
     # Create rubric + skill via DB (no API endpoint needed)
     async with TestSessionLocal() as db:
         rubric = ScoringRubric(
@@ -201,7 +222,7 @@ async def _admin_scenario(client, admin_id, admin_token) -> str:
         json={
             "name": "Cov Scenario",
             "tags": ["product:Brukinsa"],
-            "hcp_profile_id": hcp.json()["id"],
+            "hcp_profile_id": hcp_id,
             "rubric_id": rubric_id,
             "skill_id": "test-skill-id",
             "key_messages": ["Superior PFS", "Better safety"],

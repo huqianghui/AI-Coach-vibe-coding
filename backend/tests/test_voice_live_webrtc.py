@@ -5,7 +5,8 @@ bearer token (never raw API key), and session configuration for direct browser-t
 WebRTC connections.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
+from urllib.parse import parse_qs, urlparse
 
 from app.models.user import User
 from app.services.auth import create_access_token, get_password_hash
@@ -164,6 +165,137 @@ class TestWebRTCSessionAgentMode:
         assert "agent_id=agent-abc" in data["signaling_url"]
         assert "project_id=proj-1" in data["signaling_url"]
         assert data["model"] == ""  # Empty for agent mode
+
+
+class TestWebRTCSessionPinnedTraining:
+    """Session-bound requests use only the owned immutable Agent pin."""
+
+    async def test_session_id_requires_authenticated_user_context(self):
+        """Direct service callers cannot resolve a training pin without user identity."""
+        from app.services.voice_live_webrtc import create_webrtc_session_config
+        from app.utils.exceptions import AppException
+
+        try:
+            await create_webrtc_session_config(AsyncMock(), session_id="training-session")
+        except AppException as exc:
+            assert exc.status_code == 401
+            assert exc.code == "AUTHENTICATION_REQUIRED"
+        else:
+            raise AssertionError("Missing user context must be rejected")
+
+    @patch("app.services.voice_live_webrtc._exchange_api_key_for_bearer_token")
+    @patch("app.services.voice_live_webrtc.config_service")
+    @patch("app.services.hcp_profile_service.get_hcp_profile")
+    @patch("app.services.voice_live_websocket._resolve_training_session_context")
+    async def test_exact_pin_and_version_are_signaled_before_token_exchange(
+        self, mock_context, mock_get_profile, mock_config_svc, mock_exchange, client
+    ):
+        user_id, token = await _create_user_and_token("webrtc_pinned")
+        mock_context.return_value = {
+            "hcp_profile_id": "trusted-hcp",
+            "agent_name": "pinned agent/name",
+            "agent_version": "0042+beta",
+            "avatar_enabled": False,
+        }
+        latest = _mock_hcp_profile(agent_id="latest-agent", agent_sync_status="failed")
+        mock_get_profile.return_value = latest
+        mock_config_svc.get_config = AsyncMock(return_value=_mock_vl_config("gpt-4o"))
+        mock_config_svc.get_effective_key = AsyncMock(return_value="secret-key")
+        mock_config_svc.get_effective_endpoint = AsyncMock(
+            return_value="https://test.cognitiveservices.azure.com"
+        )
+        mock_config_svc.get_master_config = AsyncMock(
+            return_value=_mock_master_config("project / pinned")
+        )
+        mock_exchange.return_value = "bearer-token"
+        with patch("app.services.voice_live_instance_service.resolve_voice_config") as resolve:
+            resolve.return_value = {
+                "voice_name": "en-US-AvaNeural",
+                "voice_type": "azure-standard",
+                "turn_detection_type": "server_vad",
+                "noise_suppression": False,
+                "echo_cancellation": False,
+                "voice_live_model": "gpt-4o",
+            }
+            response = await client.post(
+                "/api/v1/voice-live/webrtc/session",
+                params={
+                    "session_id": "owned-session",
+                    "hcp_profile_id": "attacker-hcp",
+                    "vl_instance_id": "attacker-instance",
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        query = parse_qs(urlparse(data["signaling_url"]).query)
+        assert query == {
+            "api-version": ["2026-07-15"],
+            "agent_name": ["pinned agent/name"],
+            "agent_version": ["0042+beta"],
+            "project_name": ["project / pinned"],
+        }
+        assert data["agent_id"] == "pinned agent/name"
+        assert data["agent_version"] == "0042+beta"
+        mock_context.assert_awaited_once_with(ANY, "owned-session", user_id)
+        mock_exchange.assert_awaited_once()
+
+    @patch("app.services.voice_live_webrtc._exchange_api_key_for_bearer_token")
+    @patch("app.services.voice_live_websocket._resolve_training_session_context")
+    async def test_invalid_or_foreign_session_rejects_before_token_exchange(
+        self, mock_context, mock_exchange, client
+    ):
+        from app.utils.exceptions import AppException
+
+        _, token = await _create_user_and_token("webrtc_foreign")
+        mock_context.side_effect = AppException(
+            status_code=403, code="FORBIDDEN", message="Not owned"
+        )
+
+        response = await client.post(
+            "/api/v1/voice-live/webrtc/session",
+            params={"session_id": "foreign-session"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 403
+        assert response.json()["code"] == "FORBIDDEN"
+        mock_exchange.assert_not_called()
+
+    @patch("app.services.voice_live_webrtc._exchange_api_key_for_bearer_token")
+    @patch("app.services.voice_live_webrtc.config_service")
+    @patch("app.services.voice_live_websocket._resolve_training_session_context")
+    async def test_training_session_rejects_missing_agent_project_before_token_exchange(
+        self, mock_context, mock_config_svc, mock_exchange
+    ):
+        """A pinned training Agent cannot silently signal without its project."""
+        from app.services.voice_live_webrtc import create_webrtc_session_config
+        from app.utils.exceptions import AppException
+
+        mock_context.return_value = {
+            "hcp_profile_id": "trusted-hcp",
+            "agent_name": "pinned-agent",
+            "agent_version": "7",
+            "avatar_enabled": False,
+        }
+        mock_config_svc.get_config = AsyncMock(return_value=_mock_vl_config("gpt-4o"))
+        mock_config_svc.get_effective_key = AsyncMock(return_value="secret-key")
+        mock_config_svc.get_effective_endpoint = AsyncMock(
+            return_value="https://test.cognitiveservices.azure.com"
+        )
+        mock_config_svc.get_master_config = AsyncMock(return_value=_mock_master_config(" "))
+
+        try:
+            await create_webrtc_session_config(
+                AsyncMock(), session_id="training-session", user_id="owner-1"
+            )
+        except AppException as exc:
+            assert exc.status_code == 409
+            assert exc.code == "AGENT_PROJECT_MISSING"
+        else:
+            raise AssertionError("Missing Agent project must be rejected")
+        mock_exchange.assert_not_awaited()
 
 
 class TestWebRTCSessionAgentSyncGate:

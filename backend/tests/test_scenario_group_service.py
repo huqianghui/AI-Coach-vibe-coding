@@ -51,6 +51,9 @@ async def _seed_group_fixture(db):
         specialty="Oncology",
         personality_type="analytical",
         created_by=admin.id,
+        agent_id="dr-group-agent",
+        agent_version="1",
+        agent_sync_status="synced",
     )
     db.add(hcp)
 

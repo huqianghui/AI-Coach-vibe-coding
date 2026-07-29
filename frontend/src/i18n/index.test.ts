@@ -75,6 +75,8 @@ describe("i18n initialization", () => {
       "skill",
       "voice",
       "meta-skill",
+      "session",
+      "prompts",
     ]);
   });
 

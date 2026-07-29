@@ -29,6 +29,7 @@ vi.mock("@/hooks/use-scenarios", () => ({
   useUpdateScenario: () => ({ mutate: vi.fn() }),
   useDeleteScenario: () => ({ mutate: vi.fn() }),
   useCloneScenario: () => ({ mutate: vi.fn() }),
+  useTransitionScenarioStatus: () => ({ mutate: vi.fn() }),
 }));
 
 vi.mock("sonner", () => ({
@@ -85,7 +86,7 @@ describe("ScenariosPage", () => {
     render(<ScenariosPage />, { wrapper });
 
     // The "All" select trigger text should be visible
-    expect(screen.getByText("All")).toBeInTheDocument();
+    expect(screen.getByText("all")).toBeInTheDocument();
   });
 });
 

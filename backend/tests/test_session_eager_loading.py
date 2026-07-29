@@ -47,6 +47,9 @@ async def _create_test_data(status: str = "created") -> tuple[str, str, str, str
             name="Dr. Eager",
             specialty="Cardiology",
             created_by=admin.id,
+            agent_id="dr-eager-agent",
+            agent_version="1",
+            agent_sync_status="synced",
         )
         db.add(hcp)
         await db.flush()

@@ -173,6 +173,8 @@ const mockCompletedSession: CoachingSession = {
   overall_score: null,
   passed: null,
   mode: "text",
+  agent_name: null,
+  agent_version: null,
   message_count: 12,
   created_at: "2026-03-21T09:00:00Z",
   updated_at: "2026-03-21T09:30:00Z",
@@ -191,6 +193,8 @@ const mockScoredSession: CoachingSession = {
   overall_score: 85,
   passed: true,
   mode: "text",
+  agent_name: "dr-sarah-mitchell",
+  agent_version: "1",
   message_count: 20,
   created_at: "2026-03-20T09:00:00Z",
   updated_at: "2026-03-20T10:00:00Z",
@@ -209,6 +213,8 @@ const mockCreatedSession: CoachingSession = {
   overall_score: null,
   passed: null,
   mode: "text",
+  agent_name: null,
+  agent_version: null,
   message_count: 0,
   created_at: "2026-03-22T08:00:00Z",
   updated_at: "2026-03-22T08:00:00Z",
@@ -227,6 +233,8 @@ const mockInProgressSession: CoachingSession = {
   overall_score: null,
   passed: null,
   mode: "voice_pipeline",
+  agent_name: "dr-active-practice",
+  agent_version: "3",
   message_count: 5,
   created_at: "2026-03-22T09:00:00Z",
   updated_at: "2026-03-22T09:15:00Z",
@@ -338,14 +346,10 @@ describe("SessionHistory", () => {
     expect(mockTriggerScoringMutate).toHaveBeenCalledWith("s3", expect.any(Object));
   });
 
-  it("renders the performance radar", () => {
+  it("does not render the retired analytics charts", () => {
     renderSessionHistory();
-    expect(screen.getByTestId("performance-radar")).toBeInTheDocument();
-  });
-
-  it("renders the trend chart", () => {
-    renderSessionHistory();
-    expect(screen.getByTestId("line-chart")).toBeInTheDocument();
+    expect(screen.queryByTestId("performance-radar")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("line-chart")).not.toBeInTheDocument();
   });
 
   it("renders the search input", () => {

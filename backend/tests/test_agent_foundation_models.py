@@ -89,6 +89,67 @@ class TestIsChatCapable:
         assert afm_service._is_chat_capable("my-embedding-model", {"embeddings": "true"}) is False
 
 
+class TestProjectClient:
+    """Cover project endpoint composition and both supported credential paths."""
+
+    def test_build_project_endpoint_variants(self):
+        assert (
+            afm_service._build_project_endpoint(
+                "https://foundry.test/api/projects/existing", "ignored"
+            )
+            == "https://foundry.test/api/projects/existing"
+        )
+        assert (
+            afm_service._build_project_endpoint("https://foundry.test/", "project-a")
+            == "https://foundry.test/api/projects/project-a"
+        )
+        assert afm_service._build_project_endpoint("https://foundry.test/", "") == (
+            "https://foundry.test"
+        )
+
+    def test_get_project_client_prefers_entra_id(self):
+        credential = MagicMock()
+        client = MagicMock()
+        with (
+            patch("azure.identity.DefaultAzureCredential", return_value=credential),
+            patch("azure.ai.projects.AIProjectClient", return_value=client) as create_client,
+        ):
+            result = afm_service._get_project_client("https://project.test", "fallback-key")
+
+        assert result is client
+        credential.get_token.assert_called_once_with("https://ai.azure.com/.default")
+        create_client.assert_called_once_with(
+            endpoint="https://project.test", credential=credential
+        )
+
+    def test_get_project_client_falls_back_to_api_key(self):
+        client = MagicMock()
+        with (
+            patch(
+                "azure.identity.DefaultAzureCredential",
+                side_effect=RuntimeError("no entra credential"),
+            ),
+            patch("azure.ai.projects.AIProjectClient", return_value=client) as create_client,
+        ):
+            result = afm_service._get_project_client("https://project.test", "api-key")
+
+        assert result is client
+        kwargs = create_client.call_args.kwargs
+        assert kwargs["endpoint"] == "https://project.test"
+        assert kwargs["credential"]._key == "api-key"
+        assert kwargs["authentication_policy"] is not None
+
+    def test_get_project_client_rejects_missing_credentials(self):
+        with (
+            patch(
+                "azure.identity.DefaultAzureCredential",
+                side_effect=RuntimeError("no entra credential"),
+            ),
+            pytest.raises(ValueError, match="No valid credential"),
+        ):
+            afm_service._get_project_client("https://project.test")
+
+
 # ---------------------------------------------------------------------------
 # Cache behavior (Tests 5-7)
 # ---------------------------------------------------------------------------

@@ -3,13 +3,15 @@ import { render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import UserManagementPage from "./users";
 
-vi.mock("react-i18next", () => ({
-  useTranslation: () => ({
-    t: (key: string, opts?: { defaultValue?: string }) =>
-      opts?.defaultValue ?? key,
-    i18n: { changeLanguage: vi.fn(), language: "en" },
-  }),
-}));
+vi.mock("react-i18next", async () => {
+  const { createTestTranslator } = await import("@/test/i18n-mock");
+  return {
+    useTranslation: (namespace?: string | string[]) => ({
+      t: createTestTranslator(namespace),
+      i18n: { changeLanguage: vi.fn(), language: "en-US" },
+    }),
+  };
+});
 
 const mockUsers = [
   { id: "u1", username: "awang", email: "alice@example.com", full_name: "Alice Wang", role: "MR", is_active: true, preferred_language: "en", business_unit: "Oncology", created_at: "2025-01-01" },

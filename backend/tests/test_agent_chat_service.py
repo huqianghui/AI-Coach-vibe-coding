@@ -1,6 +1,7 @@
 """Unit + integration tests for agent_chat_service: real Agent chat via OpenAI Responses API."""
 
 import os
+import threading
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -153,6 +154,240 @@ async def test_chat_with_agent_error_mock():
                 agent_version="1",
                 message="Hello",
             )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("agent_name", "agent_version"),
+    [("", "1"), ("   ", "1"), ("asst_legacy", "1"), ("Dr-Valid", ""), ("Dr-Valid", "   ")],
+)
+async def test_agent_reference_validation_fails_before_client_lookup(agent_name, agent_version):
+    """Invalid hosted Agent references fail before any Azure/config call."""
+    from app.services.agent_chat_service import AgentChatError, chat_with_agent
+
+    endpoint = AsyncMock()
+    with (
+        patch(
+            "app.services.agent_chat_service.agent_sync_service.get_project_endpoint",
+            endpoint,
+        ),
+        pytest.raises(AgentChatError, match="Agent"),
+    ):
+        await chat_with_agent(
+            AsyncMock(),
+            agent_name=agent_name,
+            agent_version=agent_version,
+            message="Hello",
+        )
+
+    endpoint.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_stream_agent_response_uses_exact_reference_and_orders_events():
+    """Streaming preserves deltas and reports the actual terminal response ID."""
+    from app.services.agent_chat_service import stream_agent_response
+
+    delta_1 = MagicMock(type="response.output_text.delta", delta="Hello ")
+    delta_2 = MagicMock(type="response.output_text.delta", delta="doctor")
+    completed = MagicMock(type="response.completed")
+    completed.response.id = "resp_stream_001"
+    mock_stream = MagicMock()
+    mock_stream.__iter__.return_value = iter([delta_1, delta_2, completed])
+    mock_openai_client = MagicMock()
+    mock_openai_client.responses.create.return_value = mock_stream
+    mock_project_client = MagicMock()
+    mock_project_client.get_openai_client.return_value = mock_openai_client
+
+    with (
+        patch(
+            "app.services.agent_chat_service.agent_sync_service.get_project_endpoint",
+            new_callable=AsyncMock,
+            return_value=("https://foundry.test/api/projects/test-prj", "test-key"),
+        ),
+        patch(
+            "app.services.agent_chat_service.agent_sync_service._get_project_client",
+            return_value=mock_project_client,
+        ),
+        _patch_config_service(),
+    ):
+        events = [
+            event
+            async for event in stream_agent_response(
+                AsyncMock(),
+                agent_name="Dr-Exact",
+                agent_version="0042",
+                message="Hello",
+                previous_response_id="resp_previous",
+            )
+        ]
+
+    assert [(event.kind, event.text, event.response_id) for event in events] == [
+        ("text", "Hello ", None),
+        ("text", "doctor", None),
+        ("completed", "", "resp_stream_001"),
+    ]
+    call_kwargs = mock_openai_client.responses.create.call_args.kwargs
+    assert call_kwargs == {
+        "model": "gpt-4o",
+        "input": [{"role": "user", "content": "Hello"}],
+        "extra_body": {
+            "agent_reference": {
+                "name": "Dr-Exact",
+                "version": "0042",
+                "type": "agent_reference",
+            }
+        },
+        "previous_response_id": "resp_previous",
+        "stream": True,
+    }
+    mock_stream.close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_stream_agent_response_translates_upstream_failure_without_completion():
+    """An iterator failure is surfaced once and cannot fabricate completion."""
+    from app.services.agent_chat_service import AgentChatError, stream_agent_response
+
+    class FailingStream:
+        def __iter__(self):
+            yield MagicMock(type="response.output_text.delta", delta="partial")
+            raise ValueError("upstream broke")
+
+        def close(self):
+            self.closed = True
+
+    stream = FailingStream()
+    mock_openai_client = MagicMock()
+    mock_openai_client.responses.create.return_value = stream
+    mock_project_client = MagicMock()
+    mock_project_client.get_openai_client.return_value = mock_openai_client
+
+    with (
+        patch(
+            "app.services.agent_chat_service.agent_sync_service.get_project_endpoint",
+            new_callable=AsyncMock,
+            return_value=("https://foundry.test/api/projects/test-prj", "test-key"),
+        ),
+        patch(
+            "app.services.agent_chat_service.agent_sync_service._get_project_client",
+            return_value=mock_project_client,
+        ),
+        _patch_config_service(),
+    ):
+        iterator = stream_agent_response(AsyncMock(), "Dr-Exact", "2", "Hello").__aiter__()
+        first = await anext(iterator)
+        assert first.kind == "text"
+        assert first.text == "partial"
+        with pytest.raises(AgentChatError, match="upstream broke"):
+            await anext(iterator)
+
+    assert stream.closed is True
+
+
+@pytest.mark.asyncio
+async def test_stream_agent_response_rejects_completion_without_response_id():
+    """A malformed terminal event cannot be treated as successful completion."""
+    from app.services.agent_chat_service import AgentChatError, stream_agent_response
+
+    completed = MagicMock(type="response.completed")
+    completed.response.id = None
+    mock_stream = MagicMock()
+    mock_stream.__iter__.return_value = iter([completed])
+    mock_openai_client = MagicMock()
+    mock_openai_client.responses.create.return_value = mock_stream
+    mock_project_client = MagicMock()
+    mock_project_client.get_openai_client.return_value = mock_openai_client
+
+    with (
+        patch(
+            "app.services.agent_chat_service.agent_sync_service.get_project_endpoint",
+            new_callable=AsyncMock,
+            return_value=("https://foundry.test/api/projects/test-prj", "test-key"),
+        ),
+        patch(
+            "app.services.agent_chat_service.agent_sync_service._get_project_client",
+            return_value=mock_project_client,
+        ),
+        _patch_config_service(),
+        pytest.raises(AgentChatError, match="without a response ID"),
+    ):
+        async for _ in stream_agent_response(AsyncMock(), "Dr-Exact", "2", "Hello"):
+            pass
+
+    assert mock_stream.close.call_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_stream_agent_response_rejects_clean_end_without_completion():
+    """A stream ending after non-terminal events cannot fabricate completion."""
+    from app.services.agent_chat_service import AgentChatError, stream_agent_response
+
+    mock_stream = MagicMock()
+    mock_stream.__iter__.return_value = iter([MagicMock(type="response.created")])
+    mock_openai_client = MagicMock()
+    mock_openai_client.responses.create.return_value = mock_stream
+    mock_project_client = MagicMock()
+    mock_project_client.get_openai_client.return_value = mock_openai_client
+
+    with (
+        patch(
+            "app.services.agent_chat_service.agent_sync_service.get_project_endpoint",
+            new_callable=AsyncMock,
+            return_value=("https://foundry.test/api/projects/test-prj", "test-key"),
+        ),
+        patch(
+            "app.services.agent_chat_service.agent_sync_service._get_project_client",
+            return_value=mock_project_client,
+        ),
+        _patch_config_service(),
+        pytest.raises(AgentChatError, match="ended without completion"),
+    ):
+        async for _ in stream_agent_response(AsyncMock(), "Dr-Exact", "2", "Hello"):
+            pass
+
+
+@pytest.mark.asyncio
+async def test_stream_agent_response_closes_worker_when_consumer_stops_early():
+    """Closing the async iterator also closes and cancels a pending worker."""
+    from app.services.agent_chat_service import stream_agent_response
+
+    release_worker = threading.Event()
+
+    class BlockingStream:
+        closed = False
+
+        def __iter__(self):
+            yield MagicMock(type="response.output_text.delta", delta="partial")
+            release_worker.wait(timeout=5)
+
+        def close(self):
+            self.closed = True
+            release_worker.set()
+
+    stream = BlockingStream()
+    mock_openai_client = MagicMock()
+    mock_openai_client.responses.create.return_value = stream
+    mock_project_client = MagicMock()
+    mock_project_client.get_openai_client.return_value = mock_openai_client
+
+    with (
+        patch(
+            "app.services.agent_chat_service.agent_sync_service.get_project_endpoint",
+            new_callable=AsyncMock,
+            return_value=("https://foundry.test/api/projects/test-prj", "test-key"),
+        ),
+        patch(
+            "app.services.agent_chat_service.agent_sync_service._get_project_client",
+            return_value=mock_project_client,
+        ),
+        _patch_config_service(),
+    ):
+        iterator = stream_agent_response(AsyncMock(), "Dr-Exact", "2", "Hello").__aiter__()
+        assert (await anext(iterator)).text == "partial"
+        await iterator.aclose()
+
+    assert stream.closed is True
 
 
 # ===========================================================================

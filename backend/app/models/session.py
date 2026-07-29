@@ -38,6 +38,11 @@ class CoachingSession(Base, TimestampMixin):
     # Interaction mode: 7 modes per D-06
     mode: Mapped[str] = mapped_column(String(40), default="text")
 
+    # Immutable Foundry Prompt Agent snapshot and internal Responses continuation state
+    agent_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    agent_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    agent_response_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     # Conference fields
     session_type: Mapped[str] = mapped_column(String(20), default="f2f")  # f2f / conference
     sub_state: Mapped[str] = mapped_column(
