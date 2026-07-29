@@ -3,13 +3,29 @@
 import json
 from unittest.mock import patch
 
+import pytest
+
 from app.models.hcp_profile import HcpProfile
 from app.models.scoring_rubric import ScoringRubric
 from app.models.skill import Skill, SkillVersion
 from app.models.user import User
 from app.models.voice_live_instance import VoiceLiveInstance
+from app.services.agent_chat_service import AgentResponseEvent
 from app.services.auth import create_access_token, get_password_hash
 from tests.conftest import TestSessionLocal
+
+
+async def _mock_agent_stream(*_args, **_kwargs):
+    """Return a deterministic hosted-Agent stream for Session API tests."""
+    yield AgentResponseEvent(kind="text", text="Mock HCP response")
+    yield AgentResponseEvent(kind="completed", response_id="resp-session-api-test")
+
+
+@pytest.fixture(autouse=True)
+def mock_session_agent_stream():
+    """Keep Session API unit tests independent of Azure credentials."""
+    with patch("app.api.sessions.stream_agent_response", _mock_agent_stream):
+        yield
 
 
 async def _create_vl_instance(user_id: str) -> str:

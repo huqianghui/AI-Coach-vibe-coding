@@ -22,6 +22,7 @@ from app.models.scoring_rubric import ScoringRubric
 from app.models.session import CoachingSession
 from app.models.skill import Skill, SkillVersion
 from app.models.user import User
+from app.services.agent_chat_service import AgentResponseEvent
 from app.services.auth import create_access_token, get_password_hash
 from tests.conftest import TestSessionLocal
 
@@ -87,6 +88,19 @@ def mock_llm_scoring():
         new_callable=AsyncMock,
         return_value=_MOCK_LLM_RESULT,
     ):
+        yield
+
+
+async def _mock_agent_stream(*_args, **_kwargs):
+    """Return a deterministic hosted-Agent stream for API coverage tests."""
+    yield AgentResponseEvent(kind="text", text="Mock HCP response")
+    yield AgentResponseEvent(kind="completed", response_id="resp-coverage-test")
+
+
+@pytest.fixture(autouse=True)
+def mock_session_agent_stream():
+    """Keep Session API unit tests independent of Azure credentials."""
+    with patch("app.api.sessions.stream_agent_response", _mock_agent_stream):
         yield
 
 

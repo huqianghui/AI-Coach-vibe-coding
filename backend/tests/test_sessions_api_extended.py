@@ -11,6 +11,7 @@ from app.models.scenario import Scenario
 from app.models.scoring_rubric import ScoringRubric
 from app.models.session import CoachingSession
 from app.models.user import User
+from app.services.agent_chat_service import AgentResponseEvent
 from app.services.agents.adapters.mock import MockCoachingAdapter
 from app.services.agents.avatar.mock import MockAvatarAdapter
 from app.services.agents.registry import ServiceRegistry
@@ -18,6 +19,12 @@ from app.services.agents.stt.mock import MockSTTAdapter
 from app.services.agents.tts.mock import MockTTSAdapter
 from app.services.auth import create_access_token, get_password_hash
 from tests.conftest import TestSessionLocal
+
+
+async def _mock_agent_stream(*_args, **_kwargs):
+    """Return a deterministic hosted-Agent stream for extended API tests."""
+    yield AgentResponseEvent(kind="text", text="Mock HCP response")
+    yield AgentResponseEvent(kind="completed", response_id="resp-session-extended-test")
 
 
 @pytest.fixture(autouse=True)
@@ -30,7 +37,9 @@ def register_mock_adapters():
     reg.register("stt", MockSTTAdapter())
     reg.register("tts", MockTTSAdapter())
     reg.register("avatar", MockAvatarAdapter())
-    yield
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        monkeypatch.setattr("app.api.sessions.stream_agent_response", _mock_agent_stream)
+        yield
     ServiceRegistry._instance = None
     ServiceRegistry._categories = {}
 
