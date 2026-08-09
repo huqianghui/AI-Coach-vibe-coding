@@ -90,6 +90,17 @@
   "startButton": "开始",
   "startPrompt": "点击「开始」按钮开始语音对话",
   "waitingForResponse": "正在聆听语音...",
+  "sessionContextUnavailable": "当前训练会话暂不支持语音、数字人和 WebRTC。请返回训练页并使用文字会话；系统不会自动降级或切换模式。",
+  "turn": {
+    "idle": "就绪",
+    "accepted": "服务端已接受消息...",
+    "in_progress": "服务端正在处理本轮消息...",
+    "reconciling": "正在核对服务商执行结果，系统不会自动重发本轮消息。",
+    "succeeded": "回复已完成",
+    "failed_terminal": "本轮执行失败，请明确发送一条新消息后重试。",
+    "disconnected": "连接已中断，可在准备好后恢复服务端持有的本轮消息。",
+    "resume": "恢复本轮"
+  },
   "connectingAvatar": "正在连接数字人...",
   "connectingVoice": "正在连接语音通话...",
   "micButton": {

@@ -1,6 +1,7 @@
+import asyncio
 import logging
 import sys
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -66,10 +67,35 @@ async def lifespan(app: FastAPI):
 
     async with AsyncSessionLocal() as db:
         await ensure_defaults(db)
+    cleanup_worker = None
+    cleanup_task = None
+    try:
+        from app.services import agent_sync_service
+        from app.services.foundry_conversation_service import FoundryConversationService
+        from app.services.session_conversation_cleanup import SessionConversationCleanup
+
+        async with AsyncSessionLocal() as db:
+            endpoint, api_key = await agent_sync_service.get_project_endpoint(db)
+        project_client = agent_sync_service._get_project_client(endpoint, api_key)
+        cleanup_worker = SessionConversationCleanup(
+            FoundryConversationService(project_client.get_openai_client())
+        )
+        await cleanup_worker.run_startup()
+        cleanup_task = asyncio.create_task(cleanup_worker.run(initial_sweep=False))
+    except Exception:
+        logger.exception("Conversation cleanup worker could not start; startup continues")
     logger.info("Startup complete")
-    yield
-    await engine.dispose()
-    logger.info("Shutdown complete")
+    try:
+        yield
+    finally:
+        if cleanup_worker is not None:
+            await cleanup_worker.stop()
+        if cleanup_task is not None:
+            cleanup_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await cleanup_task
+        await engine.dispose()
+        logger.info("Shutdown complete")
 
 
 app = FastAPI(

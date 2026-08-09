@@ -90,6 +90,17 @@
   "startButton": "Start",
   "startPrompt": "Click Start to begin the voice session",
   "waitingForResponse": "Listening for speech...",
+  "sessionContextUnavailable": "Voice, avatar, and WebRTC are unavailable for this training session. Return to training and use a text session; no automatic fallback was started.",
+  "turn": {
+    "idle": "Ready",
+    "accepted": "Message accepted by the server...",
+    "in_progress": "The server is processing this turn...",
+    "reconciling": "The provider outcome is being reconciled. This turn will not be resent automatically.",
+    "succeeded": "Response completed",
+    "failed_terminal": "This turn failed. Send a new message to retry.",
+    "disconnected": "Connection interrupted. Resume the server-owned turn when ready.",
+    "resume": "Resume turn"
+  },
   "connectingAvatar": "Connecting digital human...",
   "connectingVoice": "Connecting voice call...",
   "micButton": {

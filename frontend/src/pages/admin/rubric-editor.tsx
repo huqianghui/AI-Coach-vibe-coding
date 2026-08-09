@@ -388,6 +388,7 @@ export default function RubricEditorPage() {
                     variant="ghost"
                     size="icon"
                     className="size-7 text-destructive"
+                    aria-label={`${t("common:remove")} ${t("admin:rubrics.dimensionName")} ${index + 1}`}
                     onClick={() => remove(index)}
                   >
                     <Trash2 className="size-3.5" />

@@ -1,0 +1,3 @@
+frontend/e2e/unified-training-session-skill-context.spec.ts
+frontend/src/api/sessions.test.ts
+frontend/src/pages/user/unified-session.test.tsx

@@ -1,6 +1,10 @@
 """Unit tests for meta_skill_service — CRUD, template loading, ensure_defaults."""
 
+import zipfile
+from io import BytesIO
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from app.models.meta_skill import MetaSkill
 from app.services import meta_skill_service
@@ -46,6 +50,32 @@ async def _seed_meta_skill(
 
 
 class TestLoadDefaultTemplate:
+    def test_parse_skill_frontmatter_variants(self, tmp_path):
+        valid = tmp_path / "valid.md"
+        valid.write_text(
+            "---\nname: demo\ndescription: useful\n---\nBody text",
+            encoding="utf-8",
+        )
+        assert meta_skill_service._parse_skill_md(valid) == (
+            "demo",
+            "useful",
+            "Body text",
+        )
+
+        invalid = tmp_path / "invalid.md"
+        invalid.write_text("---\n: invalid yaml\n---\nFallback body", encoding="utf-8")
+        assert meta_skill_service._parse_skill_md(invalid) == ("", "", "Fallback body")
+
+        plain = tmp_path / "plain.md"
+        plain.write_text("  Plain body  ", encoding="utf-8")
+        assert meta_skill_service._parse_skill_md(plain) == ("", "", "Plain body")
+
+    def test_legacy_flat_template_fallback(self, tmp_path):
+        (tmp_path / "creator_en.md").write_text("legacy template", encoding="utf-8")
+        with patch.object(meta_skill_service, "_TEMPLATE_DIR", tmp_path):
+            assert meta_skill_service._load_default_template("creator", "fr") == ("legacy template")
+            assert meta_skill_service._load_default_template("evaluator", "en") == ""
+
     def test_load_creator_en(self):
         text = _load_default_template("creator", "en")
         assert text, "creator_en template should not be empty"
@@ -54,6 +84,67 @@ class TestLoadDefaultTemplate:
     def test_load_evaluator_en(self):
         text = _load_default_template("evaluator", "en")
         assert text
+
+    def test_temporary_skill_directory_and_resource_edge_cases(self, tmp_path):
+        skill_dir = tmp_path / "skill-creator"
+        (skill_dir / "references").mkdir(parents=True)
+        (skill_dir / "scripts").mkdir()
+        (skill_dir / "SKILL.md").write_text("---\nname: demo\n---\nBody", encoding="utf-8")
+        (skill_dir / "SKILL_zh.md").write_text("中文", encoding="utf-8")
+        (skill_dir / "references" / "guide.md").write_text("guide", encoding="utf-8")
+        (skill_dir / "references" / "ignored.bin").write_bytes(b"ignored")
+        script = skill_dir / "scripts" / "validate_creator_output.py"
+        script.write_text("print('ok')", encoding="utf-8")
+        (skill_dir / "scripts" / "ignored.exe").write_bytes(b"ignored")
+
+        with patch.object(meta_skill_service, "_TEMPLATE_DIR", tmp_path):
+            composed = meta_skill_service._load_skill_directory("creator", "zh")
+            assert "中文" in composed and "guide" in composed
+            resources = meta_skill_service.list_meta_skill_resources("creator")
+            assert {item["filename"] for item in resources} == {
+                "guide.md",
+                "validate_creator_output.py",
+            }
+            assert meta_skill_service.list_meta_skill_resources("missing") == []
+            assert meta_skill_service.get_validation_script_path("creator") == script
+            assert meta_skill_service.get_validation_script_path("missing") is None
+            assert (
+                meta_skill_service.get_meta_skill_resource_content(
+                    "creator", "script", "validate_creator_output.py"
+                )[0]
+                == "text/x-python"
+            )
+            assert (
+                meta_skill_service.get_meta_skill_resource_content(
+                    "creator", "reference", "foo\\bar.md"
+                )
+                is None
+            )
+
+            exported = meta_skill_service.export_meta_skill_zip("creator")
+            assert exported is not None
+            filename, payload = exported
+            assert filename == "skill-creator.zip"
+            with zipfile.ZipFile(BytesIO(payload)) as archive:
+                assert set(archive.namelist()) == {
+                    "SKILL.md",
+                    "SKILL_zh.md",
+                    "references/guide.md",
+                    "scripts/validate_creator_output.py",
+                }
+
+    def test_missing_and_empty_skill_directories(self, tmp_path):
+        with patch.object(meta_skill_service, "_TEMPLATE_DIR", tmp_path):
+            assert meta_skill_service._load_skill_directory("missing") == ""
+            assert meta_skill_service._load_skill_directory("creator") == ""
+            assert meta_skill_service.list_meta_skill_resources("creator") == []
+            assert meta_skill_service.export_meta_skill_zip("creator") is None
+
+            empty = tmp_path / "skill-creator"
+            empty.mkdir()
+            assert meta_skill_service._load_skill_directory("creator") == ""
+            assert meta_skill_service.get_validation_script_path("creator") is None
+            assert meta_skill_service.export_meta_skill_zip("creator") is None
 
     def test_load_creator_zh(self):
         text = _load_default_template("creator", "zh")
@@ -167,6 +258,19 @@ class TestUpdateMetaSkill:
         assert result.model == "gpt-4.1"
         assert result.template_content == "original"
 
+    async def test_updates_all_optional_fields(self, db_session):
+        await _seed_meta_skill()
+        result = await meta_skill_service.update_meta_skill(
+            db_session,
+            "creator",
+            model="new-model",
+            template_content="new-content",
+            template_language="zh",
+            is_active=False,
+        )
+        assert result is not None
+        assert result.is_active is False
+
 
 class TestResetToDefault:
     async def test_reset_restores_bundled_template(self, db_session):
@@ -214,6 +318,14 @@ class TestEnsureDefaults:
         evaluator = await meta_skill_service.get_meta_skill(db_session, "evaluator")
         assert evaluator is not None
         assert len(evaluator.template_content) > 100
+
+    async def test_migrates_legacy_name_and_refreshes_template(self, db_session):
+        await _seed_meta_skill(name="skill_creator", template_content="stale")
+        await meta_skill_service.ensure_defaults(db_session)
+        all_skills = await meta_skill_service.get_all_meta_skills(db_session)
+        creator = next(skill for skill in all_skills if skill.skill_type == "creator")
+        assert creator.name == "skill-creator"
+        assert creator.template_content != "stale"
 
 
 # ---------------------------------------------------------------------------
@@ -277,3 +389,18 @@ class TestSyncMetaSkillAgent:
             mock_create.assert_not_called()
         # This test verifies the sync function structure — the lazy imports
         # make full mock-based testing complex. Integration tests cover the full path.
+
+    async def test_sync_propagates_create_failure(self, db_session):
+        await _seed_meta_skill(template_content="template")
+        with (
+            patch(
+                "app.services.agent_sync_service.get_project_endpoint",
+                AsyncMock(return_value=("https://ai.example.com", "key")),
+            ),
+            patch(
+                "app.services.agent_sync_service.create_agent",
+                AsyncMock(side_effect=RuntimeError("sync failed")),
+            ),
+        ):
+            with pytest.raises(RuntimeError, match="sync failed"):
+                await meta_skill_service.sync_meta_skill_agent(db_session, "creator")

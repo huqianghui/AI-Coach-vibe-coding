@@ -4,6 +4,7 @@ import { userEvent } from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import RubricEditorPage from "./rubric-editor";
 import type { Rubric } from "@/types/rubric";
+import { toast } from "sonner";
 
 const mockNavigate = vi.fn();
 const mockCreateMutate = vi.fn();
@@ -27,6 +28,13 @@ const defaultRubricTemplate = {
 };
 
 let mockParamsId: string | undefined = undefined;
+let mockRubricLoading = false;
+let mockDefaultPromptTemplate: { prompt_template: string } | undefined = {
+  prompt_template: defaultPromptTemplate,
+};
+let mockDefaultRubricTemplate: typeof defaultRubricTemplate | undefined = defaultRubricTemplate;
+let mockCreatePending = false;
+let mockUpdatePending = false;
 
 const mockRubric: Rubric = {
   id: "r1",
@@ -71,23 +79,23 @@ vi.mock("sonner", () => ({
 vi.mock("@/hooks/use-rubrics", () => ({
   useRubric: (id: string | undefined) => ({
     data: id ? mockRubricResponse : undefined,
-    isLoading: false,
+    isLoading: mockRubricLoading,
   }),
   useDefaultPromptTemplate: () => ({
-    data: { prompt_template: defaultPromptTemplate },
+    data: mockDefaultPromptTemplate,
     isLoading: false,
   }),
   useDefaultRubricTemplate: () => ({
-    data: defaultRubricTemplate,
+    data: mockDefaultRubricTemplate,
     isLoading: false,
   }),
   useCreateRubric: () => ({
     mutate: mockCreateMutate,
-    isPending: false,
+    isPending: mockCreatePending,
   }),
   useUpdateRubric: () => ({
     mutate: mockUpdateMutate,
-    isPending: false,
+    isPending: mockUpdatePending,
   }),
   useCuPortalUrl: () => ({
     data: {
@@ -115,8 +123,14 @@ function renderEditor() {
 describe("RubricEditorPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    sessionStorage.clear();
     mockParamsId = undefined;
     mockRubricResponse = mockRubric;
+    mockRubricLoading = false;
+    mockDefaultPromptTemplate = { prompt_template: defaultPromptTemplate };
+    mockDefaultRubricTemplate = defaultRubricTemplate;
+    mockCreatePending = false;
+    mockUpdatePending = false;
   });
 
   describe("create mode (new)", () => {
@@ -184,6 +198,76 @@ describe("RubricEditorPage", () => {
     it("shows weight sum indicator", () => {
       renderEditor();
       expect(screen.getByText(/100\/100/)).toBeInTheDocument();
+    });
+
+    it("creates a rubric and handles both mutation outcomes", async () => {
+      const user = userEvent.setup();
+      renderEditor();
+      await screen.findByDisplayValue("Default F2F Scoring Rubric");
+
+      await user.click(screen.getByText("admin:rubrics.save"));
+
+      expect(mockCreateMutate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "Default F2F Scoring Rubric",
+          prompt_template: defaultPromptTemplate,
+          content_weight: 60,
+          voice_weight: 40,
+          dimensions: expect.arrayContaining([
+            expect.objectContaining({ name: "key_message", weight: 25 }),
+          ]),
+        }),
+        expect.any(Object),
+      );
+      const callbacks = mockCreateMutate.mock.calls[0]?.[1] as {
+        onSuccess: () => void;
+        onError: () => void;
+      };
+      callbacks.onSuccess();
+      expect(toast.success).toHaveBeenCalledWith("admin:rubrics.saved");
+      expect(mockNavigate).toHaveBeenCalledWith("/admin/scoring-rubrics");
+      callbacks.onError();
+      expect(toast.error).toHaveBeenCalledWith("admin:errors.rubricSaveFailed");
+    });
+
+    it("falls back to the prompt endpoint when no default rubric exists", async () => {
+      mockDefaultRubricTemplate = undefined;
+      renderEditor();
+
+      expect(await screen.findByDisplayValue(defaultPromptTemplate)).toBeInTheDocument();
+      expect(screen.getByText(/100\/100/)).toBeInTheDocument();
+    });
+
+    it("disables default restoration when neither template endpoint has content", () => {
+      mockDefaultRubricTemplate = undefined;
+      mockDefaultPromptTemplate = undefined;
+      renderEditor();
+
+      expect(screen.getByText("admin:rubrics.useDefaultPromptTemplate").closest("button"))
+        .toBeDisabled();
+    });
+
+    it("adds and removes a dimension while enforcing a 100 percent sum", async () => {
+      const user = userEvent.setup();
+      renderEditor();
+      await screen.findByDisplayValue("Default F2F Scoring Rubric");
+
+      await user.click(screen.getByText("admin:rubrics.addDimension"));
+      expect(screen.getByText(/100\/100/)).toBeInTheDocument();
+      expect(screen.getAllByText(/admin:rubrics.dimensionName \d/)).toHaveLength(6);
+      const removeButton = screen.getByRole("button", {
+        name: "common:remove admin:rubrics.dimensionName 1",
+      });
+      await user.click(removeButton);
+      expect(screen.getAllByText(/admin:rubrics.dimensionName \d/)).toHaveLength(5);
+    });
+
+    it("shows saving and disables submission while creation is pending", () => {
+      mockCreatePending = true;
+      renderEditor();
+
+      const button = screen.getByText("common:saving").closest("button");
+      expect(button).toBeDisabled();
     });
   });
 
@@ -267,6 +351,54 @@ describe("RubricEditorPage", () => {
         expect(screen.getByText(/100\/100/)).toBeInTheDocument();
         expect(screen.getByText("admin:rubrics.dimensionName 1")).toBeInTheDocument();
       });
+    });
+
+    it("renders a loading state before an existing rubric is available", () => {
+      mockRubricLoading = true;
+      const { container } = renderEditor();
+
+      expect(container.querySelector(".animate-spin")).toBeInTheDocument();
+      expect(screen.queryByText("admin:rubrics.basicInfo")).not.toBeInTheDocument();
+    });
+
+    it("uses field fallbacks for an incomplete persisted rubric", async () => {
+      mockRubricResponse = {
+        ...mockRubric,
+        description: undefined,
+        scenario_type: undefined,
+        prompt_template: "",
+        prompt_version: undefined,
+        content_weight: undefined,
+      } as unknown as Rubric;
+      renderEditor();
+
+      expect(await screen.findByDisplayValue(defaultPromptTemplate)).toBeInTheDocument();
+      expect(screen.getByText(/admin:rubrics.promptVersion: 1/)).toBeInTheDocument();
+      expect(screen.getByText("60%")).toBeInTheDocument();
+    });
+
+    it("handles successful and failed update callbacks", async () => {
+      const user = userEvent.setup();
+      renderEditor();
+      await screen.findByDisplayValue("F2F Default");
+      await user.click(screen.getByText("admin:rubrics.save"));
+
+      const callbacks = mockUpdateMutate.mock.calls[0]?.[1] as {
+        onSuccess: () => void;
+        onError: () => void;
+      };
+      callbacks.onSuccess();
+      expect(toast.success).toHaveBeenCalledWith("admin:rubrics.saved");
+      expect(mockNavigate).toHaveBeenCalledWith("/admin/scoring-rubrics");
+      callbacks.onError();
+      expect(toast.error).toHaveBeenCalledWith("admin:errors.rubricSaveFailed");
+    });
+
+    it("shows saving and disables submission while update is pending", () => {
+      mockUpdatePending = true;
+      renderEditor();
+
+      expect(screen.getByText("common:saving").closest("button")).toBeDisabled();
     });
   });
 

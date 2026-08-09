@@ -1,30 +1,47 @@
 """Tests for Sessions API endpoints: session lifecycle via HTTP."""
 
+import hashlib
 import json
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.models.hcp_profile import HcpProfile
 from app.models.scoring_rubric import ScoringRubric
+from app.models.session_turn import SessionTurn
 from app.models.skill import Skill, SkillVersion
 from app.models.user import User
 from app.models.voice_live_instance import VoiceLiveInstance
-from app.services.agent_chat_service import AgentResponseEvent
+from app.services import session_service
 from app.services.auth import create_access_token, get_password_hash
+from app.services.session_turn_orchestrator import TurnResult
+from app.utils.exceptions import AppException
 from tests.conftest import TestSessionLocal
-
-
-async def _mock_agent_stream(*_args, **_kwargs):
-    """Return a deterministic hosted-Agent stream for Session API tests."""
-    yield AgentResponseEvent(kind="text", text="Mock HCP response")
-    yield AgentResponseEvent(kind="completed", response_id="resp-session-api-test")
 
 
 @pytest.fixture(autouse=True)
 def mock_session_agent_stream():
-    """Keep Session API unit tests independent of Azure credentials."""
-    with patch("app.api.sessions.stream_agent_response", _mock_agent_stream):
+    """Keep Session API tests independent of external Foundry credentials."""
+
+    async def build_orchestrator(_db):
+        async def run_turn(session_id, turn_key, user_text, _worker_id):
+            async with TestSessionLocal() as turn_db:
+                await session_service.save_message(turn_db, session_id, "user", user_text)
+                await session_service.save_message(
+                    turn_db, session_id, "assistant", "Mock HCP response"
+                )
+                await turn_db.commit()
+            return TurnResult(
+                status="succeeded",
+                turn_key=turn_key,
+                text="Mock HCP response",
+                response_id="resp-session-api-test",
+            )
+
+        return SimpleNamespace(run_turn=AsyncMock(side_effect=run_turn))
+
+    with patch("app.api.sessions._session_turn_orchestrator", side_effect=build_orchestrator):
         yield
 
 
@@ -121,15 +138,21 @@ async def _create_active_scenario(client, admin_id, admin_token) -> str:
         db.add(rubric)
         await db.flush()
 
+        skill_content = "# SOP\n## Step 1: Open\n## Step 2: Discover\n## Step 3: Close"
         skill = Skill(
-            id="test-skill-id", name="Test Skill", status="published", created_by=admin_id
+            id="test-skill-id",
+            name="Test Skill",
+            content=skill_content,
+            status="published",
+            created_by=admin_id,
         )
         db.add(skill)
         await db.flush()
         skill_ver = SkillVersion(
             skill_id=skill.id,
             version_number=1,
-            content="test",
+            content=skill_content,
+            metadata_json='{"knowledge_references":["test-reference"]}',
             is_published=True,
             created_by=admin_id,
         )
@@ -185,7 +208,7 @@ class TestCreateSessionEndpoint:
         assert data["agent_name"] == "hcp-api-agent"
         assert data["agent_version"] == "21"
 
-    async def test_request_agent_fields_cannot_override_server_snapshot(self, client):
+    async def test_request_agent_fields_are_rejected(self, client):
         admin_id, admin_token = await _create_admin_and_token()
         scenario_id = await _create_active_scenario(client, admin_id, admin_token)
         _, user_token = await _create_user_and_token("pin_override_user")
@@ -200,9 +223,7 @@ class TestCreateSessionEndpoint:
             headers={"Authorization": f"Bearer {user_token}"},
         )
 
-        assert response.status_code == 201
-        assert response.json()["agent_name"] == "hcp-api-agent"
-        assert response.json()["agent_version"] == "21"
+        assert response.status_code == 422
 
     async def test_unsynced_hcp_returns_structured_error(self, client):
         admin_id, admin_token = await _create_admin_and_token()
@@ -529,7 +550,251 @@ class TestGetSessionMessagesEndpoint:
         assert response.status_code == 200
         messages = response.json()
         assert isinstance(messages, list)
-        # At least the user message should exist
-        assert len(messages) >= 1
-        assert messages[0]["role"] == "user"
-        assert messages[0]["content"] == "Hello"
+        assert [(message["role"], message["content"]) for message in messages] == [
+            ("user", "Hello"),
+            ("assistant", "Mock HCP response"),
+        ]
+
+
+class TestSessionMessageAuthority:
+    """The browser supplies only message content; turn identity remains server-owned."""
+
+    async def test_rejects_browser_turn_and_provider_fields(self, client):
+        admin_id, admin_token = await _create_admin_and_token()
+        scenario_id = await _create_active_scenario(client, admin_id, admin_token)
+        _, user_token = await _create_user_and_token("message_authority_user")
+        created = await client.post(
+            "/api/v1/sessions",
+            json={"scenario_id": scenario_id},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+        response = await client.post(
+            f"/api/v1/sessions/{created.json()['id']}/message",
+            json={
+                "message": "Hello",
+                "turn_key": "browser-owned",
+                "conversation_id": "browser-conversation",
+                "agent_name": "browser-agent",
+            },
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+        assert response.status_code == 422
+
+    async def test_sse_keeps_text_key_messages_hint_and_done_events(self, client):
+        admin_id, admin_token = await _create_admin_and_token()
+        scenario_id = await _create_active_scenario(client, admin_id, admin_token)
+        _, user_token = await _create_user_and_token("message_sse_user")
+        created = await client.post(
+            "/api/v1/sessions",
+            json={"scenario_id": scenario_id},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+        response = await client.post(
+            f"/api/v1/sessions/{created.json()['id']}/message",
+            json={"message": "Hello"},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+        assert response.status_code == 200
+        assert "SESSION_TURN_ACCEPTED" in response.text
+        assert "event: text" in response.text
+        assert "data: Mock HCP response" in response.text
+        assert "event: key_messages" in response.text
+        assert "event: hint" in response.text
+        assert "event: done" in response.text
+
+    @pytest.mark.parametrize(
+        ("status", "expected_code"),
+        [
+            ("in_progress", "SESSION_TURN_IN_PROGRESS"),
+            ("reconciling", "SESSION_TURN_RECONCILING"),
+            ("failed_terminal", "SESSION_TURN_FAILED"),
+        ],
+    )
+    async def test_maps_non_success_turn_states(self, client, status, expected_code):
+        admin_id, admin_token = await _create_admin_and_token()
+        scenario_id = await _create_active_scenario(client, admin_id, admin_token)
+        _, user_token = await _create_user_and_token(f"message_{status}_user")
+        created = await client.post(
+            "/api/v1/sessions",
+            json={"scenario_id": scenario_id},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        orchestrator = SimpleNamespace(
+            run_turn=AsyncMock(return_value=TurnResult(status=status, turn_key="server-turn"))
+        )
+
+        with patch(
+            "app.api.sessions._session_turn_orchestrator",
+            AsyncMock(return_value=orchestrator),
+        ):
+            response = await client.post(
+                f"/api/v1/sessions/{created.json()['id']}/message",
+                json={"message": "Hello"},
+                headers={"Authorization": f"Bearer {user_token}"},
+            )
+
+        assert response.status_code == 200
+        assert expected_code in response.text
+        assert "event: text" not in response.text
+        assert "event: done" not in response.text
+
+    @pytest.mark.parametrize(
+        "error_code",
+        ["SESSION_CONVERSATION_UNAVAILABLE", "SESSION_SOP_SNAPSHOT_INVALID"],
+    )
+    async def test_maps_orchestrator_error_without_fallback(self, client, error_code):
+        admin_id, admin_token = await _create_admin_and_token()
+        scenario_id = await _create_active_scenario(client, admin_id, admin_token)
+        _, user_token = await _create_user_and_token("message_error_user")
+        created = await client.post(
+            "/api/v1/sessions",
+            json={"scenario_id": scenario_id},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        orchestrator = SimpleNamespace(
+            run_turn=AsyncMock(
+                side_effect=AppException(
+                    409,
+                    error_code,
+                    "Session turn cannot be executed",
+                )
+            )
+        )
+
+        with (
+            patch(
+                "app.api.sessions._session_turn_orchestrator",
+                AsyncMock(return_value=orchestrator),
+            ),
+            patch("app.api.sessions.stream_agent_response") as fallback,
+        ):
+            response = await client.post(
+                f"/api/v1/sessions/{created.json()['id']}/message",
+                json={"message": "Hello"},
+                headers={"Authorization": f"Bearer {user_token}"},
+            )
+
+        assert "event: error" in response.text
+        assert error_code in response.text
+        fallback.assert_not_called()
+
+    async def test_resumed_request_reuses_server_turn_key(self, client):
+        admin_id, admin_token = await _create_admin_and_token()
+        scenario_id = await _create_active_scenario(client, admin_id, admin_token)
+        _, user_token = await _create_user_and_token("message_resume_user")
+        created = await client.post(
+            "/api/v1/sessions",
+            json={"scenario_id": scenario_id},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        orchestrator = SimpleNamespace(
+            run_turn=AsyncMock(
+                return_value=TurnResult(status="in_progress", turn_key="existing-server-turn")
+            )
+        )
+
+        with (
+            patch(
+                "app.api.sessions._resolve_server_turn_key",
+                AsyncMock(return_value=("existing-server-turn", True)),
+            ),
+            patch(
+                "app.api.sessions._session_turn_orchestrator",
+                AsyncMock(return_value=orchestrator),
+            ),
+        ):
+            response = await client.post(
+                f"/api/v1/sessions/{created.json()['id']}/message",
+                json={"message": "Hello"},
+                headers={"Authorization": f"Bearer {user_token}"},
+            )
+
+        assert "SESSION_TURN_RESUMED" in response.text
+        assert "SESSION_TURN_IN_PROGRESS" in response.text
+        assert orchestrator.run_turn.await_args.args[1] == "existing-server-turn"
+
+    async def test_resumed_turn_can_replay_committed_winner_without_fallback(self, client):
+        admin_id, admin_token = await _create_admin_and_token()
+        scenario_id = await _create_active_scenario(client, admin_id, admin_token)
+        _, user_token = await _create_user_and_token("message_winner_replay_user")
+        created = await client.post(
+            "/api/v1/sessions",
+            json={"scenario_id": scenario_id},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        orchestrator = SimpleNamespace(
+            run_turn=AsyncMock(
+                return_value=TurnResult(
+                    status="succeeded",
+                    turn_key="winner-server-turn",
+                    text="Committed winner",
+                    response_id="resp-winner",
+                )
+            )
+        )
+
+        with (
+            patch(
+                "app.api.sessions._resolve_server_turn_key",
+                AsyncMock(return_value=("winner-server-turn", True)),
+            ),
+            patch(
+                "app.api.sessions._session_turn_orchestrator",
+                AsyncMock(return_value=orchestrator),
+            ),
+            patch(
+                "app.api.sessions._successful_turn_observables",
+                AsyncMock(return_value=("[]", [])),
+            ),
+            patch("app.api.sessions.stream_agent_response") as fallback,
+        ):
+            response = await client.post(
+                f"/api/v1/sessions/{created.json()['id']}/message",
+                json={"message": "Hello"},
+                headers={"Authorization": f"Bearer {user_token}"},
+            )
+
+        assert "SESSION_TURN_RESUMED" in response.text
+        assert "data: Committed winner" in response.text
+        assert "event: done" in response.text
+        fallback.assert_not_called()
+
+    async def test_unfinished_same_text_is_reused_but_terminal_same_text_is_new(self, client):
+        from app.api.sessions import _resolve_server_turn_key
+
+        admin_id, admin_token = await _create_admin_and_token()
+        scenario_id = await _create_active_scenario(client, admin_id, admin_token)
+        _, user_token = await _create_user_and_token("message_key_resolution_user")
+        created = await client.post(
+            "/api/v1/sessions",
+            json={"scenario_id": scenario_id},
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+        session_id = created.json()["id"]
+        digest = hashlib.sha256(b"same text").hexdigest()
+
+        async with TestSessionLocal() as db:
+            pending = SessionTurn(
+                session_id=session_id,
+                turn_key="pending-server-turn",
+                status="pending",
+                input_digest=digest,
+                frozen_step=0,
+                frozen_context_revision=0,
+                frozen_context_digest="a" * 64,
+            )
+            db.add(pending)
+            await db.commit()
+            turn_key, resumed = await _resolve_server_turn_key(db, session_id, "same text")
+            assert (turn_key, resumed) == ("pending-server-turn", True)
+
+            pending.transition_to("failed_terminal")
+            await db.commit()
+            new_turn_key, resumed = await _resolve_server_turn_key(db, session_id, "same text")
+
+        assert resumed is False
+        assert new_turn_key != "pending-server-turn"

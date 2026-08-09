@@ -1,0 +1,25 @@
+# Reviewed executable Python source changed from baseline 50dc50072beff717b5c9456df5df0eee02f3361c through Plan 08.
+backend/alembic/env.py
+backend/alembic/versions/b35a_phase31_session_turn_outbox.py
+backend/app/api/sessions.py
+backend/app/main.py
+backend/app/models/__init__.py
+backend/app/models/session.py
+backend/app/models/session_turn.py
+backend/app/models/session_turn_attempt.py
+backend/app/models/session_turn_attempt_event.py
+backend/app/models/session_turn_context_audit.py
+backend/app/schemas/session.py
+backend/app/services/agent_chat_service.py
+backend/app/services/foundry_conversation_service.py
+backend/app/services/session_conversation_cleanup.py
+backend/app/services/session_service.py
+backend/app/services/session_skill_context.py
+backend/app/services/session_turn_orchestrator.py
+backend/app/services/session_turn_progression.py
+backend/app/services/skill_focus_service.py
+backend/app/services/voice_live_webrtc.py
+backend/app/services/voice_live_websocket.py
+scripts/phase31_integrity_gate.py
+scripts/phase31_release_gate.py
+scripts/verify_python_changed_branches.py

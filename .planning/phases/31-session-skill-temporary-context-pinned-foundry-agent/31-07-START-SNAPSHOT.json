@@ -1,0 +1,516 @@
+{
+  "version": 1,
+  "baseline": "50dc50072beff717b5c9456df5df0eee02f3361c",
+  "files": [
+    {
+      "path": ".planning/debug/ci-backend-skill-injection.md",
+      "status": "A",
+      "sha256": "d328d5a6d11af3c91a78875fe80fe5844c835baf1809d8b154e99d4f2b213611"
+    },
+    {
+      "path": ".planning/debug/frontend-vitest-108-failures.md",
+      "status": "A",
+      "sha256": "57a8ebdea4f8a63e38afbc94fceb7dfe741e5dce14c6161c563685057140551b"
+    },
+    {
+      "path": ".planning/debug/local-scenarios-missing.md",
+      "status": "A",
+      "sha256": "89cb3f22c81d4a6088bb5fabcc2dd6e96dbd9cea3961a3bba098b35ccc2838d2"
+    },
+    {
+      "path": ".planning/debug/skill-sop-runtime-orchestration.md",
+      "status": "A",
+      "sha256": "190604bb207d0705d18a282fd0a9d2825105e7e38453e7679d7bbade8824b5cf"
+    },
+    {
+      "path": ".planning/phases/30-unified-training-pinned-foundry-hcp-agent-kb-retrieval/30-06-SUMMARY.md",
+      "status": "M",
+      "sha256": "966fbe86f6b2f42eae9f5c9869b4b46924bace384a7d647bf7b4c1384acae7a6"
+    },
+    {
+      "path": ".planning/phases/30-unified-training-pinned-foundry-hcp-agent-kb-retrieval/30-CONTINUE.md",
+      "status": "M",
+      "sha256": "f7e0dd647a94bf712d5df5e8f76086c53d1793165dab3d09a6b74f77cf816e54"
+    },
+    {
+      "path": ".planning/phases/30-unified-training-pinned-foundry-hcp-agent-kb-retrieval/72cab3af724e45f2fc637a1f8f90ea4d.png",
+      "status": "A",
+      "sha256": "126d85a5ab730444675b9535db036de0fb79bbf0fa0f6c6adcee0381b33ec424"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-01-PLAN.md",
+      "status": "A",
+      "sha256": "ca1c15eb70ffcca734d1b16831c2db674428141974fea0c57d537b3402fc69b0"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-01-PLAN.revised.md",
+      "status": "A",
+      "sha256": "f24badb4a6d47695586c3e147e1c4fbaa04b0ad52c87258089ff6d802d2cb281"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-01-SUMMARY.corrected.md",
+      "status": "A",
+      "sha256": "2bb3dbd4414dd4941d37c758eb7540261f51057b9e3c9f230d6054604bfe88a8"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-01-SUMMARY.md",
+      "status": "A",
+      "sha256": "eff6fbd717f97c7c79551707c8c69fe9f3f056cbb653b8022f0c3257c2910abd"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-02-PLAN.md",
+      "status": "A",
+      "sha256": "2a57d7fae29d2c054e0157233ff3c370fc275551e19fdb04c3f578a91ba31461"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-02-PLAN.revised.md",
+      "status": "A",
+      "sha256": "634b9ee19d031b05bb2177130d86481d350845cfa9fc1c8f3d1d3bbcb80292b9"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-03-CHANGED-FRONTEND-SOURCE.txt",
+      "status": "A",
+      "sha256": "114023027a74899e76eab8ad47c7fab09c5ed6c5502c429dc5f03a4937f81f42"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-03-CHANGED-FRONTEND-TESTS.txt",
+      "status": "A",
+      "sha256": "5c28a45d6a26c0d22454fbeba37a5ffd4cfdf096261e25643b24df25b07b2499"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-03-CHANGED-PYTHON-SOURCE.txt",
+      "status": "A",
+      "sha256": "8e71dc558ca9ba8400a93307d25ab949be0288b4866c197659f8c754e612ab22"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-03-CHANGED-PYTHON-TESTS.txt",
+      "status": "A",
+      "sha256": "e1972a7541f7f0460790c05b077443ba3e5a5d22e83feb59ab172b5449c935b3"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-03-PLAN.final.md",
+      "status": "A",
+      "sha256": "66c7a8620af390b630627baf097934515eb7b1a7980fb382cb436bc672e50efb"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-03-PLAN.md",
+      "status": "A",
+      "sha256": "7d7d1ecc90d892655f721b2b2ef6228574fd7b758c608bcf0e2d600886a76c02"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-03-PLAN.revised.md",
+      "status": "A",
+      "sha256": "113c69ebafbbcd1a0ed129cc415c146e854dd38ac143bb57ca2a5f95268cf98f"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-03-SUMMARY.final.md",
+      "status": "A",
+      "sha256": "d132db741284e9428052dcf0b2359bb178de148c6e5cfef07438816b3841eb05"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-04-CHANGED-PYTHON-SOURCE.txt",
+      "status": "A",
+      "sha256": "95a7aa13fa74a4382986915ff9c0738a757b747b9547bd39464f219a4e800f8f"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-04-CHANGED-PYTHON-TESTS.txt",
+      "status": "A",
+      "sha256": "7a01eebed78e8ac99fbefbac86411ec9ea7444b2e4267b5c020567d2c26c2dc4"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-04-PLAN.final.md",
+      "status": "A",
+      "sha256": "a0041a47425f21e398a44770c02141daa688a7b59a10675aa8bb9be10363347e"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-04-PLAN.md",
+      "status": "A",
+      "sha256": "9b5e5b1f611ad989a979333d00134d2244fdbfa12344e9a57928ccc5b5140290"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-04-PLAN.revised.md",
+      "status": "A",
+      "sha256": "d151fd99546ed3b838e0a772cd6b91e81c63e2d2a68e9c7bf88930b4ee2b41f0"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-04-START-SNAPSHOT.json",
+      "status": "A",
+      "sha256": "aaed3b61b7a04ee5e2922e0148c794c9d605c2f41223fe58d1b2df71929d0301"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-04-SUMMARY.final.md",
+      "status": "A",
+      "sha256": "ddd1d99e404409b27c0c9d3b9ac0cf338c015399490db0d7e6c24f093d770338"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-05-CHANGED-PYTHON-SOURCE.txt",
+      "status": "A",
+      "sha256": "1b2b7c1aefbc67553030bf80c343c74ada11604a670c69c25b50baa1c61c32a5"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-05-CHANGED-PYTHON-TESTS.txt",
+      "status": "A",
+      "sha256": "3312457bb0273a80c60b8c5a8e82ea0c3a716fb1aee51b1fb6eff4632609def3"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-05-PLAN.final.md",
+      "status": "A",
+      "sha256": "0824ed3bfa117fb4d1d23c17c7870e2a1496037c6348eefc4cbf659432bbd7b6"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-05-PLAN.md",
+      "status": "A",
+      "sha256": "39112601c01508566d4bd9a261519d41dd2f30417151c9e36a8b47f3f78fa133"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-05-PLAN.revised.md",
+      "status": "A",
+      "sha256": "f490654fe76d640eaf624abb92f6b6d8754713a9d3f08cb67612addb34b53d97"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-05-START-SNAPSHOT.json",
+      "status": "A",
+      "sha256": "6d4b42b052a74674d25ed56fef82fe928ce5b04d64a0a275a5f589f0408a904d"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-05-SUMMARY.final.md",
+      "status": "A",
+      "sha256": "d2d80259d605b65cfcbd0988e7b1d5788a8f9ae59adc6122db35574a486fdcb9"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-06-CHANGED-PYTHON-SOURCE.txt",
+      "status": "A",
+      "sha256": "67738cea26ac04f84f745b027adcdc3deff182b8dbe085f8e4c073671e5afb1a"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-06-CHANGED-PYTHON-TESTS.txt",
+      "status": "A",
+      "sha256": "acc21ae7200795c6f20488b31c78727a8f97decebed37e49ea2c70e392556e23"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-06-PLAN.final.md",
+      "status": "A",
+      "sha256": "99a3243d18d45c861effa09e268c89c7fb138bbe2543411ebeb5a55f8882b089"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-06-PLAN.md",
+      "status": "A",
+      "sha256": "536b0e04a94be0577969b1bb7d564252e6987669b14b792e2549293b478113cb"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-06-PLAN.revised.md",
+      "status": "A",
+      "sha256": "d3f2a684c1f652d087f00b3b59081255d5a6f5b8000460a3f17b4e428a8f2e5b"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-06-SUMMARY.final.md",
+      "status": "A",
+      "sha256": "0e85688da7a0b5389ffcb4085d5f1399d855c7237af4b4a446a61d011079293a"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-07-PLAN.final.md",
+      "status": "A",
+      "sha256": "e2769e185fe8480d1d8e7a08a563baa75f97dffc4463f1c254d5ac9bd31db71c"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-07-PLAN.md",
+      "status": "A",
+      "sha256": "db3aeb2d406f63c66368af0e32d3a633e2bc20cf9102e57d5a7ff32cc223b0d0"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-07-PLAN.revised.md",
+      "status": "A",
+      "sha256": "fd5e95130c25e4ce128c45189eca16582cad69e490a6dd195945c5bcc805497a"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-08-PLAN.final.md",
+      "status": "A",
+      "sha256": "e3e4b57fcc0adf9f7d44b7439bab4721a09f36a20abd15196895a7647f926258"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-08-PLAN.revised.md",
+      "status": "A",
+      "sha256": "576b3630d2583570f9a2fcd582daa31d2315febd2c75023ab1a2816a3a134889"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-09-PLAN.final.md",
+      "status": "A",
+      "sha256": "01e9c850099c2320f3d915ac8a5872f9a74ab2f7a14a4d8977a7520f1c5062de"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-09-PLAN.revised.md",
+      "status": "A",
+      "sha256": "588ad695fa9568557971b5e74d5ee26c65b5401adc71fc4c371ddf5473d72103"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-CAPABILITY-EVIDENCE.md",
+      "status": "A",
+      "sha256": "51f961e8d1a7678a0bebd5b72aac832ea7611b8c0b15ffd1d8da2b781a1602b2"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-CONTEXT.md",
+      "status": "A",
+      "sha256": "4c5f1f86b539efe58d18bb371413796baada8b23d9b773e10fe4c1c66ea22009"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-CONTEXT.revised.md",
+      "status": "A",
+      "sha256": "0deb150b03386b29214b282ae70dcd6ec3f0b39958c3d93d30da55e621e90500"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-EXECUTION-STATUS.final.md",
+      "status": "A",
+      "sha256": "a1b3604a2ef6e683fe48cf91a4d19509f1a2cda414047b24a976fdabdf19a859"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-PLAN-CHECK.revised.md",
+      "status": "A",
+      "sha256": "ed5fd3358a1b0616cd7ee70e31c8f187e38aab7feb6641532f575e589a1737e2"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-PLANNING-STATUS.revised.md",
+      "status": "A",
+      "sha256": "509fa350f5ed2333809bdcff199beee5c8fc530f27bad0488a822314f26bde7a"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-RESEARCH-ADDENDUM.md",
+      "status": "A",
+      "sha256": "11a024e25ddc8a7d3466f545d9eb63a945e7d5673380b0ca60301c531538f49d"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-RESEARCH-STATUS.final.md",
+      "status": "A",
+      "sha256": "7bbc0ea1b4443fb1ebfacc0aec8764597c5bb80cabce373a8a32644121d81708"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-RESEARCH.md",
+      "status": "A",
+      "sha256": "e8a59ad2b0fb1fb56100e55260722938852be9f111b980d5c74a7a1939b0c195"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-VALIDATION.final.md",
+      "status": "A",
+      "sha256": "5d487a7c4f47b2f6cc032a404878bea55be4e68a2b4adee16599f6491248a9f1"
+    },
+    {
+      "path": ".planning/phases/31-session-skill-temporary-context-pinned-foundry-agent/31-VALIDATION.md",
+      "status": "A",
+      "sha256": "960cbb967d9530b9acdff8bf3e7ace8287a74c28b7f37d8d9828adbbee6fda9d"
+    },
+    {
+      "path": "backend/alembic/env.py",
+      "status": "M",
+      "sha256": "1733dd3ff5056fc56507512c7c1a9bfa09a4474a106e2246ec1a00fa64f482fb"
+    },
+    {
+      "path": "backend/alembic/versions/b35a_phase31_session_turn_outbox.py",
+      "status": "A",
+      "sha256": "5414cd484eeb874481ae5ee2b09835d28e58675cd0878a4831733d42e0f51fd2"
+    },
+    {
+      "path": "backend/app/api/sessions.py",
+      "status": "M",
+      "sha256": "4e760ae39ffb011281b87e4881c02a25d75f1d6eae9db46ed6cf2163cf5851a0"
+    },
+    {
+      "path": "backend/app/main.py",
+      "status": "M",
+      "sha256": "683b8e3cf40c9b7a171efb5931f0a6e2c0c0b57552966d2873a9bd71935944c8"
+    },
+    {
+      "path": "backend/app/models/__init__.py",
+      "status": "M",
+      "sha256": "95cd849e3fdac0a24a42471d1acee047d7beba96633a1b16df7fddd01d76f123"
+    },
+    {
+      "path": "backend/app/models/session_turn_attempt_event.py",
+      "status": "A",
+      "sha256": "da1cc64f755b532d35cc50cf381915193afc41e334ab3a47b34018b44be5b9e2"
+    },
+    {
+      "path": "backend/app/models/session_turn_attempt.py",
+      "status": "A",
+      "sha256": "831179eecfe78cd19b42296ff3aad0c3ab6d066e3d8d7754cfe3250c27c9d292"
+    },
+    {
+      "path": "backend/app/models/session_turn_context_audit.py",
+      "status": "A",
+      "sha256": "0074bed13543a01497be8e78eff2751192f4189cb79df93a0cf9ec3742938ee2"
+    },
+    {
+      "path": "backend/app/models/session_turn.py",
+      "status": "A",
+      "sha256": "009fa11fab4dbe65f67c4cdc8bd089a25e4326946a3c680d1677d75f426c617f"
+    },
+    {
+      "path": "backend/app/models/session.py",
+      "status": "M",
+      "sha256": "e3f494ac83d64074b5f706ec7708ec473297b5eedc3be17b893d8b949406114b"
+    },
+    {
+      "path": "backend/app/schemas/session.py",
+      "status": "M",
+      "sha256": "dfcb5ca3ccddcf438b2803d0dfbd3a12d23fcc35dd618ca03b67e82c7019bb8d"
+    },
+    {
+      "path": "backend/app/services/agent_chat_service.py",
+      "status": "M",
+      "sha256": "f62dacefd6c99219547cf738e4a3c338f861ec4b60ece8ad25411b1843ba3b2d"
+    },
+    {
+      "path": "backend/app/services/foundry_conversation_service.py",
+      "status": "A",
+      "sha256": "d21d8cd73e895c247984aee67c622f2f78fc05c9d92fe93bb05fd13a9546dded"
+    },
+    {
+      "path": "backend/app/services/session_conversation_cleanup.py",
+      "status": "A",
+      "sha256": "7eaf42cc88fef1d59654f75721563ce8eb8716e893afe29c25e8e8df42b0f522"
+    },
+    {
+      "path": "backend/app/services/session_service.py",
+      "status": "M",
+      "sha256": "c72240b79948a37164d386af7d1cd4a9b095744557a2ff9db9163995add56f87"
+    },
+    {
+      "path": "backend/app/services/session_skill_context.py",
+      "status": "A",
+      "sha256": "778d7edae579f20077031011c1ff83b05ef8d0c270622be503b8ed8bfb68a720"
+    },
+    {
+      "path": "backend/app/services/session_turn_orchestrator.py",
+      "status": "A",
+      "sha256": "855905094c4c819b53c4f736397cb7ad4e581e4d5fb1cd336a29a3b9c0482d1d"
+    },
+    {
+      "path": "backend/app/services/session_turn_progression.py",
+      "status": "A",
+      "sha256": "459696ce289b9fb79da6e0543cf74dbbb280ac6f9428608b4bf4108cc5fcc672"
+    },
+    {
+      "path": "backend/app/services/skill_focus_service.py",
+      "status": "M",
+      "sha256": "32bd44f4d45be1a28c4aa4839606559d957b2939dd360adb72908f1ca1aa5b22"
+    },
+    {
+      "path": "backend/app/services/voice_live_webrtc.py",
+      "status": "M",
+      "sha256": "17560ca8f8653e096423af870968aebc3b440a9fc6a55b9fe61e3d8cf4eeb4e8"
+    },
+    {
+      "path": "backend/app/services/voice_live_websocket.py",
+      "status": "M",
+      "sha256": "2270ca36c1d0a5a1dadf6fd3aeb3d0b6ccd351e25aca02f7147d730d135fee69"
+    },
+    {
+      "path": "backend/storage/db-backups/2026-07-16-scenario-recovery/ai_coach.db-shm",
+      "status": "A",
+      "sha256": "bc34ab4c2c0dcf1173c37dc7d941dc77344c31f58b4fca71868f45e664f596e0"
+    },
+    {
+      "path": "backend/storage/db-backups/2026-07-16-scenario-recovery/ai_coach.db-wal",
+      "status": "A",
+      "sha256": "f08387a90700bbf8db74de915cc0869392c8d466338dbfd35ed01360a22c3a09"
+    },
+    {
+      "path": "backend/tests/integration/test_phase31_live_capabilities.py",
+      "status": "A",
+      "sha256": "14e73afc77dd451ddd1b340d9c25090c62fb898e14289b926524efbc5ae4c991"
+    },
+    {
+      "path": "backend/tests/integration/test_phase31_migration_postgresql.py",
+      "status": "A",
+      "sha256": "a9d88ad84b8ed92bc2afe45055f904858697a0c7c766d0d5ee2d72424d6c9bc8"
+    },
+    {
+      "path": "backend/tests/test_agent_chat_service.py",
+      "status": "M",
+      "sha256": "faba1a77b2d83a951bcf4cb867587df557afffb727962c40a11a609982f146d9"
+    },
+    {
+      "path": "backend/tests/test_foundry_conversation_service.py",
+      "status": "A",
+      "sha256": "72e3a0995db742f746e0328363e59a8e30195c798757d354af0eba3942e9109a"
+    },
+    {
+      "path": "backend/tests/test_phase31_migration_sqlite.py",
+      "status": "A",
+      "sha256": "9af57b3e53fec9fb00d9103010660fd357bf7d936c54d84f793fe037fb8e97ce"
+    },
+    {
+      "path": "backend/tests/test_phase31_session_turn_models.py",
+      "status": "A",
+      "sha256": "1b844992cb62666c5a2309dad5a38f27d341705423e4f80e5c175b28b67bd3ba"
+    },
+    {
+      "path": "backend/tests/test_session_conversation_cleanup.py",
+      "status": "A",
+      "sha256": "d1db0a2f5d73c5d5b8e5162b5dbfd3b724eb9c3b08965939af6bf0d6c4db5660"
+    },
+    {
+      "path": "backend/tests/test_session_service.py",
+      "status": "M",
+      "sha256": "78020eef0c0d6d426cab64d2fe5e09b16caf621587cdbc2dabf3eba4a3576d18"
+    },
+    {
+      "path": "backend/tests/test_session_skill_context.py",
+      "status": "A",
+      "sha256": "e4b110b7e3ae190b7177f15ce68627788b43e33dc442aa7fe2c05c068f1c6049"
+    },
+    {
+      "path": "backend/tests/test_session_turn_orchestrator.py",
+      "status": "A",
+      "sha256": "0f4293fe25c5671aa47b067700fbf8b57f190d63f10a2c1388c46aad550a9396"
+    },
+    {
+      "path": "backend/tests/test_session_turn_progression.py",
+      "status": "A",
+      "sha256": "c0336b02be3ec36182c91882b5649ee7d08137519aca6ed14e490956c2b17f45"
+    },
+    {
+      "path": "backend/tests/test_sessions_api.py",
+      "status": "M",
+      "sha256": "7b511facb3a2b4e093a97fb5abdef85f5f1f49901add663d3d79848efa3fe1de"
+    },
+    {
+      "path": "backend/tests/test_voice_live_session_context.py",
+      "status": "M",
+      "sha256": "2f957e6e1703883ac7088d8e56d1e4192b4b997b1c0d820a92a3f37130cbf388"
+    },
+    {
+      "path": "backend/tests/test_voice_live_webrtc.py",
+      "status": "M",
+      "sha256": "f01f6811b01462d07ca19ffe445e920161a8da21725753c1f9feae6df32476da"
+    },
+    {
+      "path": "frontend/e2e/phase31-live-webrtc-authority.spec.ts",
+      "status": "A",
+      "sha256": "ad926c76ee67e0081200e67583ec6b86cbcdffe8202db2962318dbed37969c93"
+    },
+    {
+      "path": "frontend/scripts/verify-changed-v8-branches.d.mts",
+      "status": "A",
+      "sha256": "e949572ad15f4caff779a363187dd90681bcc1391ca7c595aaa0d69a4f1f7919"
+    },
+    {
+      "path": "frontend/scripts/verify-changed-v8-branches.mjs",
+      "status": "A",
+      "sha256": "f289fbf4d623773cfd6096e6289f0528c93a720681423e1e194b6dd75ee063a5"
+    },
+    {
+      "path": "frontend/src/scripts/verify-changed-v8-branches.test.ts",
+      "status": "A",
+      "sha256": "7f19bba9d9ce455136f17ccb7102fcaa6497b37f81730b96b0d7c19a166bf40e"
+    },
+    {
+      "path": "scripts/tests/test_verify_python_changed_branches.py",
+      "status": "A",
+      "sha256": "6ef996016522dc20be06d7301ad59ea35fd68a39ff70a1dba3e67de390256a50"
+    },
+    {
+      "path": "scripts/verify_python_changed_branches.py",
+      "status": "A",
+      "sha256": "195ca123ab83191a75e25b8e78ad972c0a7cc6cdbfc635c809a2e5cd37b2ab59"
+    }
+  ]
+}

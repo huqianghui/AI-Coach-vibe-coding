@@ -196,9 +196,11 @@ async def _admin_scenario(client, admin_id, admin_token) -> str:
         db.add(rubric)
         await db.flush()
 
+        skill_content = "# SOP\n## Step 1: Open\n## Step 2: Discover\n## Step 3: Close"
         skill = Skill(
             id="test-skill-id",
             name="Test Skill",
+            content=skill_content,
             status="published",
             created_by=admin_id,
         )
@@ -208,14 +210,17 @@ async def _admin_scenario(client, admin_id, admin_token) -> str:
         skill_ver = SkillVersion(
             skill_id=skill.id,
             version_number=1,
-            content="test",
+            content=skill_content,
+            metadata_json='{"knowledge_references":["test-reference"]}',
             is_published=True,
             created_by=admin_id,
         )
         db.add(skill_ver)
         await db.commit()
         await db.refresh(rubric)
+        await db.refresh(skill_ver)
         rubric_id = rubric.id
+        skill_version_id = skill_ver.id
 
     scn = await client.post(
         "/api/v1/scenarios",
@@ -235,10 +240,29 @@ async def _admin_scenario(client, admin_id, admin_token) -> str:
     async with TestSessionLocal() as db:
         from sqlalchemy import update
 
-        await db.execute(update(Scenario).where(Scenario.id == scenario_id).values(status="active"))
+        await db.execute(
+            update(Scenario)
+            .where(Scenario.id == scenario_id)
+            .values(status="active", skill_version_id=skill_version_id)
+        )
         await db.commit()
 
     return scenario_id
+
+
+async def _use_legacy_session_transport(session_id: str) -> None:
+    """Route legacy SSE coverage tests through the unpinned compatibility path."""
+    async with TestSessionLocal() as db:
+        from sqlalchemy import update
+
+        from app.models.session import CoachingSession
+
+        await db.execute(
+            update(CoachingSession)
+            .where(CoachingSession.id == session_id)
+            .values(skill_id=None, skill_version_id=None)
+        )
+        await db.commit()
 
 
 async def _completed_session_with_messages() -> tuple[str, str, str]:
@@ -490,6 +514,7 @@ class TestSessionsApiCoverage:
             headers={"Authorization": f"Bearer {utoken}"},
         )
         session_id = create_resp.json()["id"]
+        await _use_legacy_session_transport(session_id)
         await client.post(
             f"/api/v1/sessions/{session_id}/message",
             json={"message": "Hello"},
@@ -535,6 +560,7 @@ class TestSessionsApiCoverage:
             headers={"Authorization": f"Bearer {utoken}"},
         )
         session_id = create_resp.json()["id"]
+        await _use_legacy_session_transport(session_id)
 
         # Send message — this triggers SSE streaming
         resp = await client.post(
@@ -560,6 +586,7 @@ class TestSessionsApiCoverage:
             headers={"Authorization": f"Bearer {utoken}"},
         )
         session_id = create_resp.json()["id"]
+        await _use_legacy_session_transport(session_id)
 
         # Send a message to transition to in_progress
         await client.post(
@@ -594,6 +621,7 @@ class TestSessionsApiCoverage:
             headers={"Authorization": f"Bearer {utoken}"},
         )
         session_id = create_resp.json()["id"]
+        await _use_legacy_session_transport(session_id)
 
         # Transition to in_progress
         await client.post(
@@ -621,6 +649,7 @@ class TestSessionsApiCoverage:
             headers={"Authorization": f"Bearer {utoken}"},
         )
         session_id = create_resp.json()["id"]
+        await _use_legacy_session_transport(session_id)
 
         await client.post(
             f"/api/v1/sessions/{session_id}/message",

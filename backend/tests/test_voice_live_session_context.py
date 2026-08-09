@@ -422,7 +422,7 @@ def _install_sdk(monkeypatch):
     return captured
 
 
-async def test_session_path_ignores_client_identity_and_connects_exact_pin(monkeypatch):
+async def test_session_path_fails_closed_before_sdk_or_media_exchange(monkeypatch):
     captured = _install_sdk(monkeypatch)
     resolve_context = AsyncMock(
         return_value={
@@ -491,22 +491,11 @@ async def test_session_path_ignores_client_identity_and_connects_exact_pin(monke
     await handle_voice_live_websocket(ws, MagicMock(), "owner")
 
     resolve_context.assert_awaited_once_with(ANY, "session-1", "owner")
-    load_config.assert_awaited_once_with(
-        ANY,
-        "trusted-hcp",
-        None,
-        None,
-        False,
-        force_model_mode=True,
-    )
-    assert "instructions" not in captured["request_session"]
-    connect_kwargs = sys.modules["azure.ai.voicelive.aio"].connect.call_args.kwargs
-    assert connect_kwargs["agent_name"] == "pinned-session-agent"
-    assert connect_kwargs["agent_version"] == "0042"
-    assert connect_kwargs["project_name"] == "trusted-project"
-    assert connect_kwargs["api_version"] == "2026-07-15"
-    assert "model" not in connect_kwargs
-    assert captured["connection"].session.update.await_count == 1
+    load_config.assert_not_awaited()
+    sys.modules["azure.ai.voicelive.aio"].connect.assert_not_called()
+    assert captured["connection"].session.update.await_count == 0
+    error = json.loads(ws.send_text.await_args.args[0])
+    assert error["error"]["code"] == "SESSION_VOICE_CONTEXT_UNAVAILABLE"
 
 
 async def test_playground_without_session_id_remains_compatible(monkeypatch):

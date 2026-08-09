@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { ObjectionList } from "./objection-list";
 
 describe("ObjectionList", () => {
@@ -34,6 +35,28 @@ describe("ObjectionList", () => {
 
     await user.click(screen.getByText("Add Objection"));
     expect(onChange).toHaveBeenCalledWith(["Existing", ""]);
+  });
+
+  it("focuses the newly added controlled input", async () => {
+    const user = userEvent.setup();
+    function ControlledList() {
+      const [items, setItems] = useState(["Existing"]);
+      return (
+        <ObjectionList
+          items={items}
+          onChange={setItems}
+          label="Objections"
+          addLabel="Add Objection"
+        />
+      );
+    }
+    render(<ControlledList />);
+
+    await user.click(screen.getByText("Add Objection"));
+
+    const inputs = screen.getAllByRole("textbox");
+    expect(inputs).toHaveLength(2);
+    expect(inputs[1]).toHaveFocus();
   });
 
   it("calls onChange without the removed item when remove button is clicked", async () => {

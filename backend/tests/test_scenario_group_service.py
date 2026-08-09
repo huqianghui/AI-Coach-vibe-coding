@@ -22,9 +22,15 @@ from app.services.scenario_group_service import (
     create_child_session,
     create_group,
     create_run,
+    delete_group,
+    get_group,
+    get_run,
+    list_groups,
     refresh_run_score,
+    transition_group_status,
     update_group,
 )
+from app.utils.exceptions import AppException
 from tests.conftest import TestSessionLocal
 
 
@@ -78,7 +84,8 @@ async def _seed_group_fixture(db):
     skill_version = SkillVersion(
         skill_id=skill.id,
         version_number=1,
-        content="skill content",
+        content="# SOP\n## Step 1: Open\n## Step 2: Discover\n## Step 3: Close",
+        metadata_json='{"knowledge_references":["test-reference"]}',
         is_published=True,
         created_by=admin.id,
     )
@@ -109,6 +116,24 @@ async def _seed_group_fixture(db):
 
 
 class TestScenarioGroupService:
+    @staticmethod
+    async def _create_group(db, data, *, status="draft"):
+        group = await create_group(
+            db,
+            ScenarioGroupCreate(
+                name="组合训练",
+                tags=["oncology"],
+                items=[
+                    ScenarioGroupItemCreate(scenario_id=data["scenarios"][0].id, weight=50),
+                    ScenarioGroupItemCreate(scenario_id=data["scenarios"][1].id, weight=50),
+                ],
+            ),
+            data["admin"].id,
+        )
+        group.status = status
+        await db.flush()
+        return group
+
     async def test_create_group_requires_weights_sum_to_100(self):
         async with TestSessionLocal() as db:
             data = await _seed_group_fixture(db)
@@ -391,3 +416,122 @@ class TestScenarioGroupService:
             assert reopened_item.status == "in_progress"
             assert reopened_item.score is None
             assert updated_run.status == "in_progress"
+
+    async def test_group_validation_lookup_and_inactive_scenario_errors(self):
+        async with TestSessionLocal() as db:
+            data = await _seed_group_fixture(db)
+            with pytest.raises(AppException, match="at least one scenario"):
+                await create_group(
+                    db,
+                    ScenarioGroupCreate.model_construct(name="empty", items=[]),
+                    data["admin"].id,
+                )
+            duplicate = ScenarioGroupItemCreate(scenario_id=data["scenarios"][0].id, weight=50)
+            with pytest.raises(AppException, match="duplicate"):
+                await create_group(
+                    db,
+                    ScenarioGroupCreate.model_construct(
+                        name="duplicate", items=[duplicate, duplicate]
+                    ),
+                    data["admin"].id,
+                )
+            with pytest.raises(AppException, match="Scenario not found"):
+                await create_group(
+                    db,
+                    ScenarioGroupCreate(
+                        name="missing",
+                        items=[ScenarioGroupItemCreate(scenario_id="missing", weight=100)],
+                    ),
+                    data["admin"].id,
+                )
+            data["scenarios"][0].status = "draft"
+            await db.flush()
+            with pytest.raises(AppException, match="active scenarios"):
+                await create_group(
+                    db,
+                    ScenarioGroupCreate(
+                        name="inactive",
+                        items=[
+                            ScenarioGroupItemCreate(scenario_id=data["scenarios"][0].id, weight=100)
+                        ],
+                    ),
+                    data["admin"].id,
+                )
+
+    async def test_list_get_update_and_status_lifecycle_branches(self):
+        async with TestSessionLocal() as db:
+            data = await _seed_group_fixture(db)
+            group = await self._create_group(db, data)
+
+            groups, total = await list_groups(db, status="draft", search="组合", page_size=1)
+            assert total == 1
+            assert groups[0].id == group.id
+            assert (await get_group(db, group.id)).id == group.id
+            with pytest.raises(AppException, match="not found"):
+                await get_group(db, "missing")
+
+            updated = await update_group(
+                db,
+                group.id,
+                ScenarioGroupUpdate(description="updated", tags=["new"]),
+            )
+            assert updated.description == "updated"
+            assert json.loads(updated.tags) == ["new"]
+
+            with pytest.raises(AppException, match="Cannot transition"):
+                await transition_group_status(db, group.id, "archived")
+            active = await transition_group_status(db, group.id, "active")
+            assert active.status == "active"
+            with pytest.raises(AppException, match="Cannot delete an active"):
+                await delete_group(db, group.id)
+            archived = await transition_group_status(db, group.id, "archived")
+            with pytest.raises(AppException, match="Cannot edit an archived"):
+                await update_group(db, archived.id, ScenarioGroupUpdate(name="no"))
+            await delete_group(db, archived.id)
+            with pytest.raises(AppException, match="not found"):
+                await get_group(db, archived.id)
+
+    async def test_run_permissions_closed_and_existing_session_branches(self):
+        async with TestSessionLocal() as db:
+            data = await _seed_group_fixture(db)
+            draft = await self._create_group(db, data)
+            with pytest.raises(AppException) as error:
+                await create_run(db, draft.id, data["user"].id)
+            assert error.value.code == "GROUP_NOT_ACTIVE"
+
+            draft.status = "active"
+            await db.flush()
+            run = await create_run(db, draft.id, data["user"].id)
+            with pytest.raises(AppException, match="does not belong"):
+                await get_run(db, run.id, data["admin"].id)
+            with pytest.raises(AppException, match="run not found"):
+                await get_run(db, "missing", data["user"].id)
+            with pytest.raises(AppException, match="run item not found"):
+                await create_child_session(db, run.id, "missing", data["user"].id, "text")
+
+            run, session = await create_child_session(
+                db, run.id, run.items[0].id, data["user"].id, "text"
+            )
+            same_run, same_session = await create_child_session(
+                db, run.id, run.items[0].id, data["user"].id, "text"
+            )
+            assert same_run.id == run.id
+            assert same_session.id == session.id
+
+            session.status = "scored"
+            session.overall_score = 90
+            session.passed = True
+            second_session = CoachingSession(
+                user_id=data["user"].id,
+                scenario_id=run.items[1].scenario_id,
+                status="scored",
+                key_messages_status="[]",
+                overall_score=90,
+                passed=True,
+            )
+            db.add(second_session)
+            await db.flush()
+            await refresh_run_score(db, run.id, data["user"].id)
+            with pytest.raises(AppException) as error:
+                await create_child_session(db, run.id, run.items[1].id, data["user"].id, "text")
+            assert error.value.code == "GROUP_RUN_CLOSED"

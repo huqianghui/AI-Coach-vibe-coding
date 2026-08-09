@@ -46,7 +46,32 @@ export interface CoachingHint {
   metadata?: Record<string, unknown>;
 }
 
+export type SessionTurnStatus =
+  | "idle"
+  | "accepted"
+  | "in_progress"
+  | "reconciling"
+  | "succeeded"
+  | "failed_terminal"
+  | "disconnected";
+
+export interface SessionTurnState {
+  code:
+    | "SESSION_TURN_ACCEPTED"
+    | "SESSION_TURN_RESUMED"
+    | "SESSION_TURN_IN_PROGRESS"
+    | "SESSION_TURN_RECONCILING"
+    | "SESSION_TURN_FAILED";
+  status: "in_progress" | "reconciling" | "failed_terminal";
+}
+
+export interface SessionStreamError {
+  code?: string;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
 export interface SSEEvent {
-  event: "text" | "hint" | "key_messages" | "done" | "error";
+  event: "state" | "text" | "hint" | "key_messages" | "done" | "error";
   data: string;
 }

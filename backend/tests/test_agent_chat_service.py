@@ -390,6 +390,116 @@ async def test_stream_agent_response_closes_worker_when_consumer_stops_early():
     assert stream.closed is True
 
 
+@pytest.mark.asyncio
+async def test_session_conversation_response_has_restricted_shape_and_exact_iq_correlation():
+    """Session API uses explicit Conversation and deduplicates exact successful IQ calls."""
+    from app.services.agent_chat_service import respond_in_session_conversation
+
+    delta = MagicMock(type="response.output_text.delta", delta="current step")
+    iq = MagicMock(type="response.mcp_call.completed")
+    iq.item.name = "knowledge_base_retrieve"
+    iq.item.id = "call-1"
+    iq.item.status = "completed"
+    wrong = MagicMock(type="response.mcp_call.completed")
+    wrong.item.name = "other_tool"
+    wrong.item.id = "call-2"
+    wrong.item.status = "completed"
+    failed = MagicMock(type="response.mcp_call.completed")
+    failed.item.name = "knowledge_base_retrieve"
+    failed.item.id = "call-3"
+    failed.item.status = "failed"
+    blank = MagicMock(type="response.mcp_call.completed")
+    blank.item.name = "knowledge_base_retrieve"
+    blank.item.id = ""
+    blank.item.call_id = ""
+    blank.item.status = "completed"
+    completed = MagicMock(type="response.completed")
+    completed.response.id = "resp-session"
+    stream = MagicMock()
+    stream.__iter__.return_value = iter([delta, iq, iq, wrong, failed, blank, completed])
+    openai_client = MagicMock()
+    openai_client.responses.create.return_value = stream
+    project_client = MagicMock()
+    project_client.get_openai_client.return_value = openai_client
+
+    with (
+        patch(
+            "app.services.agent_chat_service.agent_sync_service.get_project_endpoint",
+            new_callable=AsyncMock,
+            return_value=("https://foundry.test/api/projects/test-prj", "test-key"),
+        ),
+        patch(
+            "app.services.agent_chat_service.agent_sync_service._get_project_client",
+            return_value=project_client,
+        ),
+        _patch_config_service(),
+    ):
+        result = await respond_in_session_conversation(
+            AsyncMock(),
+            agent_name="Dr-Exact",
+            agent_version="5",
+            conversation_id="conv-1",
+        )
+
+    assert result.text == "current step"
+    assert result.response_id == "resp-session"
+    assert result.iq_correlations == ({"call_id": "call-1", "name": "knowledge_base_retrieve"},)
+    assert openai_client.responses.create.call_args.kwargs == {
+        "model": "gpt-4o",
+        "conversation": "conv-1",
+        "stream": True,
+        "extra_body": {
+            "agent_reference": {
+                "name": "Dr-Exact",
+                "version": "5",
+                "type": "agent_reference",
+            }
+        },
+    }
+    forbidden = {"instructions", "previous_response_id", "tools", "tool_choice"}
+    assert forbidden.isdisjoint(openai_client.responses.create.call_args.kwargs)
+
+
+@pytest.mark.asyncio
+async def test_session_conversation_response_rejects_missing_id_and_requires_conversation():
+    """Session API fails closed for absent authority or malformed terminal streams."""
+    from app.services.agent_chat_service import AgentChatError, respond_in_session_conversation
+
+    with pytest.raises(AgentChatError, match="Conversation ID"):
+        await respond_in_session_conversation(
+            AsyncMock(), agent_name="Dr", agent_version="1", conversation_id=" "
+        )
+
+
+@pytest.mark.asyncio
+async def test_standalone_request_contract_does_not_gain_conversation_semantics():
+    """Standalone chat retains previous_response_id and user input semantics."""
+    from app.services.agent_chat_service import chat_with_agent
+
+    response = MagicMock(output_text="ok", id="resp-new")
+    openai_client = MagicMock()
+    openai_client.responses.create.return_value = response
+    project_client = MagicMock()
+    project_client.get_openai_client.return_value = openai_client
+    with (
+        patch(
+            "app.services.agent_chat_service.agent_sync_service.get_project_endpoint",
+            new_callable=AsyncMock,
+            return_value=("endpoint", "key"),
+        ),
+        patch(
+            "app.services.agent_chat_service.agent_sync_service._get_project_client",
+            return_value=project_client,
+        ),
+        _patch_config_service(),
+    ):
+        await chat_with_agent(AsyncMock(), "Dr", "1", "hello", "resp-old")
+    kwargs = openai_client.responses.create.call_args.kwargs
+    assert kwargs["previous_response_id"] == "resp-old"
+    assert kwargs["input"] == [{"role": "user", "content": "hello"}]
+    assert "conversation" not in kwargs
+
+
 # ===========================================================================
 # Real Azure integration tests — use actual .env credentials when available
 # ===========================================================================

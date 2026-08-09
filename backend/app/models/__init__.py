@@ -20,6 +20,10 @@ from app.models.score import ScoreDetail, SessionScore
 from app.models.scoring_rubric import ScoringRubric
 from app.models.service_config import ServiceConfig
 from app.models.session import CoachingSession
+from app.models.session_turn import SessionTurn
+from app.models.session_turn_attempt import SessionTurnAttempt
+from app.models.session_turn_attempt_event import SessionTurnAttemptEvent
+from app.models.session_turn_context_audit import SessionTurnContextAudit
 from app.models.skill import Skill, SkillResource, SkillSourceMaterial, SkillVersion
 from app.models.system_enum import SystemEnum
 from app.models.user import User
@@ -43,6 +47,10 @@ __all__ = [
     "ScenarioGroupRun",
     "ScenarioGroupRunItem",
     "CoachingSession",
+    "SessionTurn",
+    "SessionTurnAttempt",
+    "SessionTurnAttemptEvent",
+    "SessionTurnContextAudit",
     "ConferenceAudienceHcp",
     "SessionMessage",
     "SessionScore",

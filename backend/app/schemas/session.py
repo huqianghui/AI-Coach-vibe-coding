@@ -20,11 +20,15 @@ class SessionCreate(BaseModel):
         "digital_human_realtime_agent",
     ] = "text"
 
+    model_config = ConfigDict(extra="forbid")
+
 
 class SendMessageRequest(BaseModel):
     """Send a message in a coaching session."""
 
     message: str
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class TranscriptMessageRequest(BaseModel):
@@ -32,6 +36,8 @@ class TranscriptMessageRequest(BaseModel):
 
     message: str
     role: Literal["user", "assistant"] = "user"
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class MessageResponse(BaseModel):
