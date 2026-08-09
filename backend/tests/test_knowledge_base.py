@@ -11,6 +11,7 @@ from app.main import app
 from app.models.hcp_knowledge_config import HcpKnowledgeConfig
 from app.models.hcp_profile import HcpProfile
 from app.models.user import User
+from app.models.voice_live_instance import VoiceLiveInstance
 from app.schemas.knowledge_base import KnowledgeConfigCreate
 
 # ---------------------------------------------------------------------------
@@ -658,6 +659,67 @@ class TestKnowledgeBaseServiceCrud:
         await db_session.refresh(sample_hcp)
         assert sample_hcp.agent_sync_status == "failed"
         assert "ARM permission denied" in sample_hcp.agent_sync_error
+
+    @pytest.mark.asyncio
+    async def test_trigger_agent_resync_with_assigned_voice_live_instance_no_missing_greenlet(
+        self, db_session, sample_hcp
+    ):
+        """_trigger_agent_resync must not raise MissingGreenlet when the HCP profile has
+        an assigned VoiceLiveInstance.
+
+        Regression test: the query inside _trigger_agent_resync previously loaded
+        HcpProfile without selectinload(HcpProfile.voice_live_instance). Since
+        resolve_voice_config() (called from sync_agent_for_profile ->
+        build_voice_live_metadata) synchronously accesses profile.voice_live_instance,
+        the lazy load triggered a sqlalchemy.exc.MissingGreenlet in async context. This
+        test intentionally does NOT mock sync_agent_for_profile -- only the Azure SDK
+        boundary functions -- so the real ORM relationship-loading behavior is exercised
+        against the real aiosqlite async session.
+
+        IMPORTANT: db_session.expunge(vl_instance) below is required to make this test
+        valid. Without it, the VoiceLiveInstance stays in this session's identity map
+        (it was just created+flushed here), and SQLAlchemy's many-to-one lazy loader
+        satisfies profile.voice_live_instance via an identity-map lookup by primary key
+        ("use_get" optimization) with NO actual DB IO -- which would pass whether or not
+        selectinload is applied, silently defeating the regression test. Expunging
+        forces a genuine lazy load (a real DB round-trip) on first access, matching a
+        fresh production request where the VL instance was never independently queried.
+        """
+        from app.services.knowledge_base_service import _trigger_agent_resync
+
+        vl_instance = VoiceLiveInstance(name="Resync Test VL", created_by="admin-user-id-kb")
+        db_session.add(vl_instance)
+        await db_session.flush()
+        vl_instance_id = vl_instance.id
+        db_session.expunge(vl_instance)
+
+        sample_hcp.voice_live_instance_id = vl_instance_id
+        sample_hcp.agent_sync_status = "none"
+        sample_hcp.agent_id = "existing-agent"
+        await db_session.flush()
+
+        with (
+            patch(
+                "app.services.agent_sync_service.create_agent",
+                new_callable=AsyncMock,
+                return_value={"id": "existing-agent", "version": "3"},
+            ),
+            patch(
+                "app.services.agent_sync_service.update_agent",
+                new_callable=AsyncMock,
+                return_value={"id": "existing-agent", "version": "3"},
+            ),
+            patch(
+                "app.services.agent_sync_service.get_agent_latest_version",
+                new_callable=AsyncMock,
+                return_value="3",
+            ),
+        ):
+            await _trigger_agent_resync(db_session, sample_hcp.id)
+
+        await db_session.refresh(sample_hcp)
+        assert sample_hcp.agent_sync_status == "synced"
+        assert sample_hcp.agent_sync_error == ""
 
     @pytest.mark.asyncio
     async def test_create_remote_tool_uses_project_identity(self, db_session, sample_kb_config):

@@ -22,74 +22,9 @@ import { useActiveScenarios } from "@/hooks/use-scenarios";
 import { useCreateSession } from "@/hooks/use-session";
 import { useCreateConferenceSession } from "@/hooks/use-conference";
 import { useFeatureFlags } from "@/hooks/use-config";
-import type { Scenario } from "@/types/scenario";
+import { getAvailableModes } from "@/lib/scenario-modes";
 
 const ALL_VALUE = "__all__";
-
-function getScenarioModes(
-  scenario: Scenario,
-  features: { voice_live_enabled?: boolean; avatar_enabled?: boolean } | undefined,
-) {
-  const modes = ["text"];
-  const hcp = scenario.hcp_profile;
-  const voiceAvailable = Boolean(
-    features?.voice_live_enabled && hcp?.voice_live_instance?.enabled,
-  );
-  const avatarAvailable = Boolean(
-    voiceAvailable && features?.avatar_enabled && hcp?.avatar_enabled,
-  );
-
-  if (voiceAvailable) {
-    modes.push("voice_realtime_model");
-    if (avatarAvailable) {
-      modes.push("digital_human_realtime_model");
-    }
-  }
-
-  const defaultMode = avatarAvailable
-    ? "digital_human_realtime_model"
-    : voiceAvailable
-      ? "voice_realtime_model"
-      : "text";
-
-  return { modes, defaultMode };
-}
-
-function getConferenceModes(
-  scenario: Scenario,
-  features:
-    | {
-        voice_enabled?: boolean;
-        voice_live_enabled?: boolean;
-        avatar_enabled?: boolean;
-      }
-    | undefined,
-) {
-  const voiceAvailable = Boolean(features?.voice_enabled);
-  const hcp = scenario.hcp_profile;
-  const avatarAvailable = Boolean(
-    features?.voice_live_enabled &&
-      features?.avatar_enabled &&
-      hcp?.voice_live_instance?.enabled &&
-      hcp?.avatar_enabled,
-  );
-  const modes = ["text"];
-  if (voiceAvailable) {
-    modes.push("voice_realtime_model");
-  }
-  if (avatarAvailable) {
-    modes.push("digital_human_realtime_model");
-  }
-
-  return {
-    modes,
-    defaultMode: voiceAvailable
-      ? "voice_realtime_model"
-      : avatarAvailable
-        ? "digital_human_realtime_model"
-        : "text",
-  };
-}
 
 export default function ScenarioSelection() {
   const { t } = useTranslation("coach");
@@ -258,10 +193,7 @@ export default function ScenarioSelection() {
     return (
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {modeScenarios.map((scenario) => {
-          const { modes, defaultMode } =
-            mode === "conference"
-              ? getConferenceModes(scenario, config?.features)
-              : getScenarioModes(scenario, config?.features);
+          const { modes, defaultMode } = getAvailableModes(scenario, config?.features);
           return (
             <ScenarioCard
               key={scenario.id}

@@ -1,17 +1,18 @@
 """Tests: Avatar character data consistency between VL Instance and HCP Profile.
 
-D-09/D-10: HcpProfile no longer carries inline avatar_character/avatar_style
-columns -- avatar config lives exclusively on VoiceLiveInstance and is
-resolved at read time (see app/api/scenarios.py::HcpProfileBrief.from_hcp_profile
-and app/services/voice_live_instance_service.py::resolve_voice_config). There
-is no more "sync to HcpProfile" step; assigning/updating a VL Instance simply
-changes what the *next* read resolves to.
+D-09/D-10 (Phase 30): HcpProfile no longer carries inline avatar_character/
+avatar_style columns -- avatar config lives exclusively on VoiceLiveInstance
+and is exposed as a nested `voice_live_instance` object on the scenario API's
+`hcp_profile` (see app/api/scenarios.py::HcpProfileBrief). There is no more
+"sync to HcpProfile" step; assigning/updating a VL Instance simply changes
+what the *next* read resolves to.
 
 Verifies that:
 1. assign_to_hcp links the VL Instance so scenario reads resolve its avatar
 2. update_instance changes what assigned HCPs' scenario reads resolve to
-3. Scenario API resolves avatar from VL Instance (not a stored hcp_profile field)
-4. No VL Instance assigned -> scenario API falls back to safe neutral defaults
+3. Scenario API resolves avatar from nested hcp_profile.voice_live_instance
+4. No VL Instance assigned -> scenario API returns hcp_profile.voice_live_instance
+   as null (graceful, not a crash)
 """
 
 from httpx import AsyncClient
@@ -130,8 +131,8 @@ class TestAvatarSyncOnAssign:
         )
         assert scenario_response.status_code == 200
         hcp_data = scenario_response.json()["hcp_profile"]
-        assert hcp_data["avatar_character"] == "lisa"
-        assert hcp_data["avatar_style"] == "graceful-standing"
+        assert hcp_data["voice_live_instance"]["avatar_character"] == "lisa"
+        assert hcp_data["voice_live_instance"]["avatar_style"] == "graceful-standing"
 
     async def test_assign_syncs_avatar_customized(self, client: AsyncClient):
         """After assigning VL Instance with avatar_customized=True, the instance
@@ -164,7 +165,8 @@ class TestAvatarSyncOnAssign:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert scenario_response.status_code == 200
-        assert scenario_response.json()["hcp_profile"]["avatar_character"] == "harry"
+        hcp_data = scenario_response.json()["hcp_profile"]
+        assert hcp_data["voice_live_instance"]["avatar_character"] == "harry"
 
 
 class TestAvatarSyncOnUpdate:
@@ -199,8 +201,8 @@ class TestAvatarSyncOnUpdate:
         )
         assert scenario_response.status_code == 200
         hcp_data = scenario_response.json()["hcp_profile"]
-        assert hcp_data["avatar_character"] == "meg"
-        assert hcp_data["avatar_style"] == "formal"
+        assert hcp_data["voice_live_instance"]["avatar_character"] == "meg"
+        assert hcp_data["voice_live_instance"]["avatar_style"] == "formal"
 
     async def test_update_instance_non_avatar_field_does_not_change_hcp_avatar(
         self, client: AsyncClient
@@ -231,7 +233,8 @@ class TestAvatarSyncOnUpdate:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert scenario_response.status_code == 200
-        assert scenario_response.json()["hcp_profile"]["avatar_character"] == "lisa"
+        hcp_data = scenario_response.json()["hcp_profile"]
+        assert hcp_data["voice_live_instance"]["avatar_character"] == "lisa"
 
 
 class TestScenarioApiAvatarResolution:
@@ -258,8 +261,8 @@ class TestScenarioApiAvatarResolution:
         )
         assert response.status_code == 200
         data = response.json()
-        assert data["hcp_profile"]["avatar_character"] == "lisa"
-        assert data["hcp_profile"]["avatar_style"] == "graceful-standing"
+        assert data["hcp_profile"]["voice_live_instance"]["avatar_character"] == "lisa"
+        assert data["hcp_profile"]["voice_live_instance"]["avatar_style"] == "graceful-standing"
 
     async def test_scenario_list_returns_vl_instance_avatar(self, client: AsyncClient):
         """GET /scenarios returns avatar from VL Instance for each scenario."""
@@ -284,8 +287,8 @@ class TestScenarioApiAvatarResolution:
         data = response.json()
         assert data["total"] >= 1
         item = data["items"][0]
-        assert item["hcp_profile"]["avatar_character"] == "harry"
-        assert item["hcp_profile"]["avatar_style"] == "business"
+        assert item["hcp_profile"]["voice_live_instance"]["avatar_character"] == "harry"
+        assert item["hcp_profile"]["voice_live_instance"]["avatar_style"] == "business"
 
     async def test_active_scenarios_returns_vl_instance_avatar(self, client: AsyncClient):
         """GET /scenarios/active returns resolved avatar."""
@@ -309,22 +312,23 @@ class TestScenarioApiAvatarResolution:
         assert response.status_code == 200
         data = response.json()
         assert len(data) >= 1
-        assert data[0]["hcp_profile"]["avatar_character"] == "jeff"
-        assert data[0]["hcp_profile"]["avatar_style"] == "formal"
+        assert data[0]["hcp_profile"]["voice_live_instance"]["avatar_character"] == "jeff"
+        assert data[0]["hcp_profile"]["voice_live_instance"]["avatar_style"] == "formal"
 
     async def test_scenario_without_vl_instance_uses_safe_defaults(self, client: AsyncClient):
-        """When no VL Instance assigned, scenario API falls back to safe neutral defaults.
+        """When no VL Instance assigned, scenario API returns a graceful null, not a crash.
 
-        D-09: HcpProfile has no inline avatar_character/avatar_style columns to fall
-        back to anymore. HcpProfileBrief.from_hcp_profile() (app/api/scenarios.py)
-        falls back to the hardcoded "lori"/"casual" defaults instead of reading a
-        (now nonexistent) HCP-level field.
+        D-09/D-10 (Phase 30): HcpProfile has no inline avatar_character/avatar_style
+        columns to fall back to anymore, and HcpProfileBrief no longer flattens the
+        VL Instance relationship -- it exposes it as a nested `voice_live_instance`
+        object. When unassigned (D-13: legacy rows are not backfilled), that field
+        must resolve to `None` rather than 500ing or fabricating fake defaults.
         """
         _, _, token, scenario_id = await _seed_hcp_with_vl_instance(
             avatar_character="lisa",
             avatar_style="graceful-standing",
         )
-        # Do NOT assign VL Instance — safe defaults should be used
+        # Do NOT assign VL Instance — graceful null should be used
 
         response = await client.get(
             f"/api/v1/scenarios/{scenario_id}",
@@ -332,6 +336,6 @@ class TestScenarioApiAvatarResolution:
         )
         assert response.status_code == 200
         data = response.json()
-        # Should use safe neutral defaults since no VL Instance is assigned
-        assert data["hcp_profile"]["avatar_character"] == "lori"
-        assert data["hcp_profile"]["avatar_style"] == "casual"
+        # No VL Instance assigned -> nested field is null, not fabricated defaults
+        assert data["hcp_profile"]["voice_live_instance"] is None
+        assert data["hcp_profile"]["voice_live_instance_id"] is None

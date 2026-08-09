@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_current_user, get_db, require_role
 from app.models.user import User
 from app.schemas.scenario import ScenarioCreate, ScenarioUpdate
+from app.schemas.voice_live_instance import VoiceLiveInstanceSummary
 from app.services import scenario_service
 from app.services.conference_prompt_config import normalize_conference_prompt_config
 from app.utils.pagination import PaginatedResponse
@@ -22,48 +23,19 @@ router = APIRouter(prefix="/scenarios", tags=["scenarios"])
 class HcpProfileBrief(BaseModel):
     """Minimal HCP profile data for scenario list display.
 
-    Avatar fields are resolved from VoiceLiveInstance when assigned,
-    falling back to inline HcpProfile fields (deprecated).
+    Avatar/voice config lives exclusively on the linked VoiceLiveInstance
+    (D-09/D-10, Phase 29) -- no inline avatar/voice columns on HcpProfile.
     """
 
     id: str
     name: str
     specialty: str = ""
     avatar_url: str = ""
-    avatar_character: str = "lori"
-    avatar_style: str = "casual"
-    voice_live_enabled: bool = False
+    personality_type: str = "friendly"
     voice_live_instance_id: str | None = None
-    avatar_enabled: bool = False
+    voice_live_instance: VoiceLiveInstanceSummary | None = None
 
     model_config = ConfigDict(from_attributes=True)
-
-    @classmethod
-    def from_hcp_profile(cls, profile: Any) -> "HcpProfileBrief":
-        """Create from ORM HcpProfile, resolving avatar from the assigned VL Instance.
-
-        D-09/D-10: HcpProfile no longer carries its own avatar/voice columns --
-        every field here comes from the VoiceLiveInstance relationship. If no
-        instance is assigned yet (legacy row pending its next save, D-13 only
-        enforces at save time), fall back to safe neutral defaults rather than
-        crashing.
-        """
-        vl_inst = getattr(profile, "voice_live_instance", None)
-        avatar_character = vl_inst.avatar_character if vl_inst else "lori"
-        avatar_style = vl_inst.avatar_style if vl_inst else "casual"
-        voice_live_enabled = bool(vl_inst.enabled) if vl_inst else False
-        avatar_enabled = bool(vl_inst.avatar_enabled) if vl_inst else False
-        return cls(
-            id=profile.id,
-            name=profile.name,
-            specialty=profile.specialty or "",
-            avatar_url=getattr(profile, "avatar_url", "") or "",
-            avatar_character=avatar_character,
-            avatar_style=avatar_style,
-            voice_live_enabled=voice_live_enabled,
-            voice_live_instance_id=getattr(profile, "voice_live_instance_id", None),
-            avatar_enabled=avatar_enabled,
-        )
 
 
 class ScenarioOut(BaseModel):
@@ -90,15 +62,6 @@ class ScenarioOut(BaseModel):
     updated_at: str
 
     model_config = ConfigDict(from_attributes=True)
-
-    @field_validator("hcp_profile", mode="before")
-    @classmethod
-    def resolve_hcp_avatar(cls, v: Any) -> Any:
-        """Resolve avatar from VL Instance if HcpProfile ORM object with relationship."""
-        if v is None or isinstance(v, dict) or isinstance(v, HcpProfileBrief):
-            return v
-        # ORM object — use resolver to prefer VL Instance avatar
-        return HcpProfileBrief.from_hcp_profile(v)
 
     @field_validator("tags", "key_messages", mode="before")
     @classmethod

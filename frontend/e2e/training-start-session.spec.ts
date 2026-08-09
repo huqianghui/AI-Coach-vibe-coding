@@ -4,6 +4,32 @@ import { fileURLToPath } from "node:url";
 
 const authDir = join(dirname(fileURLToPath(import.meta.url)), ".auth");
 
+// Voice/avatar config now lives on the linked Voice Live Instance —
+// Phase 29 dropped the 14 inline voice/avatar columns from HCP profiles,
+// Phase 30 (Plan 30-01) made the scenario API nest it under hcp_profile.voice_live_instance.
+interface VoiceLiveInstanceSummary {
+  id: string;
+  name: string;
+  enabled: boolean;
+  avatar_character?: string;
+  avatar_style?: string;
+  avatar_enabled: boolean;
+}
+
+interface ScenarioHcpProfile {
+  id: string;
+  name: string;
+  voice_live_instance_id?: string | null;
+  voice_live_instance?: VoiceLiveInstanceSummary | null;
+}
+
+interface ScenarioListItem {
+  id: string;
+  name: string;
+  product?: string;
+  hcp_profile?: ScenarioHcpProfile | null;
+}
+
 test.describe("Training - Start Session Flow", () => {
   test.use({ storageState: join(authDir, "user.json") });
 
@@ -218,13 +244,15 @@ test.describe("Training - Start Session Flow", () => {
     const scenarioResp = await scenarioPromise;
     const body = await scenarioResp.json();
 
-    // Verify at least one scenario has hcp_profile with avatar_character
+    // Verify at least one scenario has hcp_profile.voice_live_instance with avatar_character
+    // (Phase 30-01: avatar_character/avatar_style nest under hcp_profile.voice_live_instance,
+    // no longer top-level on hcp_profile)
     const items = body.items || body;
     const withAvatar = (Array.isArray(items) ? items : []).filter(
-      (s: { hcp_profile?: { avatar_character?: string } }) => s.hcp_profile?.avatar_character,
+      (s: ScenarioListItem) => s.hcp_profile?.voice_live_instance?.avatar_character,
     );
     expect(withAvatar.length).toBeGreaterThan(0);
-    expect(withAvatar[0].hcp_profile.avatar_character).toBeTruthy();
+    expect(withAvatar[0].hcp_profile?.voice_live_instance?.avatar_character).toBeTruthy();
   });
 
   test("avatar_character in scenario matches VL Instance (not stale default)", async ({ page }) => {
@@ -241,22 +269,66 @@ test.describe("Training - Start Session Flow", () => {
     const body = await scenarioResp.json();
 
     const items = body.items || body;
-    const scenarios = Array.isArray(items) ? items : [];
+    const scenarios: ScenarioListItem[] = Array.isArray(items) ? items : [];
 
-    // For every scenario with an hcp_profile, validate avatar_character is a known character
+    // For every scenario with a bound VL Instance, validate avatar_character is a known character
     const validAvatarCharacters = ["lisa", "harry", "meg", "jeff", "lori", "max", "jack"];
     for (const s of scenarios) {
-      if (s.hcp_profile?.avatar_character) {
-        expect(validAvatarCharacters).toContain(s.hcp_profile.avatar_character);
+      const vl = s.hcp_profile?.voice_live_instance;
+      if (vl?.avatar_character) {
+        expect(validAvatarCharacters).toContain(vl.avatar_character);
         // avatar_style must also be present and non-empty
-        expect(s.hcp_profile.avatar_style).toBeTruthy();
+        expect(vl.avatar_style).toBeTruthy();
       }
     }
 
     // At least one scenario should have avatar data
-    const withAvatar = scenarios.filter(
-      (s: { hcp_profile?: { avatar_character?: string } }) => s.hcp_profile?.avatar_character,
-    );
+    const withAvatar = scenarios.filter((s) => s.hcp_profile?.voice_live_instance?.avatar_character);
     expect(withAvatar.length).toBeGreaterThan(0);
+  });
+
+  test("scenario-driven session offers voice and digital-human modes when HCP has an enabled avatar VL instance", async ({
+    page,
+  }) => {
+    // D-09 gating-restoration story (automatable portion): a scenario bound to an
+    // enabled + avatar_enabled VoiceLiveInstance must render BOTH a voice-mode
+    // control and a digital-human-mode control, visible and not disabled, before
+    // starting the session.
+    const scenarioPromise = page.waitForResponse(
+      (resp) => resp.url().includes("/api/v1/scenarios") && resp.request().method() === "GET",
+      { timeout: 10000 },
+    );
+
+    await page.goto("/user/training");
+    const scenarioResp = await scenarioPromise;
+    const body = await scenarioResp.json();
+    const items = body.items || body;
+    const scenarios: ScenarioListItem[] = Array.isArray(items) ? items : [];
+
+    const target = scenarios.find(
+      (s) => s.hcp_profile?.voice_live_instance?.enabled && s.hcp_profile?.voice_live_instance?.avatar_enabled,
+    );
+    expect(target, "expected at least one seeded scenario bound to an enabled+avatar_enabled VL instance").toBeTruthy();
+
+    await page.waitForLoadState("networkidle");
+
+    // Locate the scenario's card via its rendered HCP name (falls back to scenario name),
+    // matching the same text ScenarioCard renders as its heading.
+    const cardHeading = target!.hcp_profile?.name ?? target!.name;
+    const card = page
+      .locator("div.relative.overflow-hidden.rounded-xl")
+      .filter({ has: page.locator("h3", { hasText: cardHeading }) })
+      .first();
+    await expect(card).toBeVisible({ timeout: 10000 });
+
+    // Voice-mode control
+    const voiceModeButton = card.locator("button", { hasText: /语音|Voice/ }).first();
+    await expect(voiceModeButton).toBeVisible({ timeout: 5000 });
+    await expect(voiceModeButton).toBeEnabled();
+
+    // Digital-human/avatar-mode control
+    const digitalHumanModeButton = card.locator("button", { hasText: /数字人|Digital Human/ }).first();
+    await expect(digitalHumanModeButton).toBeVisible({ timeout: 5000 });
+    await expect(digitalHumanModeButton).toBeEnabled();
   });
 });

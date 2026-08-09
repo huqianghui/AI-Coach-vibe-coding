@@ -5,7 +5,7 @@ from app.schemas.hcp_profile import (
     HcpProfileResponse,
     HcpProfileUpdate,
 )
-from app.schemas.scenario import ScenarioCreate, ScenarioResponse, ScenarioUpdate
+from app.schemas.scenario import ScenarioCreate, ScenarioUpdate
 from app.schemas.score import ScoreDetailResponse, SessionScoreResponse
 from app.schemas.session import (
     MessageResponse,
@@ -24,7 +24,6 @@ __all__ = [
     "HcpProfileListResponse",
     "ScenarioCreate",
     "ScenarioUpdate",
-    "ScenarioResponse",
     "SessionCreate",
     "SendMessageRequest",
     "SessionResponse",

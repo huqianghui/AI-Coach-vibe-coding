@@ -1,12 +1,14 @@
 """Tests for the scenario service: CRUD operations and scenario cloning."""
 
 import json
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.models.hcp_profile import HcpProfile
 from app.models.skill import Skill, SkillVersion
 from app.models.user import User
+from app.models.voice_live_instance import VoiceLiveInstance
 from app.schemas.scenario import ScenarioCreate, ScenarioUpdate
 from app.services.auth import get_password_hash
 from app.services.scenario_service import (
@@ -665,3 +667,80 @@ class TestArchivedGuard:
         await transition_scenario_status(db_session, scenario.id, "active")
         result = await update_scenario(db_session, scenario.id, ScenarioUpdate(name="Still OK"))
         assert result.name == "Still OK"
+
+
+class TestTriggerAgentResync:
+    """Regression tests for _trigger_agent_resync's HcpProfile eager-loading.
+
+    _trigger_agent_resync loads HcpProfile via a plain select() then calls
+    agent_sync_service.sync_agent_for_profile, which reads
+    profile.voice_live_instance (a default lazy relationship) inside
+    resolve_voice_config(). Without selectinload(HcpProfile.voice_live_instance) on
+    the query, the first access to that relationship triggers an implicit lazy DB
+    load with no greenlet_spawn trampoline active, raising
+    sqlalchemy.exc.MissingGreenlet. These tests intentionally do NOT mock
+    sync_agent_for_profile itself -- only the Azure SDK boundary functions -- so the
+    real ORM relationship-loading behavior is exercised against the real aiosqlite
+    async session.
+    """
+
+    async def test_trigger_agent_resync_with_assigned_voice_live_instance_no_missing_greenlet(
+        self, db_session
+    ):
+        """_trigger_agent_resync must not raise MissingGreenlet when the HCP profile
+        has an assigned VoiceLiveInstance.
+
+        db_session.expunge(vl_instance) is required to make this test valid: without
+        it, the VoiceLiveInstance stays in this session's identity map (it was just
+        created+flushed here), and SQLAlchemy's many-to-one lazy loader satisfies
+        profile.voice_live_instance via an identity-map lookup by primary key
+        ("use_get" optimization) with NO actual DB IO -- which would pass whether or
+        not selectinload is applied, silently defeating the regression test.
+        Expunging forces a genuine lazy load (a real DB round-trip) on first access,
+        matching a fresh production request where the VL instance was never
+        independently queried.
+        """
+        from app.services.scenario_service import _trigger_agent_resync
+
+        user_id, hcp_id = await _seed_user_and_hcp(db_session)
+
+        vl_instance = VoiceLiveInstance(name="Scenario Resync Test VL", created_by=user_id)
+        db_session.add(vl_instance)
+        await db_session.flush()
+        vl_instance_id = vl_instance.id
+        db_session.expunge(vl_instance)
+
+        profile = await db_session.get(HcpProfile, hcp_id)
+        profile.voice_live_instance_id = vl_instance_id
+        profile.agent_id = "existing-agent"
+        await db_session.flush()
+
+        with (
+            patch(
+                "app.services.agent_sync_service.create_agent",
+                new_callable=AsyncMock,
+                return_value={"id": "existing-agent", "version": "3"},
+            ),
+            patch(
+                "app.services.agent_sync_service.update_agent",
+                new_callable=AsyncMock,
+                return_value={"id": "existing-agent", "version": "3"},
+            ),
+            patch(
+                "app.services.agent_sync_service.get_agent_latest_version",
+                new_callable=AsyncMock,
+                return_value="3",
+            ),
+        ):
+            await _trigger_agent_resync(db_session, hcp_id)
+
+        # sync_agent_for_profile only reaches this assignment after successfully
+        # completing create_agent/update_agent + get_agent_latest_version -- if
+        # MissingGreenlet had been raised inside resolve_voice_config, execution
+        # would never get here and agent_version would remain unset. NOTE: do not
+        # db.refresh(profile) here -- _trigger_agent_resync (unlike its
+        # knowledge_base_service counterpart) never flushes after syncing (the
+        # calling request's db session commits at the request boundary), so a
+        # refresh would silently discard this in-memory-only assignment and read
+        # back the stale persisted value instead.
+        assert profile.agent_version == "3"

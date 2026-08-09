@@ -64,9 +64,9 @@ async def _trigger_agent_resync(db: AsyncSession, hcp_profile_id: str) -> None:
         from app.services import agent_sync_service
 
         profile_result = await db.execute(
-            select(hcp_profile_service.HcpProfile).where(
-                hcp_profile_service.HcpProfile.id == hcp_profile_id
-            )
+            select(hcp_profile_service.HcpProfile)
+            .options(selectinload(hcp_profile_service.HcpProfile.voice_live_instance))
+            .where(hcp_profile_service.HcpProfile.id == hcp_profile_id)
         )
         profile = profile_result.scalar_one_or_none()
         if profile and profile.agent_id:

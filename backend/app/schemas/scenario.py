@@ -1,8 +1,6 @@
 """Scenario request/response schemas."""
 
-from datetime import datetime
-
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 
 class ModeratorRemarks(BaseModel):
@@ -50,44 +48,3 @@ class ScenarioUpdate(BaseModel):
     conference_prompt_config: ConferencePromptConfig | None = None
     skill_id: str | None = None
     pass_threshold: int | None = None
-
-
-class HcpProfileSummary(BaseModel):
-    """Lightweight HCP profile embedded in scenario response (avatar metadata)."""
-
-    id: str
-    name: str
-    specialty: str
-    avatar_character: str = "lori"
-    avatar_style: str = "casual"
-    voice_live_enabled: bool = False
-    voice_live_instance_id: str | None = None
-    avatar_enabled: bool = False
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class ScenarioResponse(BaseModel):
-    """Scenario response with all fields."""
-
-    id: str
-    name: str
-    description: str
-    tags: str  # JSON string from DB
-    mode: str
-    difficulty: str
-    status: str
-    hcp_profile_id: str
-    hcp_profile: HcpProfileSummary | None = None
-    key_messages: str  # JSON string from DB
-    conference_prompt_config: str
-    conference_prompt_version: int = 1
-    skill_id: str
-    skill_version_id: str | None = None
-    rubric_id: str
-    pass_threshold: int
-    created_by: str
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = ConfigDict(from_attributes=True)

@@ -1,7 +1,9 @@
-"""Regression tests: ScenarioOut includes HCP profile avatar fields.
+"""Regression tests: ScenarioOut includes nested HCP voice_live_instance data.
 
-Ensures avatar_character and avatar_style are returned in scenario API responses
-so the frontend can render the digital human static preview immediately.
+Ensures hcp_profile.voice_live_instance (nested object per D-10/Phase 29 pattern)
+is returned in scenario API responses so the frontend can render the digital
+human static preview immediately, and that HCPs with no VL Instance assigned
+still serialize without error (D-13: unbound legacy rows are not backfilled).
 """
 
 from httpx import AsyncClient
@@ -80,10 +82,10 @@ async def _seed_scenario_with_avatar(
 
 
 class TestScenarioAvatarFields:
-    """Verify scenario API responses include avatar_character and avatar_style."""
+    """Verify scenario API responses expose nested hcp_profile.voice_live_instance."""
 
     async def test_get_scenario_includes_avatar_fields(self, client: AsyncClient):
-        """GET /scenarios/{id} response includes hcp_profile.avatar_character."""
+        """GET /scenarios/{id} response includes nested hcp_profile.voice_live_instance."""
         scenario_id, token = await _seed_scenario_with_avatar("lisa", "graceful-standing")
 
         response = await client.get(
@@ -93,14 +95,17 @@ class TestScenarioAvatarFields:
         assert response.status_code == 200
         data = response.json()
         assert data["hcp_profile"] is not None
-        assert data["hcp_profile"]["avatar_character"] == "lisa"
-        assert data["hcp_profile"]["avatar_style"] == "graceful-standing"
+        assert data["hcp_profile"]["voice_live_instance"] is not None
+        assert data["hcp_profile"]["voice_live_instance"]["avatar_character"] == "lisa"
+        assert data["hcp_profile"]["voice_live_instance"]["avatar_style"] == "graceful-standing"
+        assert data["hcp_profile"]["voice_live_instance"]["enabled"] is True
+        assert data["hcp_profile"]["voice_live_instance"]["avatar_enabled"] is True
         assert data["hcp_profile"]["name"] == "Dr. Avatar Test"
-        assert data["hcp_profile"]["voice_live_enabled"] is True
-        assert data["hcp_profile"]["avatar_enabled"] is True
+        assert "avatar_url" in data["hcp_profile"]
+        assert "personality_type" in data["hcp_profile"]
 
     async def test_list_scenarios_includes_avatar_fields(self, client: AsyncClient):
-        """GET /scenarios response includes hcp_profile.avatar_character for each item."""
+        """GET /scenarios response includes nested voice_live_instance for each item."""
         _, token = await _seed_scenario_with_avatar("harry", "casual")
 
         response = await client.get(
@@ -112,11 +117,12 @@ class TestScenarioAvatarFields:
         assert data["total"] >= 1
         item = data["items"][0]
         assert item["hcp_profile"] is not None
-        assert item["hcp_profile"]["avatar_character"] == "harry"
-        assert item["hcp_profile"]["avatar_style"] == "casual"
+        assert item["hcp_profile"]["voice_live_instance"] is not None
+        assert item["hcp_profile"]["voice_live_instance"]["avatar_character"] == "harry"
+        assert item["hcp_profile"]["voice_live_instance"]["avatar_style"] == "casual"
 
     async def test_active_scenarios_includes_avatar_fields(self, client: AsyncClient):
-        """GET /scenarios/active response includes avatar fields."""
+        """GET /scenarios/active response includes nested voice_live_instance."""
         _, token = await _seed_scenario_with_avatar("lori", "casual")
 
         response = await client.get(
@@ -126,7 +132,7 @@ class TestScenarioAvatarFields:
         assert response.status_code == 200
         data = response.json()
         assert len(data) >= 1
-        assert data[0]["hcp_profile"]["avatar_character"] == "lori"
+        assert data[0]["hcp_profile"]["voice_live_instance"]["avatar_character"] == "lori"
 
     async def test_scenario_resolves_voice_live_instance_avatar_enabled(self, client: AsyncClient):
         """Scenario HCP summary exposes resolved Voice Live Instance capabilities."""
@@ -191,7 +197,69 @@ class TestScenarioAvatarFields:
         )
         assert response.status_code == 200
         data = response.json()
-        assert data["hcp_profile"]["avatar_character"] == "lisa"
-        assert data["hcp_profile"]["avatar_style"] == "casual-sitting"
-        assert data["hcp_profile"]["voice_live_enabled"] is True
-        assert data["hcp_profile"]["avatar_enabled"] is False
+        assert data["hcp_profile"]["voice_live_instance"]["avatar_character"] == "lisa"
+        assert data["hcp_profile"]["voice_live_instance"]["avatar_style"] == "casual-sitting"
+        assert data["hcp_profile"]["voice_live_instance"]["enabled"] is True
+        assert data["hcp_profile"]["voice_live_instance"]["avatar_enabled"] is False
+
+    async def test_scenario_with_unbound_hcp_returns_null_voice_live_instance(
+        self, client: AsyncClient
+    ):
+        """HCP with no VL Instance assigned (legacy/unbound row, D-13) serializes with null.
+
+        GET /scenarios/{id} must return 200 with hcp_profile.voice_live_instance == null,
+        not a 500 error, when voice_live_instance_id is None.
+        """
+        async with TestSessionLocal() as db:
+            admin = User(
+                username="unbound_admin",
+                email="unbound_admin@test.com",
+                hashed_password=get_password_hash("admin"),
+                full_name="Admin",
+                role="admin",
+            )
+            db.add(admin)
+            await db.flush()
+
+            hcp = HcpProfile(
+                name="Dr. Unbound",
+                specialty="Neurology",
+                voice_live_instance_id=None,
+                created_by=admin.id,
+            )
+            db.add(hcp)
+            await db.flush()
+
+            skill = Skill(
+                id="unbound-skill-id",
+                name="Unbound Skill",
+                status="published",
+                created_by=admin.id,
+            )
+            db.add(skill)
+            await db.flush()
+
+            scenario = Scenario(
+                name="Unbound Scenario",
+                hcp_profile_id=hcp.id,
+                key_messages='["Key message"]',
+                skill_id=skill.id,
+                status="active",
+                created_by=admin.id,
+                rubric_id="test-rubric",
+            )
+            db.add(scenario)
+            await db.flush()
+            await db.commit()
+
+            token = create_access_token(data={"sub": admin.id})
+
+        response = await client.get(
+            f"/api/v1/scenarios/{scenario.id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["hcp_profile"]["voice_live_instance"] is None
+        assert data["hcp_profile"]["voice_live_instance_id"] is None
+        assert data["hcp_profile"]["name"] == "Dr. Unbound"

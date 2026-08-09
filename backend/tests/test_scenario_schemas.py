@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.scenario import ScenarioCreate, ScenarioResponse, ScenarioUpdate
+from app.schemas.scenario import ScenarioCreate, ScenarioUpdate
 
 
 class TestScenarioCreate:
@@ -126,34 +126,8 @@ class TestScenarioUpdate:
         assert dumped == {"name": "X"}
 
 
-class TestScenarioResponse:
-    """Tests for ScenarioResponse schema serialization."""
-
-    def test_from_attributes(self):
-        """Verify from_attributes is configured for ORM model mapping."""
-        assert ScenarioResponse.model_config.get("from_attributes") is True
-
-    def test_required_fields(self):
-        """Verify required fields in response."""
-        fields = ScenarioResponse.model_fields
-        assert "id" in fields
-        assert "name" in fields
-        assert "tags" in fields
-        assert "skill_id" in fields
-        assert "status" in fields
-
-    def test_no_product_field(self):
-        """ScenarioResponse should NOT have product field."""
-        assert "product" not in ScenarioResponse.model_fields
-
-    def test_skill_id_not_optional(self):
-        """skill_id should be required (str, not Optional)."""
-        field = ScenarioResponse.model_fields["skill_id"]
-        # The annotation should be str, not str | None
-        assert field.annotation is str
-
-    def test_skill_version_id_optional(self):
-        """skill_version_id should be optional."""
-        field = ScenarioResponse.model_fields["skill_version_id"]
-        # Should have a default of None
-        assert field.default is None
+# NOTE: ScenarioResponse and HcpProfileSummary were removed (Phase 30 review, WR-03)
+# as dead, manually-synced duplicates of the live ScenarioOut/HcpProfileBrief
+# schemas in backend/app/api/scenarios.py. Their coverage of the live response
+# contract lives in backend/tests/test_scenarios_api.py and
+# backend/tests/test_scenario_avatar_fields.py instead.

@@ -10,8 +10,8 @@ import {
   useScenarioGroupRun,
 } from "@/hooks/use-scenario-groups";
 import { cn } from "@/lib/utils";
+import { getAvailableModes } from "@/lib/scenario-modes";
 import type { ScenarioGroupRunItem } from "@/types/scenario-group";
-import type { Scenario } from "@/types/scenario";
 
 const TRAINING_MODES = [
   { value: "text", label: "文字", icon: MessageSquareText },
@@ -19,45 +19,11 @@ const TRAINING_MODES = [
   { value: "digital_human_realtime_model", label: "数字人", icon: User },
 ] as const;
 
-function getAvailableModes(
-  scenario: Scenario | null | undefined,
-  features:
-    | {
-        voice_enabled?: boolean;
-        voice_live_enabled?: boolean;
-        avatar_enabled?: boolean;
-      }
-    | undefined,
-) {
-  const modes = ["text"];
-  const hcp = scenario?.hcp_profile;
-  const voiceAvailable = scenario?.mode === "conference"
-    ? Boolean(features?.voice_enabled)
-    : Boolean(features?.voice_live_enabled && hcp?.voice_live_instance?.enabled);
-  const avatarAvailable = scenario?.mode === "conference"
-    ? Boolean(
-        features?.voice_live_enabled &&
-          features?.avatar_enabled &&
-          hcp?.voice_live_instance?.enabled &&
-          hcp?.avatar_enabled,
-      )
-    : Boolean(voiceAvailable && features?.avatar_enabled && hcp?.avatar_enabled);
-
-  if (voiceAvailable) {
-    modes.push("voice_realtime_model");
-  }
-  if (avatarAvailable) {
-    modes.push("digital_human_realtime_model");
-  }
-
-  const defaultMode = avatarAvailable
-    ? "digital_human_realtime_model"
-    : voiceAvailable
-      ? "voice_realtime_model"
-      : "text";
-
-  return { modes, defaultMode };
-}
+// Re-exported for backward compatibility with existing test imports
+// (`import { getAvailableModes } from "./scenario-group-run"`).
+// Canonical implementation lives in `@/lib/scenario-modes` (WR-02, Phase 30 review)
+// so this file and `training.tsx` cannot silently drift out of sync.
+export { getAvailableModes };
 
 export default function ScenarioGroupRunPage() {
   const [searchParams] = useSearchParams();

@@ -757,3 +757,29 @@ Plans:
 - [x] 29-08-PLAN.md -- Agent Foundation Model catalog: Foundry deployments endpoint + HCP editor dropdown (D-14)
 - [x] 29-09-PLAN.md -- Merge docs/voice-live-avatar into one 17-file tree with dual-path architecture diagram (D-15)
 - [x] 29-10-PLAN.md -- Cross-cutting verification sweep: full backend/frontend suites + actual Playwright E2E + coverage gate + stale-literal sweep (D-16)
+
+### Phase 30: Scenario API D-10 VoiceLiveInstance Propagation Fix — 修复 scenario.py 未迁移到 Phase 29 嵌套结构导致的 voice/avatar 模式门控断裂
+
+**Goal:** Propagate the Phase 29 D-10 column drop to the scenario API — replace `HcpProfileSummary` (backend/app/schemas/scenario.py:55-67) hardcoded flat defaults (avatar_character, avatar_style, voice_live_enabled, avatar_enabled) with nested `voice_live_instance: VoiceLiveInstanceSummary | None`, remove the stray flat `avatar_enabled` from frontend/src/types/hcp.ts, and re-verify the three consumers (training.tsx, unified-session.tsx, scenario-group-run.tsx) so scenario-driven voice/digital-human training modes are offered again and avatar character/style resolve correctly.
+**Requirements**: D-10 propagation (v1.0 audit integration gap, critical)
+**Gap Closure:** Closes integration gap "scenario API → frontend voice/avatar mode gating" + restores flow F2 "voice+avatar session with fallback" (v1.0-MILESTONE-AUDIT.md 2026-07-20)
+**Depends on:** Phase 29
+
+**Plans:** 5/5 plans complete
+
+Plans:
+- [x] 30-01-PLAN.md -- Backend: nested voice_live_instance in HcpProfileBrief/ScenarioOut (api/scenarios.py), sync dead schema, rewrite backend avatar-field tests (TDD)
+- [x] 30-02-PLAN.md -- Frontend: HcpProfileSummary type contract, narrow Scenario.hcp_profile, delete stray avatar_enabled from HcpProfile
+- [x] 30-03-PLAN.md -- Frontend: fix avatar-gating reads in training.tsx + scenario-group-run.tsx, add first-ever gating test coverage for scenario-group-run
+- [x] 30-04-PLAN.md -- Frontend: repair 5 stale hcp_profile test fixtures (training/scenario-card/scenario-panel/scenario-table/unified-session)
+- [x] 30-05-PLAN.md -- E2E: fix stale training-start-session.spec.ts assertions, add gating-restoration test, full verification pass, human checkpoint
+
+### Phase 31: Training Material Retention Auto-Deletion — 实现素材保留期自动删除（Phase 05 遗留功能缺口）
+
+**Goal:** Implement automatic deletion of expired training materials — add a `delete_expired_materials` service consuming the existing `material_retention_days` config (backend/app/config.py:79), wire it into scheduled enforcement (app lifespan / periodic task), and cover it with unit tests. Closes the Phase 05 verification gap where retention config exists but nothing consumes it.
+**Requirements**: Phase 05 goal "voice records respect retention policies" (v1.0 audit phase-verification gap, critical)
+**Gap Closure:** Closes Phase 05 gaps_found item "Retention auto-deletion never implemented" (v1.0-MILESTONE-AUDIT.md 2026-07-20)
+**Depends on:** Phase 05
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 31 to break down)

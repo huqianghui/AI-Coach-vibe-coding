@@ -452,3 +452,82 @@ class TestRetryAgentSync:
 
         assert retried.agent_sync_status == "failed"
         assert "Second failure" in retried.agent_sync_error
+
+
+class TestBatchSyncAgents:
+    """Regression tests for batch_sync_agents' HcpProfile eager-loading.
+
+    batch_sync_agents queries profiles needing sync via a plain select() then calls
+    agent_sync_service.sync_agent_for_profile, which reads profile.voice_live_instance
+    (a default lazy relationship) inside resolve_voice_config(). Without
+    selectinload(HcpProfile.voice_live_instance) on the query, the first access to
+    that relationship triggers an implicit lazy DB load with no greenlet_spawn
+    trampoline active, raising sqlalchemy.exc.MissingGreenlet. This test
+    intentionally does NOT mock sync_agent_for_profile itself -- only the Azure SDK
+    boundary functions -- so the real ORM relationship-loading behavior is exercised
+    against the real aiosqlite async session.
+    """
+
+    async def test_batch_sync_with_assigned_voice_live_instance_no_missing_greenlet(
+        self, db_session
+    ):
+        """batch_sync_agents must not raise MissingGreenlet for a profile with an
+        assigned VoiceLiveInstance and no agent_id yet.
+
+        db_session.expunge(vl_instance) is required to make this test valid: without
+        it, the VoiceLiveInstance stays in this session's identity map (it was just
+        created+flushed here), and SQLAlchemy's many-to-one lazy loader satisfies
+        profile.voice_live_instance via an identity-map lookup by primary key
+        ("use_get" optimization) with NO actual DB IO -- which would pass whether or
+        not selectinload is applied, silently defeating the regression test.
+        Expunging forces a genuine lazy load (a real DB round-trip) on first access,
+        matching a fresh production request where the VL instance was never
+        independently queried.
+        """
+        from app.models.voice_live_instance import VoiceLiveInstance
+        from app.services.hcp_profile_service import batch_sync_agents
+
+        user_id = await _seed_user(db_session)
+        vl_id = await _create_vl_instance(db_session, user_id)
+        vl_instance = await db_session.get(VoiceLiveInstance, vl_id)
+        db_session.expunge(vl_instance)
+
+        data = HcpProfileCreate(
+            name="Dr. Batch", specialty="Onc", created_by=user_id, voice_live_instance_id=vl_id
+        )
+        # Create with sync failure so agent_id stays empty -- batch_sync_agents only
+        # picks up profiles with agent_id == "" / None / agent_sync_status == "failed".
+        with patch(
+            "app.services.hcp_profile_service.agent_sync_service.sync_agent_for_profile",
+            new_callable=AsyncMock,
+            side_effect=Exception("Not yet synced"),
+        ):
+            profile = await create_hcp_profile(db_session, data, user_id)
+
+        assert profile.agent_id in ("", None)
+
+        with (
+            patch(
+                "app.services.agent_sync_service.create_agent",
+                new_callable=AsyncMock,
+                return_value={"id": "asst_batch_1", "version": "1"},
+            ),
+            patch(
+                "app.services.agent_sync_service.update_agent",
+                new_callable=AsyncMock,
+                return_value={"id": "asst_batch_1", "version": "1"},
+            ),
+            patch(
+                "app.services.agent_sync_service.get_agent_latest_version",
+                new_callable=AsyncMock,
+                return_value="1",
+            ),
+        ):
+            summary = await batch_sync_agents(db_session)
+
+        assert summary["synced"] == 1
+        assert summary["failed"] == 0
+
+        await db_session.refresh(profile)
+        assert profile.agent_sync_status == "synced"
+        assert profile.agent_id == "asst_batch_1"

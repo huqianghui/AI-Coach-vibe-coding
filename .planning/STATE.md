@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Milestone complete
-stopped_at: Completed 29-10-PLAN.md
-last_updated: "2026-07-19T18:23:58.134Z"
-last_activity: 2026-07-19
+status: Ready to plan
+stopped_at: Phase 30 context gathered
+last_updated: "2026-07-20T07:00:45.793Z"
+last_activity: 2026-07-20
 progress:
-  total_phases: 31
-  completed_phases: 27
-  total_plans: 153
-  completed_plans: 143
-  percent: 93
+  total_phases: 33
+  completed_phases: 28
+  total_plans: 158
+  completed_plans: 148
+  percent: 94
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-03-24)
 
 ## Current Position
 
-Phase: 29
+Phase: 31
 Plan: Not started
 Phase: 26 (add-voice-live-webrtc-transport-option-as-alternative-to-web) — COMPLETE (3/3 plans)
 Phase: 24 (Skill Focus + CU Evaluation) — COMPLETE (5/5 plans)
@@ -36,7 +36,7 @@ Phase: 26 (Scoring Architecture: LLM Content + CU Voice) — COMPLETE (1/1 plan)
 
 **Velocity:**
 
-- Total plans completed: 14
+- Total plans completed: 24
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -46,6 +46,7 @@ Phase: 26 (Scoring Architecture: LLM Content + CU Voice) — COMPLETE (1/1 plan)
 |-------|-------|-------|----------|
 | 28 | 4 | - | - |
 | 29 | 10 | - | - |
+| 30 | 5 | - | - |
 
 **Recent Trend:**
 
@@ -350,10 +351,11 @@ None yet.
 | 260718-b3q | Responses API skills 路径 POC + doc 10 更新（openai/v1：Entra ID 上传成功、版本管理可用；API Key 仍 403；shell tool 需支持该工具的模型部署） | 2026-07-18 | dc4eba0 | [260718-b3q-add-responses-api-skills-path-poc-test-a](./quick/260718-b3q-add-responses-api-skills-path-poc-test-a/) |
 | 260718-cy6 | Agents API Skills+Toolbox 全链路修复实测（Foundry-Features: Skills=V1Preview 头 + Entra ID 解除 405；Skill 上传→Toolbox 挂载→Agent 消费 7 passed；MCP endpoint 发现仍 405）+ doc 10 §12 | 2026-07-18 | a736920 | [260718-cy6-agents-api-skills-toolbox-foundry-featur](./quick/260718-cy6-agents-api-skills-toolbox-foundry-featur/) |
 | 260718-eha | 修复 backend voice_live 17 个失败测试（az login 环境解耦 + 真实测试改 Entra bearer 认证 + 22866fd 重构后过时断言更新；纯测试侧修改，152/152 通过） | 2026-07-18 | fb121fa | [260718-eha-backend-voice-live-17-az-login-entra-bea](./quick/260718-eha-backend-voice-live-17-az-login-entra-bea/) |
+| 260727-cnd | doc 02 更新至 SDK 1.3.0b1（AgentSessionConfig 移除、connect() 扁平化参数）+ Agent 模式 Foundry IQ grounding 实测（Entra ID 连接成功、mcp_list_tools 触发确认 KB 挂载、AI Search MCP 403 权限待修；API Key 现回归 403） | 2026-07-27 | e8236d0 | [260727-cnd-update-02-model-vs-agent-mode-md-for-lat](./quick/260727-cnd-update-02-model-vs-agent-mode-md-for-lat/) |
 
 ## Session Continuity
 
-Last activity: 2026-07-19
-Last session: 2026-07-19T18:04:38.311Z
-Stopped at: Completed 29-10-PLAN.md
-Resume file: None
+Last activity: 2026-07-27 - Completed quick task 260727-cnd: doc 02 SDK 更新 + Agent+Foundry IQ 实测
+Last session: 2026-07-20T02:06:16.608Z
+Stopped at: Phase 30 context gathered
+Resume file: .planning/phases/30-scenario-api-d10-voicelive-instance-propagation-fix/30-CONTEXT.md

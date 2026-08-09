@@ -118,7 +118,15 @@ class VoiceLiveInstanceResponse(BaseModel):
 
 
 class VoiceLiveInstanceSummary(BaseModel):
-    """Compact summary for list views and HCP profile embedding."""
+    """Compact summary for HCP profile / scenario embedding.
+
+    Deliberately omits aggregate fields (e.g. ``hcp_count``) that require a
+    separate query to compute -- this schema validates directly from the raw
+    ``VoiceLiveInstance`` ORM object via attribute lookup (``from_attributes``)
+    when nested under ``hcp_profile.voice_live_instance``, so any field here
+    must be a plain column on the model or it will silently resolve to its
+    Pydantic default instead of erroring (Phase 30 review, WR-01).
+    """
 
     id: str
     name: str
@@ -128,7 +136,6 @@ class VoiceLiveInstanceSummary(BaseModel):
     avatar_character: str
     avatar_style: str
     avatar_enabled: bool = True
-    hcp_count: int = 0
 
     model_config = ConfigDict(from_attributes=True)
 
