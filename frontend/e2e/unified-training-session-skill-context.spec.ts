@@ -205,7 +205,7 @@ test.describe("Unified Training server-owned Skill context", () => {
     expect(requestCount).toBe(2);
   });
 
-  test("starts digital human transport with only the trusted Session identifier", async ({ page, context }) => {
+  test("starts Skill-bound digital human with only the trusted Session identifier", async ({ page, context }) => {
     await installCommonRoutes(page);
     await context.grantPermissions(["microphone"]);
     await page.addInitScript(() => {
