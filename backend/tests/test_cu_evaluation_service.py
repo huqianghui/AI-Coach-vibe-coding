@@ -460,11 +460,14 @@ class TestScoreVoiceWithCu:
         ):
             await score_voice_with_cu("https://endpoint", "", "analyzer", "https://audio/file.wav")
             await score_voice_with_cu("https://endpoint", "", "analyzer", str(audio))
+
+            with pytest.raises(RuntimeError, match="Failed to read local"):
+                await score_voice_with_cu(
+                    "https://endpoint", "", "analyzer", str(tmp_path / "missing")
+                )
+
         assert captured[0] == {"inputs": [{"url": "https://audio/file.wav"}]}
         assert captured[1]["inputs"][0]["mimeType"] == "audio/mpeg"
-
-        with pytest.raises(RuntimeError, match="Failed to read local"):
-            await score_voice_with_cu("https://endpoint", "", "analyzer", str(tmp_path / "missing"))
 
     @pytest.mark.asyncio
     async def test_audio_data_uses_stable_inputs_shape_when_binary_requested(self):
