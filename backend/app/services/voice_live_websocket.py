@@ -355,12 +355,17 @@ async def _resolve_training_session_context(
         )
 
     pinned_agent = await session_service.resolve_pinned_agent(session)
+    from app.services.session_skill_context import render_turn_context
+
+    turn_context = render_turn_context(session)
 
     return {
         "hcp_profile_id": session.scenario.hcp_profile_id,
         "agent_name": pinned_agent.name,
         "agent_version": pinned_agent.version,
         "avatar_enabled": session.mode.startswith("digital_human"),
+        "session": session,
+        "turn_context": turn_context,
     }
 
 
@@ -399,6 +404,95 @@ def _compose_session_instructions(persona: str, focus_instruction: str) -> str:
             ),
         )
     return instructions
+
+
+async def _inject_voice_sop_context(azure_conn: Any, turn_context: Any) -> None:
+    """Append trusted Session SOP context to one hosted-Agent Voice conversation."""
+    rendered = str(turn_context.rendered or "").strip()
+    if not rendered:
+        raise AppException(
+            status_code=409,
+            code="SESSION_SOP_SNAPSHOT_INVALID",
+            message="Resolved Session SOP context is empty",
+        )
+    if len(rendered) > MAX_VOICE_LIVE_INSTRUCTIONS_LENGTH:
+        raise AppException(
+            status_code=422,
+            code="INSTRUCTIONS_TOO_LONG",
+            message=(
+                "Resolved Voice Live SOP context exceeds the maximum length of "
+                f"{MAX_VOICE_LIVE_INSTRUCTIONS_LENGTH} characters"
+            ),
+        )
+    await azure_conn.send(
+        {
+            "type": "conversation.item.create",
+            "event_id": (
+                f"session-sop-r{turn_context.context_revision}-{turn_context.digest[:12]}"
+            ),
+            "item": {
+                "type": "message",
+                "role": "system",
+                "content": [{"type": "input_text", "text": rendered}],
+            },
+        }
+    )
+
+
+async def _handle_voice_sop_transcript_event(
+    event: dict[str, Any],
+    *,
+    db: AsyncSession,
+    session: Any,
+    azure_conn: Any,
+    messages: list[dict[str, str]],
+    processed_event_keys: set[str],
+) -> None:
+    """Advance Session SOP once per final user transcript and inject the next directive."""
+    event_type = str(event.get("type") or "")
+    role = None
+    if event_type == "conversation.item.input_audio_transcription.completed":
+        role = "user"
+    elif event_type in {"response.audio_transcript.done", "response.text.done"}:
+        role = "assistant"
+    if role is None:
+        return
+
+    transcript = str(event.get("transcript") or event.get("text") or "").strip()
+    if not transcript:
+        return
+    event_key = "|".join(
+        (
+            event_type,
+            str(event.get("item_id") or event.get("response_id") or ""),
+            str(event.get("content_index") or "0"),
+            transcript,
+        )
+    )
+    if event_key in processed_event_keys:
+        return
+    processed_event_keys.add(event_key)
+    messages.append({"role": role, "content": transcript})
+    if role != "user":
+        return
+
+    from app.services import session_service
+
+    previous_revision = session.context_revision
+    await session_service.update_sop_progress(db, session, messages)
+    if session.context_revision == previous_revision:
+        return
+
+    from app.services.session_skill_context import render_turn_context
+
+    next_context = render_turn_context(session)
+    try:
+        await _inject_voice_sop_context(azure_conn, next_context)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        await db.refresh(session)
+        raise
 
 
 async def handle_voice_live_websocket(
@@ -689,6 +783,10 @@ async def handle_voice_live_websocket(
                     project_name=project_name,
                 ) as azure_conn:
                     await azure_conn.session.update(session=session_config)
+                    if training_context is not None:
+                        await _inject_voice_sop_context(
+                            azure_conn, training_context["turn_context"]
+                        )
                     session_log.info("Connected to hosted agent, session config sent")
 
                     await ws.send_text(
@@ -712,6 +810,10 @@ async def handle_voice_live_websocket(
                         ServerEventType,
                         session_log,
                         event_counts,
+                        db=db,
+                        training_session=training_context["session"]
+                        if training_context is not None
+                        else None,
                     )
             else:
                 # Model mode: pass model name and instructions directly
@@ -805,6 +907,9 @@ async def _handle_message_forwarding(
     ServerEventType: Any,
     session_log: logging.LoggerAdapter,
     event_counts: dict[str, int],
+    *,
+    db: AsyncSession | None = None,
+    training_session: Any = None,
 ) -> None:
     """Bidirectional message forwarding between client and Azure."""
     tasks = [
@@ -825,6 +930,8 @@ async def _handle_message_forwarding(
                 ServerEventType,
                 session_log,
                 event_counts,
+                db=db,
+                training_session=training_session,
             )
         ),
     ]
@@ -877,14 +984,41 @@ async def _forward_azure_to_client(
     ServerEventType: Any,
     session_log: logging.LoggerAdapter,
     event_counts: dict[str, int],
+    *,
+    db: AsyncSession | None = None,
+    training_session: Any = None,
 ) -> None:
     """Forward events from Azure Voice Live SDK to client WebSocket."""
     azure_ended = False
+    voice_sop_messages: list[dict[str, str]] = [
+        {"role": message.role, "content": message.content}
+        for message in getattr(training_session, "messages", [])
+        if message.role in {"user", "assistant"} and str(message.content or "").strip()
+    ]
+    processed_sop_event_keys: set[str] = set()
     try:
         async for event in azure_conn:
             event_dict = event.as_dict() if hasattr(event, "as_dict") else dict(event)
             event_type = event_dict.get("type", "unknown")
             event_counts[f"a2c:{event_type}"] = event_counts.get(f"a2c:{event_type}", 0) + 1
+
+            if db is not None and training_session is not None:
+                try:
+                    await _handle_voice_sop_transcript_event(
+                        event_dict,
+                        db=db,
+                        session=training_session,
+                        azure_conn=azure_conn,
+                        messages=voice_sop_messages,
+                        processed_event_keys=processed_sop_event_keys,
+                    )
+                except Exception:
+                    # SOP classification must not interrupt active audio/avatar
+                    # transport. The immutable current directive remains valid.
+                    session_log.warning(
+                        "Voice SOP progression failed; retaining current Session step",
+                        exc_info=True,
+                    )
 
             # Debug: log audio delta events to verify serialization
             if event_type == "response.audio.delta":

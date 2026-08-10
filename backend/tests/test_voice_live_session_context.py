@@ -1,6 +1,7 @@
 """Session-scoped Voice Live context security and instruction tests."""
 
 import asyncio
+import hashlib
 import json
 import sys
 import types
@@ -21,6 +22,8 @@ from app.services.voice_live_websocket import (
     MAX_VOICE_LIVE_INSTRUCTIONS_LENGTH,
     _compose_session_instructions,
     _forward_azure_to_client,
+    _handle_voice_sop_transcript_event,
+    _inject_voice_sop_context,
     _load_connection_config,
     _resolve_training_session_context,
     _send_error,
@@ -48,14 +51,34 @@ async def test_websocket_route_passes_authenticated_user_id(monkeypatch):
 def _session(
     *, user_id: str = "owner", status: str = "in_progress", mode: str = "voice_realtime_model"
 ):
+    snapshot = json.dumps(
+        {
+            "knowledge_references": [],
+            "schema_version": "1",
+            "skill_id": "fixed-skill-id",
+            "skill_version_id": "fixed-version-id",
+            "sop_steps": ["Discover the HCP need.", "Close with an agreed next step."],
+            "source_sha256": "source-digest",
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
     return SimpleNamespace(
+        id="session-1",
         user_id=user_id,
         status=status,
         mode=mode,
         session_type="f2f",
         agent_name="pinned-hcp-agent",
         agent_version="7",
+        skill_id="fixed-skill-id",
+        skill_version_id="fixed-version-id",
         focus_instruction="Follow the fixed discovery SOP.",
+        sop_current_step=0,
+        sop_snapshot_json=snapshot,
+        sop_snapshot_sha256=hashlib.sha256(snapshot.encode()).hexdigest(),
+        context_revision=0,
         scenario=SimpleNamespace(
             mode="f2f",
             hcp_profile_id="trusted-hcp",
@@ -70,12 +93,12 @@ async def test_owned_session_resolves_trusted_hcp_and_exact_pin(monkeypatch):
     context = await _resolve_training_session_context(MagicMock(), "session-1", "owner")
 
     get_session.assert_awaited_once_with(ANY, "session-1", "owner")
-    assert context == {
-        "hcp_profile_id": "trusted-hcp",
-        "agent_name": "pinned-hcp-agent",
-        "agent_version": "7",
-        "avatar_enabled": False,
-    }
+    assert context["hcp_profile_id"] == "trusted-hcp"
+    assert context["agent_name"] == "pinned-hcp-agent"
+    assert context["agent_version"] == "7"
+    assert context["avatar_enabled"] is False
+    assert context["session"].id == "session-1"
+    assert "Authoritative step: 0/2" in context["turn_context"].rendered
 
 
 async def test_real_database_resolves_owned_session_scenario_hcp_focus_chain(db_session):
@@ -114,6 +137,7 @@ async def test_real_database_resolves_owned_session_scenario_hcp_focus_chain(db_
     db_session.add(scenario)
     await db_session.flush()
 
+    trusted = _session(mode="digital_human_realtime_model")
     session = CoachingSession(
         user_id=owner.id,
         scenario_id=scenario.id,
@@ -123,18 +147,24 @@ async def test_real_database_resolves_owned_session_scenario_hcp_focus_chain(db_
         focus_instruction="Trusted persisted Skill focus.",
         agent_name="persisted-agent",
         agent_version="11",
+        skill_id=trusted.skill_id,
+        skill_version_id=trusted.skill_version_id,
+        sop_current_step=trusted.sop_current_step,
+        sop_snapshot_json=trusted.sop_snapshot_json,
+        sop_snapshot_sha256=trusted.sop_snapshot_sha256,
+        context_revision=trusted.context_revision,
     )
     db_session.add(session)
     await db_session.commit()
 
     context = await _resolve_training_session_context(db_session, session.id, owner.id)
 
-    assert context == {
-        "hcp_profile_id": hcp.id,
-        "agent_name": "persisted-agent",
-        "agent_version": "11",
-        "avatar_enabled": True,
-    }
+    assert context["hcp_profile_id"] == hcp.id
+    assert context["agent_name"] == "persisted-agent"
+    assert context["agent_version"] == "11"
+    assert context["avatar_enabled"] is True
+    assert context["session"].id == session.id
+    assert "Trusted persisted Skill focus." in context["turn_context"].rendered
 
     with pytest.raises(AppException) as exc_info:
         await _resolve_training_session_context(db_session, session.id, "different-user")
@@ -192,8 +222,8 @@ async def test_session_without_skill_focus_still_uses_pin(monkeypatch):
 
     context = await _resolve_training_session_context(MagicMock(), "session-1", "owner")
 
-    assert "focus_instruction" not in context
     assert context["agent_name"] == "pinned-hcp-agent"
+    assert "Required behavior: Discover the HCP need." in context["turn_context"].rendered
 
 
 async def test_changed_latest_hcp_identity_does_not_change_session_pin(monkeypatch):
@@ -329,6 +359,257 @@ async def test_azure_stream_end_explicitly_closes_client_websocket():
     ws.close.assert_awaited_once_with(code=1000, reason="azure_stream_ended")
 
 
+async def test_voice_sop_context_is_a_server_owned_system_item():
+    azure_conn = SimpleNamespace(send=AsyncMock())
+    turn_context = SimpleNamespace(
+        rendered="Trusted immutable SOP and current step.",
+        context_revision=3,
+        digest="a" * 64,
+    )
+
+    await _inject_voice_sop_context(azure_conn, turn_context)
+
+    azure_conn.send.assert_awaited_once_with(
+        {
+            "type": "conversation.item.create",
+            "event_id": "session-sop-r3-aaaaaaaaaaaa",
+            "item": {
+                "type": "message",
+                "role": "system",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": "Trusted immutable SOP and current step.",
+                    }
+                ],
+            },
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("rendered", "expected_code"),
+    [
+        ("", "SESSION_SOP_SNAPSHOT_INVALID"),
+        ("x" * (MAX_VOICE_LIVE_INSTRUCTIONS_LENGTH + 1), "INSTRUCTIONS_TOO_LONG"),
+    ],
+)
+async def test_voice_sop_context_rejects_invalid_payloads(rendered, expected_code):
+    azure_conn = SimpleNamespace(send=AsyncMock())
+
+    with pytest.raises(AppException) as exc_info:
+        await _inject_voice_sop_context(
+            azure_conn,
+            SimpleNamespace(rendered=rendered, context_revision=0, digest="a" * 64),
+        )
+
+    assert exc_info.value.code == expected_code
+    azure_conn.send.assert_not_awaited()
+
+
+async def test_assistant_and_unchanged_user_transcripts_do_not_reinject(monkeypatch):
+    session = _session()
+    db = AsyncMock()
+    azure_conn = SimpleNamespace(send=AsyncMock())
+    messages: list[dict] = []
+    processed: set[str] = set()
+    update_progress = AsyncMock(return_value=session.focus_instruction)
+    monkeypatch.setattr("app.services.session_service.update_sop_progress", update_progress)
+
+    for ignored in (
+        {"type": "response.audio.delta", "delta": "AAAA"},
+        {"type": "response.text.done", "text": ""},
+    ):
+        await _handle_voice_sop_transcript_event(
+            ignored,
+            db=db,
+            session=session,
+            azure_conn=azure_conn,
+            messages=messages,
+            processed_event_keys=processed,
+        )
+
+    await _handle_voice_sop_transcript_event(
+        {
+            "type": "response.text.done",
+            "item_id": "assistant-item-1",
+            "text": "What evidence supports that?",
+        },
+        db=db,
+        session=session,
+        azure_conn=azure_conn,
+        messages=messages,
+        processed_event_keys=processed,
+    )
+    update_progress.assert_not_awaited()
+
+    await _handle_voice_sop_transcript_event(
+        {
+            "type": "conversation.item.input_audio_transcription.completed",
+            "item_id": "user-item-1",
+            "transcript": "Let me think.",
+        },
+        db=db,
+        session=session,
+        azure_conn=azure_conn,
+        messages=messages,
+        processed_event_keys=processed,
+    )
+
+    update_progress.assert_awaited_once()
+    azure_conn.send.assert_not_awaited()
+    db.commit.assert_not_awaited()
+    assert messages == [
+        {"role": "assistant", "content": "What evidence supports that?"},
+        {"role": "user", "content": "Let me think."},
+    ]
+
+
+async def test_azure_forwarding_seeds_voice_history_and_keeps_transport_alive_on_sop_error(
+    monkeypatch,
+):
+    events = [
+        SimpleNamespace(
+            type="response.audio_transcript.done",
+            as_dict=lambda: {
+                "type": "response.audio_transcript.done",
+                "item_id": "assistant-2",
+                "transcript": "Current response.",
+            },
+        ),
+        SimpleNamespace(
+            type="response.audio.delta",
+            as_dict=lambda: {"type": "response.audio.delta", "delta": "AAAA"},
+        ),
+    ]
+
+    class AzureConnection:
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            if events:
+                return events.pop(0)
+            raise StopAsyncIteration
+
+    process = AsyncMock(side_effect=[None, RuntimeError("detector unavailable")])
+    monkeypatch.setattr(
+        "app.services.voice_live_websocket._handle_voice_sop_transcript_event", process
+    )
+    ws = AsyncMock(spec=WebSocket)
+    session_log = MagicMock()
+    previous = SimpleNamespace(role="user", content="Prior persisted transcript.")
+
+    await _forward_azure_to_client(
+        AzureConnection(),
+        ws,
+        type("ConnectionClosed", (Exception,), {}),
+        SimpleNamespace(
+            ERROR="error",
+            SESSION_CREATED="session.created",
+            SESSION_UPDATED="session.updated",
+        ),
+        session_log,
+        {},
+        db=AsyncMock(),
+        training_session=SimpleNamespace(messages=[previous]),
+    )
+
+    seeded_messages = process.await_args_list[0].kwargs["messages"]
+    assert seeded_messages == [{"role": "user", "content": "Prior persisted transcript."}]
+    assert process.await_count == 2
+    assert ws.send_text.await_count == 2
+    session_log.warning.assert_called_once()
+
+
+async def test_sop_injection_failure_rolls_back_progress(monkeypatch):
+    session = _session()
+    db = AsyncMock()
+    messages: list[dict] = []
+
+    async def advance(_db, current_session, _messages):
+        current_session.sop_current_step = 1
+        current_session.context_revision = 1
+        return current_session.focus_instruction
+
+    monkeypatch.setattr("app.services.session_service.update_sop_progress", advance)
+    monkeypatch.setattr(
+        "app.services.voice_live_websocket._inject_voice_sop_context",
+        AsyncMock(side_effect=ConnectionError("provider rejected item")),
+    )
+
+    with pytest.raises(ConnectionError):
+        await _handle_voice_sop_transcript_event(
+            {
+                "type": "conversation.item.input_audio_transcription.completed",
+                "item_id": "user-item-1",
+                "transcript": "Discovery complete.",
+            },
+            db=db,
+            session=session,
+            azure_conn=SimpleNamespace(),
+            messages=messages,
+            processed_event_keys=set(),
+        )
+
+    db.rollback.assert_awaited_once()
+    db.refresh.assert_awaited_once_with(session)
+    db.commit.assert_not_awaited()
+
+
+async def test_final_user_transcript_advances_and_reinjects_next_sop_step(monkeypatch):
+    session = _session()
+    db = AsyncMock()
+    azure_conn = SimpleNamespace(send=AsyncMock())
+    messages: list[dict] = []
+    processed: set[str] = set()
+
+    async def advance(_db, current_session, current_messages):
+        assert current_messages == [{"role": "user", "content": "I confirmed the need."}]
+        current_session.sop_current_step = 1
+        current_session.context_revision = 1
+        return current_session.focus_instruction
+
+    monkeypatch.setattr("app.services.session_service.update_sop_progress", advance)
+
+    await _handle_voice_sop_transcript_event(
+        {
+            "type": "conversation.item.input_audio_transcription.completed",
+            "item_id": "user-item-1",
+            "content_index": 0,
+            "transcript": "I confirmed the need.",
+        },
+        db=db,
+        session=session,
+        azure_conn=azure_conn,
+        messages=messages,
+        processed_event_keys=processed,
+    )
+
+    db.commit.assert_awaited_once()
+    payload = azure_conn.send.await_args.args[0]
+    assert payload["type"] == "conversation.item.create"
+    assert payload["item"]["role"] == "system"
+    assert "Authoritative step: 1/2" in payload["item"]["content"][0]["text"]
+
+    await _handle_voice_sop_transcript_event(
+        {
+            "type": "conversation.item.input_audio_transcription.completed",
+            "item_id": "user-item-1",
+            "content_index": 0,
+            "transcript": "I confirmed the need.",
+        },
+        db=db,
+        session=session,
+        azure_conn=azure_conn,
+        messages=messages,
+        processed_event_keys=processed,
+    )
+
+    assert messages == [{"role": "user", "content": "I confirmed the need."}]
+    assert azure_conn.send.await_count == 1
+
+
 async def test_error_frame_keeps_unicode_but_close_reason_is_safe_ascii():
     ws = AsyncMock(spec=WebSocket)
 
@@ -363,15 +644,13 @@ def _install_sdk(monkeypatch):
     class Connection:
         def __init__(self):
             self.session = SimpleNamespace(update=AsyncMock())
+            self.send = AsyncMock()
 
         def __aiter__(self):
             return self
 
         async def __anext__(self):
             raise StopAsyncIteration
-
-        async def send(self, _message):
-            return None
 
     connection = Connection()
 
@@ -430,6 +709,12 @@ async def test_session_path_uses_trusted_pin_and_ignores_browser_overrides(monke
             "agent_name": "pinned-session-agent",
             "agent_version": "0042",
             "avatar_enabled": False,
+            "session": _session(),
+            "turn_context": SimpleNamespace(
+                rendered="Trusted Session SOP context.",
+                context_revision=0,
+                digest="b" * 64,
+            ),
         }
     )
     load_config = AsyncMock(
@@ -508,6 +793,17 @@ async def test_session_path_uses_trusted_pin_and_ignores_browser_overrides(monke
         project_name="trusted-project",
     )
     captured["connection"].session.update.assert_awaited_once()
+    captured["connection"].send.assert_any_await(
+        {
+            "type": "conversation.item.create",
+            "event_id": "session-sop-r0-bbbbbbbbbbbb",
+            "item": {
+                "type": "message",
+                "role": "system",
+                "content": [{"type": "input_text", "text": "Trusted Session SOP context."}],
+            },
+        }
+    )
     payloads = [json.loads(call.args[0]) for call in ws.send_text.await_args_list]
     connected = next(payload for payload in payloads if payload["type"] == "proxy.connected")
     assert connected["mode"] == "agent"
