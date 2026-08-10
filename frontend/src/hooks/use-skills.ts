@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   archiveSkill,
+  batchFoundrySync,
   checkStructure,
   createNewVersion,
   createSkill,
@@ -206,6 +207,16 @@ export function useRetryFoundrySync() {
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: skillKeys.detail(id) });
       queryClient.invalidateQueries({ queryKey: skillKeys.lists() });
+    },
+  });
+}
+
+export function useBatchFoundrySync() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => batchFoundrySync(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: skillKeys.all });
     },
   });
 }

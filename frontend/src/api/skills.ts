@@ -89,6 +89,19 @@ export async function retryFoundrySync(id: string): Promise<Skill> {
   return data;
 }
 
+export interface BatchFoundrySyncResult {
+  synced: number;
+  failed: number;
+  total: number;
+}
+
+export async function batchFoundrySync(): Promise<BatchFoundrySyncResult> {
+  const { data } = await apiClient.post<BatchFoundrySyncResult>(
+    "/skills/batch-foundry-sync",
+  );
+  return data;
+}
+
 export async function getSkillFoundryPortalUrl(
   id: string,
 ): Promise<SkillFoundryPortalUrlResponse> {

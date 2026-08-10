@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { Plus, BookOpen, Upload, FileArchive, Check } from "lucide-react";
+import { Plus, BookOpen, Upload, FileArchive, Check, CloudUpload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/shared/empty-state";
 import { SkillCard } from "@/components/shared/skill-card";
+import { cn } from "@/lib/utils";
 import {
   useSkills,
   useDeleteSkill,
@@ -30,6 +31,8 @@ import {
   useImportSkillZip,
   useCreateSkill,
   useCreateSkillFromMaterials,
+  useRetryFoundrySync,
+  useBatchFoundrySync,
 } from "@/hooks/use-skills";
 import { useMaterials } from "@/hooks/use-materials";
 import type { SkillListItem } from "@/types/skill";
@@ -96,6 +99,9 @@ export default function SkillHubPage() {
   const importMutation = useImportSkillZip();
   const createMutation = useCreateSkill();
   const createFromMaterialsMutation = useCreateSkillFromMaterials();
+  const foundrySyncMutation = useRetryFoundrySync();
+  const batchFoundrySyncMutation = useBatchFoundrySync();
+  const [syncingSkillId, setSyncingSkillId] = useState<string | null>(null);
 
   // Material picker
   const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
@@ -144,6 +150,43 @@ export default function SkillHubPage() {
     },
     [exportMutation, t],
   );
+
+  const handleFoundrySync = useCallback(
+    (skill: SkillListItem) => {
+      setSyncingSkillId(skill.id);
+      foundrySyncMutation.mutate(skill.id, {
+        onSuccess: (updated) => {
+          if (updated.foundry_sync_status === "synced") {
+            toast.success(t("foundry.syncSuccess"));
+          } else {
+            toast.error(t("foundry.retryError", { error: updated.foundry_sync_error }));
+          }
+        },
+        onError: (error) =>
+          toast.error(t("foundry.retryError", { error: error.message })),
+        onSettled: () => setSyncingSkillId(null),
+      });
+    },
+    [foundrySyncMutation, t],
+  );
+
+  const handleBatchFoundrySync = () => {
+    batchFoundrySyncMutation.mutate(undefined, {
+      onSuccess: (result) => {
+        if (result.failed > 0) {
+          toast.error(
+            t("foundry.batchPartial", {
+              synced: result.synced,
+              failed: result.failed,
+            }),
+          );
+        } else {
+          toast.success(t("foundry.batchSuccess", { synced: result.synced }));
+        }
+      },
+      onError: () => toast.error(t("foundry.batchError")),
+    });
+  };
 
   const confirmDelete = () => {
     if (!deleteTarget) return;
@@ -238,10 +281,27 @@ export default function SkillHubPage() {
             {t("hub.description")}
           </p>
         </div>
-        <Button onClick={() => setCreateDialogOpen(true)}>
-          <Plus className="size-4" />
-          {t("hub.createSkill")}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={handleBatchFoundrySync}
+            disabled={batchFoundrySyncMutation.isPending}
+          >
+            <CloudUpload
+              className={cn(
+                "size-4",
+                batchFoundrySyncMutation.isPending && "animate-pulse",
+              )}
+            />
+            {batchFoundrySyncMutation.isPending
+              ? t("foundry.syncingAll")
+              : t("foundry.syncAll")}
+          </Button>
+          <Button onClick={() => setCreateDialogOpen(true)}>
+            <Plus className="size-4" />
+            {t("hub.createSkill")}
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -319,6 +379,8 @@ export default function SkillHubPage() {
                 onArchive={handleArchive}
                 onDelete={handleDelete}
                 onExport={handleExport}
+                onFoundrySync={handleFoundrySync}
+                foundrySyncPending={syncingSkillId === skill.id}
               />
             ))}
           </div>

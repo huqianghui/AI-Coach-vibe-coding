@@ -131,7 +131,8 @@
     "importZip": "Import ZIP",
     "fromMaterials": "From Materials",
     "applyChanges": "Apply Changes",
-    "more": "More"
+    "more": "More",
+    "syncFoundry": "Sync to Foundry"
   },
   "fileTree": {
     "upload": "Upload Files",
@@ -236,6 +237,18 @@
     "retrySuccess": "Foundry sync retried",
     "retryError": "Foundry sync failed: {{error}}",
     "archivedNote": "Archived skills are removed from Foundry. Restore and publish again to re-sync.",
-    "notPublishedNote": "Foundry sync is only available for published skills."
+    "notPublishedNote": "Foundry sync is only available for published skills.",
+    "syncAll": "Sync to Foundry",
+    "syncingAll": "Syncing...",
+    "syncSuccess": "Skill synced to Foundry",
+    "batchSuccess": "Synced {{synced}} skill(s) to Foundry",
+    "batchPartial": "Sync completed: {{synced}} succeeded, {{failed}} failed",
+    "batchError": "Failed to batch sync Skills to Foundry",
+    "cardStatus": {
+      "none": "Foundry not synced",
+      "pending": "Foundry sync pending",
+      "synced": "Foundry synced",
+      "failed": "Foundry sync failed"
+    }
   }
 }
