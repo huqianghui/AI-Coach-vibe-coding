@@ -122,6 +122,15 @@ async def list_published_skills(
     )
 
 
+@router.post("/batch-foundry-sync")
+async def batch_sync_foundry_skills(
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(require_role("admin")),
+):
+    """Sync all published Skills that are not currently synced. Admin only."""
+    return await skill_service.batch_sync_foundry_skills(db)
+
+
 class CreateFromMaterialsRequest(BaseModel):
     """Request body for creating a skill from existing training materials."""
 

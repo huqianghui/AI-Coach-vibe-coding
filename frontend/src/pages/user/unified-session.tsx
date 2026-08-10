@@ -193,12 +193,13 @@ export default function UnifiedSession() {
     },
   });
 
-  const { stopSession: stopVoiceSession } = useVoiceSessionLifecycle({
-    voiceLive,
-    avatarStream,
-    audioHandler,
-    audioPlayer,
-  });
+  const { startSession: startVoiceSession, stopSession: stopVoiceSession } =
+    useVoiceSessionLifecycle({
+      voiceLive,
+      avatarStream,
+      audioHandler,
+      audioPlayer,
+    });
 
   const sseCallbacks = useMemo(
     () => ({
@@ -294,25 +295,65 @@ export default function UnifiedSession() {
 
   // Start session handler — initiates voice for voice/avatar modes, skips for text mode
   const handleStartSession = useCallback(async () => {
-    setSessionStarted(true);
     setIsConnecting(true);
+    setTurnError(null);
     log.info("handleStartSession: mode=%s scenarioId=%s", session?.mode, session?.scenario_id);
 
     // Text mode: skip voice connection entirely.
     if (session?.mode === "text") {
+      setSessionStarted(true);
       setCurrentMode("text");
       initialModeRef.current = "text";
       setIsConnecting(false);
       return;
     }
 
-    // Session-bound Voice/avatar/WebRTC are intentionally unavailable until
-    // their exact context contract is proven. Never start a transport or fall back.
-    setIsConnecting(false);
-    setTurnError(tv("sessionContextUnavailable"));
-    return;
+    try {
+      // The browser supplies only the owned Session identifier. The backend
+      // resolves the exact Agent pin, HCP Voice configuration, and modality.
+      const result = await startVoiceSession({
+        sessionId,
+        onMicDenied: () => toast.error(tv("error.micDenied")),
+        onAudioWorkletFailed: () => toast.error(tv("error.audioWorkletFailed")),
+        onAvatarFailed: () => toast.error(tv("error.avatarFailed")),
+        onConnectionFailed: (error) => {
+          log.error("Session Voice Live connection failed: %o", error);
+          toast.error(tv("error.connectionFailed"));
+        },
+      });
 
-  }, [session?.mode, session?.scenario_id, tv, log]);
+      if (!result) return;
+
+      const usesAgent = result.mode === "agent";
+      const requestedAvatar = isDigitalHumanMode(normalizeSessionMode(session?.mode));
+      const resolvedMode: SessionMode = requestedAvatar && result.avatarEnabled
+        ? usesAgent
+          ? "digital_human_realtime_agent"
+          : "digital_human_realtime_model"
+        : usesAgent
+          ? "voice_realtime_agent"
+          : "voice_realtime_model";
+      setCurrentMode(resolvedMode);
+      initialModeRef.current = resolvedMode;
+      setSessionStarted(true);
+
+      const micStream = audioHandler.streamRef.current;
+      if (micStream) {
+        await sessionRecorder.startRecording(micStream);
+      }
+    } finally {
+      setIsConnecting(false);
+    }
+  }, [
+    session?.mode,
+    session?.scenario_id,
+    sessionId,
+    startVoiceSession,
+    audioHandler.streamRef,
+    sessionRecorder,
+    tv,
+    log,
+  ]);
 
   // Auto-start for text mode — no voice connection needed, show avatar immediately
   useEffect(() => {
@@ -517,20 +558,6 @@ export default function UnifiedSession() {
             }
             className="flex-1"
           />
-
-          {session.mode !== "text" && (
-            <div
-              className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-4 bg-slate-950/90 px-8 text-center text-white"
-              data-testid="transport-unavailable"
-              role="alert"
-            >
-              <AlertTriangle className="h-10 w-10 text-amber-400" />
-              <p className="max-w-md text-sm">{tv("sessionContextUnavailable")}</p>
-              <Button variant="outline" onClick={() => navigate("/user/training")}>
-                {tc("back")}
-              </Button>
-            </div>
-          )}
 
           {/* Start button overlay — shown before session begins */}
           {!sessionStarted && !isConnecting && (

@@ -214,7 +214,7 @@ test.describe("Skill Foundry Sync — Editor Status Section", () => {
       page.waitForEvent("popup"),
       portalBtn.first().click(),
     ]);
-    expect(popup.url()).toContain("ai.azure.com/mock-portal");
+    await expect.poll(() => popup.url()).toContain("ai.azure.com/mock-portal");
   });
 
   test("retry button is hidden for a never-published (draft) skill (WR-02)", async ({
@@ -281,5 +281,55 @@ test.describe("Skill Foundry Sync — Editor Status Section", () => {
     const errorBoundaryText = page.getByText(/something went wrong|error boundary/i);
     expect(await errorBoundaryText.count()).toBe(0);
     expect(consoleErrors).toEqual([]);
+  });
+});
+
+test.describe("Skill Foundry Sync — Skill Hub", () => {
+  test.use({ storageState: join(authDir, "admin.json") });
+
+  test("admin sees sync state and batch-syncs published Skills", async ({ page }) => {
+    const skillId = "hub-foundry-skill";
+    let synced = false;
+    let batchRequestCount = 0;
+
+    await page.route("**/api/v1/skills?**", (route) => {
+      const item = buildSkillFixture({
+        id: skillId,
+        status: "published",
+        foundry_sync_status: synced ? "synced" : "failed",
+        foundry_skill_name: synced ? "hub-foundry-skill-12345678" : "",
+        foundry_cloud_version: synced ? "1" : "",
+        foundry_sync_error: synced ? "" : "credential unavailable",
+      });
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          items: [item],
+          total: 1,
+          page: 1,
+          page_size: 12,
+          total_pages: 1,
+        }),
+      });
+    });
+    await page.route("**/api/v1/skills/batch-foundry-sync", (route) => {
+      batchRequestCount += 1;
+      synced = true;
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ synced: 1, failed: 0, total: 1 }),
+      });
+    });
+
+    await page.goto("/admin/skills");
+    await expect(page.getByText("Foundry sync failed")).toBeVisible();
+
+    await page.getByRole("button", { name: "Sync to Foundry" }).click();
+
+    await expect.poll(() => batchRequestCount).toBe(1);
+    await expect(page.getByText("Foundry synced")).toBeVisible();
+    await expect(page.getByText("· v1")).toBeVisible();
   });
 });

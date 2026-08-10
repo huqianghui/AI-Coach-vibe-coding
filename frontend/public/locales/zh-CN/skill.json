@@ -131,7 +131,8 @@
     "importZip": "导入 ZIP",
     "fromMaterials": "从材料创建",
     "applyChanges": "应用修改",
-    "more": "更多"
+    "more": "更多",
+    "syncFoundry": "同步到 Foundry"
   },
   "fileTree": {
     "upload": "上传文件",
@@ -236,6 +237,18 @@
     "retrySuccess": "Foundry 同步已重试",
     "retryError": "Foundry 同步失败：{{error}}",
     "archivedNote": "已归档的技能会从 Foundry 中移除。恢复并重新发布后可再次同步。",
-    "notPublishedNote": "仅已发布的技能支持 Foundry 同步。"
+    "notPublishedNote": "仅已发布的技能支持 Foundry 同步。",
+    "syncAll": "同步到 Foundry",
+    "syncingAll": "正在同步...",
+    "syncSuccess": "技能已同步到 Foundry",
+    "batchSuccess": "已同步 {{synced}} 个技能到 Foundry",
+    "batchPartial": "同步完成：成功 {{synced}} 个，失败 {{failed}} 个",
+    "batchError": "批量同步到 Foundry 失败",
+    "cardStatus": {
+      "none": "Foundry 未同步",
+      "pending": "Foundry 同步中",
+      "synced": "Foundry 已同步",
+      "failed": "Foundry 同步失败"
+    }
   }
 }

@@ -1,5 +1,13 @@
 import { useTranslation } from "react-i18next";
-import { MoreHorizontal, Pencil, Archive, Download, Trash2 } from "lucide-react";
+import {
+  MoreHorizontal,
+  Pencil,
+  Archive,
+  Download,
+  Trash2,
+  Cloud,
+  RefreshCw,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -19,6 +27,8 @@ interface SkillCardProps {
   onArchive: (skill: SkillListItem) => void;
   onDelete: (skill: SkillListItem) => void;
   onExport: (skill: SkillListItem) => void;
+  onFoundrySync: (skill: SkillListItem) => void;
+  foundrySyncPending?: boolean;
 }
 
 export function SkillCard({
@@ -27,6 +37,8 @@ export function SkillCard({
   onArchive,
   onDelete,
   onExport,
+  onFoundrySync,
+  foundrySyncPending = false,
 }: SkillCardProps) {
   const { t } = useTranslation("skill");
 
@@ -77,6 +89,21 @@ export function SkillCard({
         </div>
       )}
 
+      <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Cloud
+          className={cn(
+            "size-3.5",
+            skill.foundry_sync_status === "synced" && "text-green-600",
+            skill.foundry_sync_status === "failed" && "text-red-600",
+            skill.foundry_sync_status === "pending" && "text-amber-600",
+          )}
+        />
+        <span>{t(`foundry.cardStatus.${skill.foundry_sync_status}`)}</span>
+        {skill.foundry_cloud_version && (
+          <span>· v{skill.foundry_cloud_version}</span>
+        )}
+      </div>
+
       {/* Spacer */}
       <div className="flex-1" />
 
@@ -94,6 +121,15 @@ export function SkillCard({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {skill.status === "published" && (
+              <DropdownMenuItem
+                disabled={foundrySyncPending || skill.foundry_sync_status === "pending"}
+                onClick={() => onFoundrySync(skill)}
+              >
+                <RefreshCw className={cn("size-4", foundrySyncPending && "animate-spin")} />
+                {t("actions.syncFoundry")}
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={() => onArchive(skill)}>
               <Archive className="size-4" />
               {t("actions.archive")}

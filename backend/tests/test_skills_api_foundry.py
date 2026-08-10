@@ -187,6 +187,79 @@ class TestRetryFoundrySync:
         assert response.status_code == 403
 
 
+class TestBatchFoundrySync:
+    """POST /skills/batch-foundry-sync syncs only published non-synced Skills."""
+
+    async def test_batch_sync_reports_success_failure_and_skips(self, client):
+        _, token = await _create_admin_and_token("batch_foundry_admin")
+        success_id = await _create_skill(client, token, "Batch Success")
+        failure_id = await _create_skill(client, token, "Batch Failure")
+        synced_id = await _create_skill(client, token, "Already Synced")
+        draft_id = await _create_skill(client, token, "Draft Skipped")
+
+        from sqlalchemy import select
+
+        from app.models.skill import Skill
+
+        async with TestSessionLocal() as session:
+            result = await session.execute(
+                select(Skill).where(Skill.id.in_([success_id, failure_id, synced_id, draft_id]))
+            )
+            skills = {skill.id: skill for skill in result.scalars().all()}
+            skills[success_id].status = "published"
+            skills[failure_id].status = "published"
+            skills[synced_id].status = "published"
+            skills[synced_id].foundry_sync_status = "synced"
+            skills[draft_id].foundry_sync_status = "failed"
+            await session.commit()
+
+        async def _fake_sync(db, skill):
+            if skill.id == success_id:
+                skill.foundry_sync_status = "synced"
+                skill.foundry_skill_name = "batch-success"
+            else:
+                skill.foundry_sync_status = "failed"
+                skill.foundry_sync_error = "simulated failure"
+            await db.flush()
+
+        with patch(
+            "app.services.skill_service.skill_foundry_service.sync_skill_to_foundry",
+            new=AsyncMock(side_effect=_fake_sync),
+        ) as mock_sync:
+            response = await client.post(
+                "/api/v1/skills/batch-foundry-sync",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert response.status_code == 200
+        assert response.json() == {"synced": 1, "failed": 1, "total": 2}
+        assert {call.args[1].id for call in mock_sync.await_args_list} == {
+            success_id,
+            failure_id,
+        }
+
+    async def test_batch_sync_with_no_candidates_returns_zero_counts(self, client):
+        _, token = await _create_admin_and_token("batch_foundry_empty_admin")
+
+        response = await client.post(
+            "/api/v1/skills/batch-foundry-sync",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"synced": 0, "failed": 0, "total": 0}
+
+    async def test_batch_sync_non_admin_gets_403(self, client):
+        _, user_token = await _create_user_and_token("batch_foundry_user")
+
+        response = await client.post(
+            "/api/v1/skills/batch-foundry-sync",
+            headers={"Authorization": f"Bearer {user_token}"},
+        )
+
+        assert response.status_code == 403
+
+
 class TestFoundryPortalUrl:
     """GET /skills/{id}/foundry-portal-url -- admin-gated, graceful fallback (D-07)."""
 

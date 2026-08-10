@@ -328,6 +328,28 @@ async def publish_skill(db: AsyncSession, skill_id: str, user_id: str) -> Skill:
     return result.scalar_one()
 
 
+async def batch_sync_foundry_skills(db: AsyncSession) -> dict[str, int]:
+    """Sync every published Skill that is not currently synced to Foundry."""
+    result = await db.execute(
+        select(Skill).where(
+            Skill.status == "published",
+            Skill.foundry_sync_status != "synced",
+        )
+    )
+    skills = list(result.scalars().all())
+
+    synced = 0
+    failed = 0
+    for skill in skills:
+        await skill_foundry_service.sync_skill_to_foundry(db, skill)
+        if skill.foundry_sync_status == "synced":
+            synced += 1
+        else:
+            failed += 1
+
+    return {"synced": synced, "failed": failed, "total": len(skills)}
+
+
 async def create_new_version(db: AsyncSession, skill_id: str, user_id: str) -> Skill:
     """Create a new draft version from a published skill."""
     skill = await get_skill(db, skill_id)

@@ -205,8 +205,47 @@ test.describe("Unified Training server-owned Skill context", () => {
     expect(requestCount).toBe(2);
   });
 
-  test("shows fail-closed voice status and starts no transport or text fallback", async ({ page }) => {
+  test("starts digital human transport with only the trusted Session identifier", async ({ page, context }) => {
     await installCommonRoutes(page);
+    await context.grantPermissions(["microphone"]);
+    await page.addInitScript(() => {
+      const stream = new MediaStream();
+      Object.defineProperty(navigator, "mediaDevices", {
+        configurable: true,
+        value: { getUserMedia: async () => stream },
+      });
+
+      class FakeAudioNode {
+        connect() {
+          return this;
+        }
+      }
+      class FakeAudioContext {
+        sampleRate = 24_000;
+        destination = new FakeAudioNode();
+        audioWorklet = { addModule: async () => undefined };
+        createMediaStreamSource() {
+          return new FakeAudioNode();
+        }
+        createAnalyser() {
+          return Object.assign(new FakeAudioNode(), { fftSize: 256 });
+        }
+        async close() {
+          return undefined;
+        }
+      }
+      class FakeAudioWorkletNode extends FakeAudioNode {
+        port = { postMessage: () => undefined, onmessage: null };
+      }
+      Object.defineProperty(window, "AudioContext", {
+        configurable: true,
+        value: FakeAudioContext,
+      });
+      Object.defineProperty(window, "AudioWorkletNode", {
+        configurable: true,
+        value: FakeAudioWorkletNode,
+      });
+    });
     await page.route(`**/api/v1/sessions/${voiceSessionId}`, (route) =>
       route.fulfill({
         status: 200,
@@ -214,20 +253,48 @@ test.describe("Unified Training server-owned Skill context", () => {
         body: JSON.stringify(session(voiceSessionId, "digital_human_realtime_model")),
       }),
     );
-    const forbiddenRequests: string[] = [];
+    const textFallbackRequests: string[] = [];
     page.on("request", (request) => {
       const path = new URL(request.url()).pathname;
-      if (/^\/api\/v1\/(?:voice-live|webrtc)(?:\/|$)|\/api\/v1\/sessions\/[^/]+\/message$/.test(path)) {
-        forbiddenRequests.push(request.url());
+      if (/\/api\/v1\/sessions\/[^/]+\/message$/.test(path)) {
+        textFallbackRequests.push(request.url());
       }
+    });
+    const firstSessionUpdate = new Promise<Record<string, unknown>>((resolve) => {
+      page.on("websocket", (socket) => {
+        socket.on("framesent", (event) => {
+          const payload = typeof event.payload === "string"
+            ? event.payload
+            : event.payload.toString();
+          try {
+            const frame = JSON.parse(payload) as Record<string, unknown>;
+            if (frame.type === "session.update") resolve(frame);
+          } catch {
+            // Binary microphone frames are intentionally ignored.
+          }
+        });
+      });
     });
 
     await page.goto(`/user/training/session?id=${voiceSessionId}`);
-    await expect(page.getByTestId("transport-unavailable")).toBeVisible();
+    await expect(page.getByTestId("transport-unavailable")).toHaveCount(0);
     await expect(page.getByRole("status").filter({ hasText: "Digital Human Realtime" })).toBeVisible();
     await expect(page.getByTestId("start-session-btn")).toBeVisible();
-    await page.getByTestId("start-session-btn").click({ force: true });
-    await expect(page.getByTestId("transport-unavailable")).toBeVisible();
-    expect(forbiddenRequests).toEqual([]);
+    await page.getByTestId("start-session-btn").click();
+
+    const frame = await Promise.race([
+      firstSessionUpdate,
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("Voice Live session.update was not sent")),
+          15_000,
+        ),
+      ),
+    ]);
+    expect(frame).toEqual({
+      type: "session.update",
+      session: { session_id: voiceSessionId },
+    });
+    expect(textFallbackRequests).toEqual([]);
   });
 });

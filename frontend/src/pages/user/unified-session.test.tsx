@@ -278,13 +278,13 @@ vi.mock("@/components/coach/hints-panel", () => ({
     isCollapsed,
     onToggle,
   }: {
-    hints: Array<{ message: string }>;
+    hints: Array<{ content: string }>;
     keyMessagesStatus: Array<{ delivered: boolean }>;
     isCollapsed: boolean;
     onToggle: () => void;
   }) => (
     <div data-testid="hints-panel">
-      {hints.length} hints:{hints.map((hint) => hint.message).join(",")}:{keyMessagesStatus.filter((item) => item.delivered).length} delivered:{String(isCollapsed)}
+      {hints.length} hints:{hints.map((hint) => hint.content).join(",")}:{keyMessagesStatus.filter((item) => item.delivered).length} delivered:{String(isCollapsed)}
       <button data-testid="toggle-hints" onClick={onToggle}>Toggle hints</button>
     </div>
   ),
@@ -369,14 +369,21 @@ describe("UnifiedSession", () => {
     expect(screen.getByTestId("available-modes")).toHaveTextContent("text");
   });
 
-  it("fails closed for voice mode without starting a transport", async () => {
+  it("starts a server-owned voice Session without browser identity overrides", async () => {
     mockSession.mode = "voice_realtime_model";
     renderWithProviders();
 
     fireEvent.click(screen.getByTestId("start-session-btn"));
 
-    await waitFor(() => expect(screen.getByTestId("transport-unavailable")).toBeVisible());
-    expect(mockStartSession).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockStartSession).toHaveBeenCalledTimes(1));
+    expect(mockStartSession).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "session-1" }),
+    );
+    const options = mockStartSession.mock.calls[0]![0];
+    expect(options).not.toHaveProperty("hcpProfileId");
+    expect(options).not.toHaveProperty("systemPrompt");
+    expect(options).not.toHaveProperty("vlInstanceId");
+    expect(screen.getByTestId("current-mode")).toHaveTextContent("voice_realtime_model");
   });
 
   it("rejects a client-only text to voice switch", async () => {
@@ -411,18 +418,22 @@ describe("UnifiedSession", () => {
     expect(screen.getByTestId("current-mode")).toHaveTextContent("voice_realtime_model");
   });
 
-  it("fails closed for digital human mode and keeps the requested mode", async () => {
+  it("starts digital human mode through the trusted Session transport", async () => {
     mockSession.mode = "digital_human_realtime_model";
     renderWithProviders();
 
-    expect(screen.getByTestId("transport-unavailable")).toBeVisible();
+    fireEvent.click(screen.getByTestId("start-session-btn"));
+
+    await waitFor(() => expect(mockStartSession).toHaveBeenCalledTimes(1));
+    expect(mockStartSession).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "session-1" }),
+    );
     expect(screen.getByTestId("current-mode")).toHaveTextContent(
       "digital_human_realtime_model",
     );
-    expect(mockStartSession).not.toHaveBeenCalled();
   });
 
-  it("hides start button after acknowledging unavailable transport", async () => {
+  it("hides start button after the voice transport connects", async () => {
     renderWithProviders();
     fireEvent.click(screen.getByTestId("start-session-btn"));
     await waitFor(() => {
