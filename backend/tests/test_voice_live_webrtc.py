@@ -6,7 +6,6 @@ WebRTC connections.
 """
 
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
-from urllib.parse import parse_qs, urlparse
 
 from app.models.user import User
 from app.services.auth import create_access_token, get_password_hash
@@ -187,7 +186,7 @@ class TestWebRTCSessionPinnedTraining:
     @patch("app.services.voice_live_webrtc.config_service")
     @patch("app.services.hcp_profile_service.get_hcp_profile")
     @patch("app.services.voice_live_websocket._resolve_training_session_context")
-    async def test_exact_pin_and_version_are_signaled_before_token_exchange(
+    async def test_session_webrtc_fails_closed_before_config_or_token_exchange(
         self, mock_context, mock_get_profile, mock_config_svc, mock_exchange, client
     ):
         user_id, token = await _create_user_and_token("webrtc_pinned")
@@ -227,19 +226,12 @@ class TestWebRTCSessionPinnedTraining:
                 headers={"Authorization": f"Bearer {token}"},
             )
 
-        assert response.status_code == 200
-        data = response.json()
-        query = parse_qs(urlparse(data["signaling_url"]).query)
-        assert query == {
-            "api-version": ["2026-07-15"],
-            "agent_name": ["pinned agent/name"],
-            "agent_version": ["0042+beta"],
-            "project_name": ["project / pinned"],
-        }
-        assert data["agent_id"] == "pinned agent/name"
-        assert data["agent_version"] == "0042+beta"
+        assert response.status_code == 409
+        assert response.json()["code"] == "SESSION_WEBRTC_CONTEXT_UNSUPPORTED"
         mock_context.assert_awaited_once_with(ANY, "owned-session", user_id)
-        mock_exchange.assert_awaited_once()
+        mock_config_svc.get_config.assert_not_awaited()
+        mock_get_profile.assert_not_awaited()
+        mock_exchange.assert_not_awaited()
 
     @patch("app.services.voice_live_webrtc._exchange_api_key_for_bearer_token")
     @patch("app.services.voice_live_websocket._resolve_training_session_context")
@@ -266,7 +258,7 @@ class TestWebRTCSessionPinnedTraining:
     @patch("app.services.voice_live_webrtc._exchange_api_key_for_bearer_token")
     @patch("app.services.voice_live_webrtc.config_service")
     @patch("app.services.voice_live_websocket._resolve_training_session_context")
-    async def test_training_session_rejects_missing_agent_project_before_token_exchange(
+    async def test_training_session_rejects_before_project_or_token_exchange(
         self, mock_context, mock_config_svc, mock_exchange
     ):
         """A pinned training Agent cannot silently signal without its project."""
@@ -292,7 +284,7 @@ class TestWebRTCSessionPinnedTraining:
             )
         except AppException as exc:
             assert exc.status_code == 409
-            assert exc.code == "AGENT_PROJECT_MISSING"
+            assert exc.code == "SESSION_WEBRTC_CONTEXT_UNSUPPORTED"
         else:
             raise AssertionError("Missing Agent project must be rejected")
         mock_exchange.assert_not_awaited()

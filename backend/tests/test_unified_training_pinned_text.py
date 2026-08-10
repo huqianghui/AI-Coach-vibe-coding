@@ -31,6 +31,8 @@ def _session(*, status="created", response_id=None):
         id="session-1",
         status=status,
         scenario=scenario,
+        skill_id=None,
+        skill_version_id=None,
         agent_name="hcp-pinned-agent",
         agent_version="0042",
         agent_response_id=response_id,

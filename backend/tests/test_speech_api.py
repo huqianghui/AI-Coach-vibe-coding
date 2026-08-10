@@ -9,8 +9,14 @@ Covers all branches of backend/app/api/speech.py including:
 """
 
 from io import BytesIO
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+from fastapi import WebSocketDisconnect
+from jose import JWTError
+
+from app.api import speech
 from app.models.service_config import ServiceConfig
 from app.models.user import User
 from app.services.auth import create_access_token, get_password_hash
@@ -55,6 +61,222 @@ class TestSpeechStatus:
         assert "tts_available" in data
         assert "stt_provider" in data
         assert "tts_provider" in data
+
+
+class TestSpeechWebSocket:
+    """Offline branch coverage for continuous speech recognition."""
+
+    @staticmethod
+    def _websocket(token: str | None = "token") -> AsyncMock:
+        ws = AsyncMock()
+        ws.query_params = {} if token is None else {"token": token}
+        return ws
+
+    async def test_authentication_rejects_missing_invalid_and_unknown_users(self):
+        ws = self._websocket(None)
+        assert await speech._authenticate_speech_websocket(ws, AsyncMock()) is None
+        ws.close.assert_awaited_once_with(code=1008, reason="Authentication required")
+
+        ws = self._websocket()
+        with patch("app.api.speech.jwt.decode", side_effect=JWTError("bad token")):
+            assert await speech._authenticate_speech_websocket(ws, AsyncMock()) is None
+        assert "Invalid token" in ws.send_text.await_args.args[0]
+
+        ws = self._websocket()
+        with patch("app.api.speech.jwt.decode", return_value={}):
+            assert await speech._authenticate_speech_websocket(ws, AsyncMock()) is None
+
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = None
+        db = AsyncMock()
+        db.execute.return_value = result
+        ws = self._websocket()
+        with patch("app.api.speech.jwt.decode", return_value={"sub": "missing"}):
+            assert await speech._authenticate_speech_websocket(ws, db) is None
+        assert "inactive" in ws.send_text.await_args.args[0]
+
+    async def test_authentication_accepts_active_user_and_rejects_inactive(self):
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = SimpleNamespace(is_active=False)
+        db = AsyncMock()
+        db.execute.return_value = result
+        with patch("app.api.speech.jwt.decode", return_value={"sub": "user-id"}):
+            assert await speech._authenticate_speech_websocket(self._websocket(), db) is None
+
+        user = SimpleNamespace(id="user-id", is_active=True)
+        result.scalar_one_or_none.return_value = user
+        with patch("app.api.speech.jwt.decode", return_value={"sub": "user-id"}):
+            assert await speech._authenticate_speech_websocket(self._websocket(), db) is user
+
+    async def test_send_stream_error_frames_and_closes(self):
+        ws = self._websocket()
+        await speech._send_stream_error(ws, "CODE", "message")
+        assert '"code": "CODE"' in ws.send_text.await_args.args[0]
+        ws.close.assert_awaited_once_with(code=1011, reason="CODE")
+
+    async def test_stream_configuration_errors(self):
+        ws = self._websocket()
+        with (
+            patch(
+                "app.api.speech._authenticate_speech_websocket", AsyncMock(return_value=object())
+            ),
+            patch("app.api.speech._service_enabled", AsyncMock(return_value=False)),
+            patch("app.api.speech._send_stream_error", AsyncMock()) as send_error,
+        ):
+            await speech.stream_transcription(ws, db=AsyncMock())
+        send_error.assert_awaited_once_with(ws, "VOICE_NOT_ENABLED", "Voice is not enabled")
+
+        ws = self._websocket()
+        config_error = speech.AppException(status_code=503, code="NO_CONFIG", message="missing")
+        with (
+            patch(
+                "app.api.speech._authenticate_speech_websocket", AsyncMock(return_value=object())
+            ),
+            patch("app.api.speech._service_enabled", AsyncMock(return_value=True)),
+            patch(
+                "app.api.speech._ensure_azure_speech_configured",
+                AsyncMock(side_effect=config_error),
+            ),
+            patch("app.api.speech._send_stream_error", AsyncMock()) as send_error,
+        ):
+            await speech.stream_transcription(ws, db=AsyncMock())
+        send_error.assert_awaited_once_with(ws, "NO_CONFIG", "missing")
+
+    async def test_stream_rejects_missing_region(self):
+        ws = self._websocket()
+        with (
+            patch(
+                "app.api.speech._authenticate_speech_websocket", AsyncMock(return_value=object())
+            ),
+            patch("app.api.speech._service_enabled", AsyncMock(return_value=True)),
+            patch("app.api.speech._ensure_azure_speech_configured", AsyncMock()),
+            patch("app.api.speech.registry.get", return_value=SimpleNamespace(_region="")),
+            patch("app.api.speech._send_stream_error", AsyncMock()) as send_error,
+        ):
+            await speech.stream_transcription(ws, db=AsyncMock())
+        assert send_error.await_args.args[1] == "AZURE_SPEECH_NOT_CONFIGURED"
+
+    async def test_stream_forwards_audio_callbacks_and_stop(self):
+        class Signal:
+            def __init__(self):
+                self.callback = None
+
+            def connect(self, callback):
+                self.callback = callback
+
+        class Operation:
+            def __init__(self, callback=None):
+                self.callback = callback
+
+            def get(self):
+                if self.callback:
+                    self.callback()
+
+        class Recognizer:
+            def __init__(self, **_kwargs):
+                self.recognizing = Signal()
+                self.recognized = Signal()
+                self.canceled = Signal()
+
+            def start_continuous_recognition_async(self):
+                def emit():
+                    self.recognizing.callback(SimpleNamespace(result=SimpleNamespace(text="")))
+                    self.recognizing.callback(SimpleNamespace(result=SimpleNamespace(text="你")))
+                    self.recognized.callback(
+                        SimpleNamespace(result=SimpleNamespace(reason="other", text="ignored"))
+                    )
+                    self.recognized.callback(
+                        SimpleNamespace(result=SimpleNamespace(reason="recognized", text="你好"))
+                    )
+
+                return Operation(emit)
+
+            def stop_continuous_recognition_async(self):
+                return Operation()
+
+        push_stream = MagicMock()
+        speechsdk = SimpleNamespace(
+            ResultReason=SimpleNamespace(RecognizedSpeech="recognized"),
+            audio=SimpleNamespace(
+                AudioStreamFormat=MagicMock(return_value="format"),
+                PushAudioInputStream=MagicMock(return_value=push_stream),
+                AudioConfig=MagicMock(return_value="audio-config"),
+            ),
+            SpeechRecognizer=Recognizer,
+        )
+        adapter = SimpleNamespace(
+            _key="key",
+            _region="eastus",
+            _create_speech_config=MagicMock(return_value=SimpleNamespace()),
+        )
+        ws = self._websocket()
+        ws.receive.side_effect = [
+            {"bytes": b"pcm"},
+            {"text": "not-json"},
+            {"text": '{"type":"stop"}'},
+        ]
+        with (
+            patch(
+                "app.api.speech._authenticate_speech_websocket",
+                AsyncMock(return_value=SimpleNamespace(id="u")),
+            ),
+            patch("app.api.speech._service_enabled", AsyncMock(return_value=True)),
+            patch("app.api.speech._ensure_azure_speech_configured", AsyncMock()),
+            patch("app.api.speech.registry.get", return_value=adapter),
+            patch("azure.cognitiveservices.speech.SpeechRecognizer", Recognizer),
+            patch("azure.cognitiveservices.speech.ResultReason", speechsdk.ResultReason),
+            patch("azure.cognitiveservices.speech.audio.AudioStreamFormat", return_value="format"),
+            patch(
+                "azure.cognitiveservices.speech.audio.PushAudioInputStream",
+                return_value=push_stream,
+            ),
+            patch("azure.cognitiveservices.speech.audio.AudioConfig", return_value="audio-config"),
+        ):
+            await speech.stream_transcription(ws, language="zh-CN", db=AsyncMock())
+        push_stream.write.assert_called_once_with(b"pcm")
+        push_stream.close.assert_called_once()
+        ws.close.assert_awaited_once()
+        sent = "\n".join(call.args[0] for call in ws.send_text.await_args_list)
+        assert '"type": "ready"' in sent
+        assert '"type": "recognized"' in sent
+
+    @pytest.mark.parametrize("disconnect", [WebSocketDisconnect(), RuntimeError("boom")])
+    async def test_stream_receive_failures_cleanup(self, disconnect):
+        class Operation:
+            def get(self):
+                return None
+
+        signal = SimpleNamespace(connect=lambda _callback: None)
+        recognizer = SimpleNamespace(
+            recognizing=signal,
+            recognized=signal,
+            canceled=signal,
+            start_continuous_recognition_async=lambda: Operation(),
+            stop_continuous_recognition_async=lambda: Operation(),
+        )
+        push_stream = MagicMock()
+        ws = self._websocket()
+        ws.receive.side_effect = disconnect
+        adapter = SimpleNamespace(_key="key", _region="eastus")
+        with (
+            patch(
+                "app.api.speech._authenticate_speech_websocket",
+                AsyncMock(return_value=SimpleNamespace(id="u")),
+            ),
+            patch("app.api.speech._service_enabled", AsyncMock(return_value=True)),
+            patch("app.api.speech._ensure_azure_speech_configured", AsyncMock()),
+            patch("app.api.speech.registry.get", return_value=adapter),
+            patch("azure.cognitiveservices.speech.SpeechConfig", return_value=SimpleNamespace()),
+            patch("azure.cognitiveservices.speech.SpeechRecognizer", return_value=recognizer),
+            patch("azure.cognitiveservices.speech.audio.AudioStreamFormat"),
+            patch(
+                "azure.cognitiveservices.speech.audio.PushAudioInputStream",
+                return_value=push_stream,
+            ),
+            patch("azure.cognitiveservices.speech.audio.AudioConfig"),
+        ):
+            await speech.stream_transcription(ws, language="zh-CN", db=AsyncMock())
+        push_stream.close.assert_called_once()
 
 
 class TestTranscribeAudio:

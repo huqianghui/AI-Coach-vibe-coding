@@ -11,6 +11,8 @@ from sqlalchemy.orm import selectinload
 from app.models.message import SessionMessage
 from app.models.scenario import Scenario
 from app.models.session import CoachingSession
+from app.models.skill import Skill, SkillVersion
+from app.services.session_skill_context import build_sop_snapshot, initial_focus_instruction
 from app.utils.datetime import as_utc_aware, utc_now_naive
 from app.utils.exceptions import AppException, NotFoundException
 
@@ -119,20 +121,24 @@ async def create_session(
         {"message": msg, "delivered": False, "detected_at": None} for msg in key_messages
     ]
 
-    # Phase 24: Generate and snapshot Skill Focus instruction (D-03)
-    # Phase 28: Sourced via get_skill_content_for_session (D-02/D-04/D-05/D-06) --
-    # transparently prefers Foundry-synced cloud content, degrading to the
-    # local DB injection this call used before Phase 28 when the skill isn't
-    # synced or every cloud path fails.
-    focus_instruction = None
-    if scenario.skill_id:
-        from app.services.skill_consumption_service import get_skill_content_for_session
-        from app.services.skill_focus_service import compose_focus_instruction, extract_sop_steps
-
-        skill_content = await get_skill_content_for_session(db, scenario_id)
-        if skill_content:
-            sop_steps = extract_sop_steps(skill_content.content)
-            focus_instruction = compose_focus_instruction(skill_content, 0, sop_steps)
+    if not scenario.skill_version_id:
+        raise AppException(
+            status_code=409,
+            code="SESSION_SOP_SNAPSHOT_INVALID",
+            message="Scenario does not have an exact pinned Skill version",
+            details={"field": "skill_version_id"},
+        )
+    skill = await db.get(Skill, scenario.skill_id)
+    version = await db.get(SkillVersion, scenario.skill_version_id)
+    if skill is None or version is None:
+        raise AppException(
+            status_code=409,
+            code="SESSION_SOP_SNAPSHOT_INVALID",
+            message="Scenario pinned Skill version is unavailable",
+            details={"field": "skill_version_id"},
+        )
+    snapshot, snapshot_json, snapshot_sha256 = build_sop_snapshot(skill, version)
+    focus_instruction = initial_focus_instruction(skill, version, snapshot.sop_steps)
 
     session = CoachingSession(
         user_id=user_id,
@@ -149,6 +155,9 @@ async def create_session(
         # Phase 24: Focus instruction snapshot (D-03)
         focus_instruction=focus_instruction,
         sop_current_step=0,
+        sop_snapshot_json=snapshot_json,
+        sop_snapshot_sha256=snapshot_sha256,
+        context_revision=0,
     )
     db.add(session)
     await db.flush()
@@ -158,50 +167,28 @@ async def create_session(
 async def update_sop_progress(
     db: AsyncSession, session: CoachingSession, messages: list[dict]
 ) -> str | None:
-    """Update SOP progress after user message. Returns updated focus_instruction.
-
-    Per D-06: Uses LLM to detect current SOP step.
-    Per D-05: Returns updated focus_instruction with new progress hint.
-    """
+    """Compatibility wrapper that detects progress without rewriting immutable focus."""
     if not session.focus_instruction or not session.skill_id:
         return None
 
     from app.services import config_service
-    from app.services.skill_consumption_service import get_skill_content_for_session
-    from app.services.skill_focus_service import (
-        compose_focus_instruction,
-        detect_sop_step,
-        extract_sop_steps,
+    from app.services.session_turn_progression import (
+        commit_session_progression,
+        decide_next_session_step,
     )
 
-    # Phase 28: Sourced via get_skill_content_for_session (D-02/D-04/D-05/D-06).
-    # No per-message caching is added here -- get_skill_content_for_session's
-    # own TTL cache (HIGH-1) already absorbs repeated calls within a session.
-    skill_content = await get_skill_content_for_session(db, session.scenario_id)
-    if not skill_content:
-        return session.focus_instruction
-
-    sop_steps = extract_sop_steps(skill_content.content)
-    if not sop_steps:
-        return session.focus_instruction
-
-    # Get LLM endpoint for progress detection
     endpoint = await config_service.get_effective_endpoint(db, "azure_openai")
     api_key = await config_service.get_effective_key(db, "azure_openai")
-
-    if endpoint:
-        new_step = await detect_sop_step(messages, sop_steps, endpoint, api_key)
-        session.sop_current_step = new_step
-    else:
-        # No LLM configured — increment step heuristically (1 step per 3 messages)
-        new_step = min(len(messages) // 3, len(sop_steps))
-        session.sop_current_step = new_step
-
-    # Recompose focus instruction with updated progress
-    updated_instruction = compose_focus_instruction(skill_content, new_step, sop_steps)
-    session.focus_instruction = updated_instruction
-    await db.flush()
-    return updated_instruction
+    expected_revision = session.context_revision
+    decision = await decide_next_session_step(session, messages, endpoint, api_key)
+    await commit_session_progression(
+        db,
+        session,
+        decision,
+        expected_revision=expected_revision,
+        winner_committed=True,
+    )
+    return session.focus_instruction
 
 
 async def get_session(db: AsyncSession, session_id: str, user_id: str) -> CoachingSession:
@@ -393,6 +380,13 @@ async def end_session(db: AsyncSession, session_id: str, user_id: str) -> Coachi
         session.duration_seconds = await _calculate_active_duration(
             db, session_id, session.started_at, now
         )
+
+    if session.foundry_conversation_state != "closed":
+        session.foundry_conversation_state = "cleanup_pending"
+        session.foundry_conversation_cleanup_started_at = (
+            session.foundry_conversation_cleanup_started_at or now
+        )
+        session.foundry_conversation_next_cleanup_at = now
 
     await db.flush()
     await _sync_group_run_item_after_session_end(db, session)

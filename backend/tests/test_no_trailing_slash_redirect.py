@@ -74,6 +74,26 @@ async def _seed_scenario(admin_id: str) -> str:
         )
         session.add(profile)
         await session.flush()
+        skill_content = "# SOP\n## Step 1: Open\n## Step 2: Discover\n## Step 3: Close"
+        skill = Skill(
+            id="test-skill-id",
+            name="Redirect Test Skill",
+            content=skill_content,
+            status="published",
+            created_by=admin_id,
+        )
+        session.add(skill)
+        await session.flush()
+        skill_version = SkillVersion(
+            skill_id=skill.id,
+            version_number=1,
+            content=skill_content,
+            metadata_json='{"knowledge_references":["test-reference"]}',
+            is_published=True,
+            created_by=admin_id,
+        )
+        session.add(skill_version)
+        await session.flush()
         scenario = Scenario(
             name="Redirect Test",
             description="Test scenario",
@@ -84,7 +104,8 @@ async def _seed_scenario(admin_id: str) -> str:
             key_messages='["msg1"]',
             created_by=admin_id,
             rubric_id="test-rubric-id",
-            skill_id="test-skill-id",
+            skill_id=skill.id,
+            skill_version_id=skill_version.id,
         )
         session.add(scenario)
         await session.commit()

@@ -25,6 +25,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   // Clean up any audio elements appended to body by the hook
   document.querySelectorAll("audio").forEach((el) => el.remove());
 });
@@ -595,6 +596,45 @@ describe("useAvatarStream", () => {
     sigHandler();
   });
 
+  it("logs disconnected and closed connection diagnostics even when stats fail", async () => {
+    const video = createMockVideoElement();
+    const ref = { current: video } as React.RefObject<HTMLVideoElement | null>;
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = new Error("stats unavailable");
+    mockPc.getStats = vi.fn().mockRejectedValue(error);
+
+    const { result } = renderHook(() => useAvatarStream(ref));
+    const { sendSdpOffer, triggerIceComplete } = createMockSdpExchange(
+      result.current.handleServerSdp,
+    );
+    await act(async () => {
+      const pending = result.current.connect([], sendSdpOffer);
+      await waitAndTriggerIce(triggerIceComplete);
+      await pending;
+      await Promise.resolve();
+    });
+
+    const connectionChanged = mockPc.onconnectionstatechange as () => void;
+    for (const state of ["disconnected", "closed"]) {
+      Object.defineProperty(mockPc, "connectionState", {
+        value: state,
+        writable: true,
+        configurable: true,
+      });
+      connectionChanged();
+    }
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[AvatarStream]"),
+      expect.stringContaining("getStats() failed"),
+      expect.any(String),
+      error,
+    );
+  });
+
   it("stats interval is started after connect and cleared on disconnect", async () => {
     vi.useFakeTimers();
     const video = createMockVideoElement();
@@ -682,6 +722,114 @@ describe("useAvatarStream", () => {
       result.current.disconnect();
     });
     vi.useRealTimers();
+  });
+
+  it("selects transport and fallback candidate pairs and reports byte stalls", async () => {
+    vi.useFakeTimers();
+    const video = createMockVideoElement();
+    const ref = { current: video } as React.RefObject<HTMLVideoElement | null>;
+    const selected = new Map<string, Record<string, unknown>>([
+      ["video", {
+        id: "video",
+        type: "inbound-rtp",
+        kind: "video",
+        framesPerSecond: 30,
+        packetsLost: 0,
+        packetsReceived: 10,
+        bytesReceived: 100,
+      }],
+      ["audio", {
+        id: "audio",
+        type: "inbound-rtp",
+        kind: "audio",
+        packetsLost: 0,
+        packetsReceived: 10,
+        bytesReceived: 50,
+      }],
+      ["local", {
+        id: "local",
+        type: "local-candidate",
+        candidateType: "relay",
+        protocol: "udp",
+        networkType: "wifi",
+        relayProtocol: "tls",
+        address: "10.0.0.1",
+        port: 3478,
+      }],
+      ["remote", {
+        id: "remote",
+        type: "remote-candidate",
+        candidateType: "host",
+        protocol: "tcp",
+        ip: "10.0.0.2",
+      }],
+      ["selected", {
+        id: "selected",
+        type: "candidate-pair",
+        state: "succeeded",
+        nominated: true,
+        localCandidateId: "local",
+        remoteCandidateId: "remote",
+        currentRoundTripTime: 0.1,
+        availableIncomingBitrate: 1000,
+        availableOutgoingBitrate: 500,
+      }],
+      ["transport", {
+        id: "transport",
+        type: "transport",
+        selectedCandidatePairId: "selected",
+        dtlsState: "connected",
+        iceState: "connected",
+      }],
+    ]);
+    const nominatedFallback = new Map<string, Record<string, unknown>>([
+      ["nominated", {
+        id: "nominated",
+        type: "candidate-pair",
+        state: "succeeded",
+        nominated: true,
+      }],
+    ]);
+    const succeededFallback = new Map<string, Record<string, unknown>>([
+      ["failed", { id: "failed", type: "candidate-pair", state: "failed" }],
+      ["succeeded", { id: "succeeded", type: "candidate-pair", state: "succeeded" }],
+    ]);
+    mockPc.getStats = vi.fn()
+      .mockResolvedValueOnce(new Map())
+      .mockResolvedValueOnce(selected)
+      .mockResolvedValueOnce(selected)
+      .mockResolvedValueOnce(nominatedFallback)
+      .mockResolvedValueOnce(succeededFallback);
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { result } = renderHook(() => useAvatarStream(ref));
+    const { sendSdpOffer, triggerIceComplete } = createMockSdpExchange(
+      result.current.handleServerSdp,
+    );
+    await act(async () => {
+      const pending = result.current.connect([], sendSdpOffer);
+      await waitAndTriggerIce(triggerIceComplete);
+      await pending;
+      await Promise.resolve();
+    });
+
+    for (let tick = 0; tick < 4; tick += 1) {
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+        await Promise.resolve();
+      });
+    }
+
+    expect(mockPc.getStats).toHaveBeenCalledTimes(5);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[AvatarStream]"),
+      expect.stringContaining("video bytes stalled"),
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[AvatarStream]"),
+      expect.stringContaining("audio bytes stalled"),
+    );
+    act(() => result.current.disconnect());
   });
 
   it("stats interval detects video packet loss anomaly (>5%)", async () => {
@@ -856,5 +1004,36 @@ describe("useAvatarStream", () => {
       expect.any(Error),
     );
     warnSpy.mockRestore();
+  });
+
+  it("ontrack audio handles an empty stream and play rejection", async () => {
+    const video = createMockVideoElement();
+    const ref = { current: video } as React.RefObject<HTMLVideoElement | null>;
+    const error = new Error("audio autoplay blocked");
+    vi.spyOn(HTMLAudioElement.prototype, "play").mockRejectedValueOnce(error);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const { result } = renderHook(() => useAvatarStream(ref));
+    const { sendSdpOffer, triggerIceComplete } = createMockSdpExchange(
+      result.current.handleServerSdp,
+    );
+    await act(async () => {
+      const pending = result.current.connect([], sendSdpOffer);
+      await waitAndTriggerIce(triggerIceComplete);
+      await pending;
+    });
+
+    const ontrack = mockPc.ontrack as (event: unknown) => void;
+    await act(async () => {
+      ontrack({ track: { kind: "audio", readyState: "live" }, streams: [] });
+      await Promise.resolve();
+    });
+
+    expect(document.querySelector("audio")?.srcObject).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining("[AvatarStream]"),
+      expect.stringContaining("Audio play() failed"),
+      error,
+    );
   });
 });

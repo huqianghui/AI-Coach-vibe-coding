@@ -188,6 +188,31 @@ describe("Conference API client", () => {
 
       expect(result).toHaveLength(0);
     });
+
+    it("defaults optional display metadata for legacy audience rows", async () => {
+      mockClient.get.mockResolvedValue({
+        data: [
+          {
+            id: "ah-legacy",
+            scenario_id: "sc-1",
+            hcp_profile_id: "hcp-legacy",
+            role_in_conference: "audience",
+            voice_id: "",
+            sort_order: 3,
+          },
+        ],
+      });
+
+      const [legacy] = await getAudienceHcps("sc-1");
+
+      expect(legacy).toMatchObject({
+        hcpName: "",
+        hcpSpecialty: "",
+        voiceLiveInstanceId: undefined,
+        voiceName: undefined,
+        status: "listening",
+      });
+    });
   });
 
   describe("setAudienceHcps", () => {
@@ -231,6 +256,31 @@ describe("Conference API client", () => {
       );
       expect(result).toHaveLength(1);
       expect(result[0]?.hcpProfileId).toBe("hp-1");
+    });
+
+    it("preserves explicit role, voice, and zero sort order in the payload", async () => {
+      mockClient.put.mockResolvedValue({ data: [] });
+
+      await setAudienceHcps("sc-2", [
+        {
+          hcpProfileId: "hp-9",
+          roleInConference: "moderator",
+          voiceId: "voice-9",
+          sortOrder: 0,
+        },
+      ]);
+
+      expect(mockClient.put).toHaveBeenCalledWith(
+        "/conference/scenarios/sc-2/audience",
+        [
+          {
+            hcp_profile_id: "hp-9",
+            role_in_conference: "moderator",
+            voice_id: "voice-9",
+            sort_order: 0,
+          },
+        ],
+      );
     });
   });
 });

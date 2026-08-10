@@ -20,7 +20,7 @@ import { useAudioHandler } from "@/hooks/use-audio-handler";
 import { useAudioPlayer } from "@/hooks/use-audio-player";
 import { useVoiceSessionLifecycle } from "@/hooks/use-voice-session-lifecycle";
 import { useSessionRecorder } from "@/hooks/use-session-recorder";
-import { useSSEStream } from "@/hooks/use-sse";
+import { streamSessionMessage } from "@/api/sessions";
 import { persistTranscriptMessage } from "@/api/voice-live";
 import { VoiceSessionHeader } from "@/components/voice/voice-session-header";
 import { AvatarView } from "@/components/voice/avatar-view";
@@ -33,7 +33,13 @@ import type {
   SessionMode,
   TranscriptSegment,
 } from "@/types/voice-live";
-import type { KeyMessageStatus, CoachingHint } from "@/types/session";
+import type {
+  CoachingHint,
+  KeyMessageStatus,
+  SessionStreamError,
+  SessionTurnState,
+  SessionTurnStatus,
+} from "@/types/session";
 import type { Scenario } from "@/types/scenario";
 
 function normalizeSessionMode(mode: string | undefined): SessionMode {
@@ -51,13 +57,6 @@ function normalizeSessionMode(mode: string | undefined): SessionMode {
 
 function isDigitalHumanMode(mode: SessionMode): boolean {
   return mode.startsWith("digital_human_");
-}
-
-function resolveConnectedMode(requestedMode: SessionMode, avatarEnabled: boolean): SessionMode {
-  if (avatarEnabled && isDigitalHumanMode(requestedMode)) {
-    return "digital_human_realtime_model";
-  }
-  return "voice_realtime_model";
 }
 
 /**
@@ -101,7 +100,13 @@ export default function UnifiedSession() {
   const [startedAt] = useState<string>(new Date().toISOString());
   const [scenarioPanelCollapsed, setScenarioPanelCollapsed] = useState(false);
   const [hintsPanelCollapsed, setHintsPanelCollapsed] = useState(false);
+  const [turnStatus, setTurnStatus] = useState<SessionTurnStatus>("idle");
+  const [turnError, setTurnError] = useState<string | null>(null);
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const assistantSegmentIdRef = useRef<string | null>(null);
+  const assistantTextRef = useRef("");
+  const turnAbortRef = useRef<AbortController | null>(null);
 
   // Track pending transcript flush promises
   const pendingFlushesRef = useRef<Promise<void>[]>([]);
@@ -188,29 +193,47 @@ export default function UnifiedSession() {
     },
   });
 
-  const { startSession: startVoiceSession, stopSession: stopVoiceSession } =
-    useVoiceSessionLifecycle({ voiceLive, avatarStream, audioHandler, audioPlayer });
+  const { stopSession: stopVoiceSession } = useVoiceSessionLifecycle({
+    voiceLive,
+    avatarStream,
+    audioHandler,
+    audioPlayer,
+  });
 
-  // SSE stream for text-mode input (chatbox)
   const sseCallbacks = useMemo(
     () => ({
+      onState: (state: SessionTurnState) => {
+        if (state.code === "SESSION_TURN_RECONCILING") {
+          setTurnStatus("reconciling");
+        } else if (state.code === "SESSION_TURN_FAILED") {
+          setTurnStatus("failed_terminal");
+        } else if (state.code === "SESSION_TURN_ACCEPTED") {
+          setTurnStatus("accepted");
+        } else {
+          setTurnStatus("in_progress");
+        }
+      },
       onText: (chunk: string) => {
-        // Accumulate streaming text into current assistant segment
+        assistantTextRef.current += chunk;
+        const segmentId = assistantSegmentIdRef.current ?? `sse-assistant-${Date.now()}`;
+        assistantSegmentIdRef.current = segmentId;
         setTranscripts((prev) => {
-          const lastIdx = prev.length - 1;
-          const last = prev[lastIdx];
-          if (last && last.role === "assistant" && !last.isFinal) {
+          const existing = prev.findIndex((segment) => segment.id === segmentId);
+          if (existing >= 0) {
             const updated = [...prev];
-            updated[lastIdx] = { ...last, content: last.content + chunk };
+            updated[existing] = {
+              ...updated[existing]!,
+              content: assistantTextRef.current,
+              isFinal: false,
+            };
             return updated;
           }
-          // Create new streaming segment
           return [
             ...prev,
             {
-              id: `sse-assistant-${Date.now()}`,
+              id: segmentId,
               role: "assistant" as const,
-              content: chunk,
+              content: assistantTextRef.current,
               isFinal: false,
               timestamp: Date.now(),
             },
@@ -224,25 +247,25 @@ export default function UnifiedSession() {
         setKeyMessagesStatus(status);
       },
       onDone: () => {
-        // Mark last streaming segment as final
+        const segmentId = assistantSegmentIdRef.current;
         setTranscripts((prev) => {
-          const lastIdx = prev.length - 1;
-          const last = prev[lastIdx];
-          if (last && last.role === "assistant" && !last.isFinal) {
-            const updated = [...prev];
-            updated[lastIdx] = { ...last, isFinal: true };
-            return updated;
-          }
-          return prev;
+          if (!segmentId) return prev;
+          return prev.map((segment) =>
+            segment.id === segmentId ? { ...segment, isFinal: true } : segment,
+          );
         });
+        setTurnStatus("succeeded");
+        setPendingMessage(null);
       },
-      onError: (error: string) => {
-        toast.error(error);
+      onError: (error: SessionStreamError) => {
+        setTurnStatus("failed_terminal");
+        setTurnError(error.message);
+        toast.error(error.message);
       },
     }),
     [],
   );
-  const { sendMessage: sendSSEMessage, isStreaming } = useSSEStream(sseCallbacks);
+  const isTurnBusy = ["accepted", "in_progress", "reconciling"].includes(turnStatus);
 
   // Initialize display mode from the persisted session mode.
   useEffect(() => {
@@ -275,7 +298,7 @@ export default function UnifiedSession() {
     setIsConnecting(true);
     log.info("handleStartSession: mode=%s scenarioId=%s", session?.mode, session?.scenario_id);
 
-    // Text mode: skip voice connection entirely
+    // Text mode: skip voice connection entirely.
     if (session?.mode === "text") {
       setCurrentMode("text");
       initialModeRef.current = "text";
@@ -283,55 +306,13 @@ export default function UnifiedSession() {
       return;
     }
 
-    try {
-      const requestedMode = normalizeSessionMode(session?.mode);
-      const result = await startVoiceSession({
-        sessionId,
-        avatarEnabled: isDigitalHumanMode(requestedMode),
-        onMicDenied: () => toast.error(t("micDenied")),
-        onAudioWorkletFailed: () => toast.error(tv("error.audioWorkletFailed")),
-        onAvatarFailed: () => {
-          log.error("Avatar WebRTC failed");
-          toast.error(tv("error.avatarFailed"));
-          setCurrentMode("voice_realtime_model");
-        },
-        onConnectionFailed: (error) => {
-          log.error("Connection failed: %o", error);
-          toast.error(tv("error.connectionFailed"));
-        },
-      });
+    // Session-bound Voice/avatar/WebRTC are intentionally unavailable until
+    // their exact context contract is proven. Never start a transport or fall back.
+    setIsConnecting(false);
+    setTurnError(tv("sessionContextUnavailable"));
+    return;
 
-      if (!result) {
-        setSessionStarted(false);
-        return;
-      }
-
-      if (result) {
-        const resolvedMode = resolveConnectedMode(
-          requestedMode,
-          result.avatarEnabled,
-        );
-        setCurrentMode(resolvedMode);
-        initialModeRef.current = resolvedMode;
-
-        // Start session recording for voice scoring via CU
-        const micStream = audioHandler.streamRef.current;
-        if (micStream) {
-          const started = await sessionRecorder.startRecording(micStream);
-          if (started) {
-            log.info("Session recorder started");
-          } else {
-            log.warn("Session recorder failed to start");
-          }
-        }
-      }
-    } catch (error) {
-      log.error("Session start failed: %o", error);
-      setSessionStarted(false);
-    } finally {
-      setIsConnecting(false);
-    }
-  }, [sessionId, session?.mode, session?.scenario_id, startVoiceSession, stopVoiceSession, sessionRecorder, audioHandler, t, tv, log]);
+  }, [session?.mode, session?.scenario_id, tv, log]);
 
   // Auto-start for text mode — no voice connection needed, show avatar immediately
   useEffect(() => {
@@ -397,40 +378,48 @@ export default function UnifiedSession() {
     }
   }, [sessionId, sessionRecorder, stopVoiceSession, endSessionMutation, navigate, t, tv, log]);
 
-  // Text message handler (keyboard input — sends via SSE for text conversation OR via voice-live)
-  const handleSendText = useCallback(
-    async (text: string) => {
-      // Add user message to transcripts
-      const userSegment: TranscriptSegment = {
-        id: `user-text-${Date.now()}`,
-        role: "user",
-        content: text,
-        isFinal: true,
-        timestamp: Date.now(),
-      };
-
-      // If voice is connected, send via voice-live (text injection).
-      // handleTranscript persists the transcript for voice sessions.
-      if (voiceLive.connectionState === "connected") {
-        handleTranscript(userSegment);
-        await voiceLive.sendTextMessage(text);
-      } else {
-        // SSE text mode: backend POST /message already saves the user message,
-        // so only add to local UI without persisting (avoids duplicate save).
-        setTranscripts((prev) => [...prev, userSegment]);
-        await sendSSEMessage(sessionId, text);
+  const sendTextTurn = useCallback(
+    async (text: string, resume: boolean) => {
+      if (isTurnBusy) return;
+      if (!resume) {
+        setTranscripts((prev) => [
+          ...prev,
+          {
+            id: `user-text-${Date.now()}`,
+            role: "user",
+            content: text,
+            isFinal: true,
+            timestamp: Date.now(),
+          },
+        ]);
+        assistantSegmentIdRef.current = `sse-assistant-${Date.now()}`;
+        assistantTextRef.current = "";
+      }
+      setPendingMessage(text);
+      setTurnError(null);
+      setTurnStatus("accepted");
+      const controller = new AbortController();
+      turnAbortRef.current = controller;
+      try {
+        await streamSessionMessage(sessionId, text, sseCallbacks, controller.signal);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setTurnStatus("disconnected");
+        setTurnError(tv("turn.disconnected"));
+      } finally {
+        if (turnAbortRef.current === controller) turnAbortRef.current = null;
       }
     },
-    [voiceLive, handleTranscript, sendSSEMessage, sessionId],
+    [isTurnBusy, sessionId, sseCallbacks, tv],
   );
 
   const [inputText, setInputText] = useState("");
 
   const handleKeyboardSubmit = useCallback(() => {
-    if (!inputText.trim() || isStreaming) return;
-    void handleSendText(inputText.trim());
+    if (!inputText.trim() || isTurnBusy || session?.mode !== "text") return;
+    void sendTextTurn(inputText.trim(), false);
     setInputText("");
-  }, [inputText, handleSendText, isStreaming]);
+  }, [inputText, isTurnBusy, sendTextTurn, session?.mode]);
 
   // Error state
   if (sessionError || scenarioError) {
@@ -529,6 +518,20 @@ export default function UnifiedSession() {
             className="flex-1"
           />
 
+          {session.mode !== "text" && (
+            <div
+              className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-4 bg-slate-950/90 px-8 text-center text-white"
+              data-testid="transport-unavailable"
+              role="alert"
+            >
+              <AlertTriangle className="h-10 w-10 text-amber-400" />
+              <p className="max-w-md text-sm">{tv("sessionContextUnavailable")}</p>
+              <Button variant="outline" onClick={() => navigate("/user/training")}>
+                {tc("back")}
+              </Button>
+            </div>
+          )}
+
           {/* Start button overlay — shown before session begins */}
           {!sessionStarted && !isConnecting && (
             <div
@@ -584,7 +587,24 @@ export default function UnifiedSession() {
 
           {/* Keyboard/text input area — always visible for MR to type */}
           {showKeyboard && (
-            <div className="flex items-center gap-2 border-t border-slate-200 px-4 py-3">
+            <div className="flex flex-col gap-2 border-t border-slate-200 px-4 py-3">
+              {turnStatus !== "idle" && (
+                <div className="text-xs text-slate-500" data-testid="turn-status">
+                  {tv(`turn.${turnStatus}`)}
+                </div>
+              )}
+              {turnError && <div className="text-xs text-red-600">{turnError}</div>}
+              {turnStatus === "disconnected" && pendingMessage && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void sendTextTurn(pendingMessage, true)}
+                  data-testid="resume-turn-btn"
+                >
+                  {tv("turn.resume")}
+                </Button>
+              )}
+              <div className="flex items-center gap-2">
               <input
                 type="text"
                 value={inputText}
@@ -593,18 +613,19 @@ export default function UnifiedSession() {
                   if (e.key === "Enter") handleKeyboardSubmit();
                 }}
                 placeholder={t("chat.placeholder")}
-                disabled={isStreaming}
+                disabled={isTurnBusy || session.mode !== "text"}
                 className="flex-1 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
                 data-testid="text-input"
               />
               <Button
                 size="sm"
                 onClick={handleKeyboardSubmit}
-                disabled={isStreaming || !inputText.trim()}
+                disabled={isTurnBusy || session.mode !== "text" || !inputText.trim()}
                 data-testid="send-btn"
               >
                 {tc("send")}
               </Button>
+              </div>
             </div>
           )}
         </div>

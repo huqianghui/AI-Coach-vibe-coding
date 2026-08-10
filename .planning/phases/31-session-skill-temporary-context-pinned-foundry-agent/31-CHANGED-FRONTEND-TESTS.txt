@@ -1,0 +1,8 @@
+# Reviewed frontend tests changed from baseline through Plan 08.
+frontend/e2e/phase31-live-webrtc-authority.spec.ts
+frontend/e2e/unified-training-session-skill-context.spec.ts
+frontend/src/api/sessions.test.ts
+frontend/src/lib/rubric-form.test.ts
+frontend/src/pages/admin/rubric-editor.test.tsx
+frontend/src/pages/user/unified-session.test.tsx
+frontend/src/scripts/verify-changed-v8-branches.test.ts

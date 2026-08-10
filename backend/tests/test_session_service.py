@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from app.models.hcp_profile import HcpProfile
 from app.models.scenario import Scenario
 from app.models.session import CoachingSession
+from app.models.skill import Skill, SkillVersion
 from app.models.user import User
 from app.services.auth import get_password_hash
 from app.services.session_service import (
@@ -50,6 +51,26 @@ async def _seed_user_and_scenario(db) -> tuple[str, str]:
     db.add(hcp)
     await db.flush()
 
+    skill = Skill(
+        name="Session SOP",
+        description="Pinned session SOP",
+        content="# SOP\n## Step 1: Open\n## Step 2: Discover\n## Step 3: Close",
+        status="published",
+        created_by=user.id,
+    )
+    db.add(skill)
+    await db.flush()
+    skill_version = SkillVersion(
+        skill_id=skill.id,
+        version_number=1,
+        content=skill.content,
+        metadata_json='{"knowledge_references":["label"]}',
+        is_published=True,
+        created_by=user.id,
+    )
+    db.add(skill_version)
+    await db.flush()
+
     scenario = Scenario(
         name="Active Scenario",
         hcp_profile_id=hcp.id,
@@ -57,7 +78,8 @@ async def _seed_user_and_scenario(db) -> tuple[str, str]:
         status="active",
         created_by=user.id,
         rubric_id="test-rubric-id",
-        skill_id="test-skill-id",
+        skill_id=skill.id,
+        skill_version_id=skill_version.id,
     )
     db.add(scenario)
     await db.flush()

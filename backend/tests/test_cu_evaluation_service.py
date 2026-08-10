@@ -1,17 +1,27 @@
 """Tests for CU Evaluation Service — voice analyzer schema, auth, merge, and voice parsing."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.services.cu_evaluation_service import (
     DEFAULT_VOICE_DIMENSIONS,
+    _calculate_weighted_total,
+    _coerce_score,
+    _extract_cu_field_value,
     _get_auth_headers,
+    _get_session_rubric,
+    _mime_type_for_audio_path,
     _parse_cu_voice_result,
+    _poll_analyzer_operation,
+    _poll_result,
     _put_analyzer,
+    _wait_for_analyzer_ready,
     build_voice_analyzer_schema,
     merge_scores,
     score_voice_with_cu,
+    sync_rubric_analyzers,
 )
 
 
@@ -217,6 +227,132 @@ class TestPutAnalyzer:
                 )
 
 
+class TestCuPollingBranches:
+    class Response:
+        def __init__(self, status_code=200, body=None, text="error"):
+            self.status_code = status_code
+            self.body = body or {}
+            self.text = text
+
+        def json(self):
+            return self.body
+
+    async def test_operation_poll_http_failure_and_terminal_failure(self):
+        client = AsyncMock()
+        client.get.return_value = self.Response(status_code=500)
+        with patch("app.services.cu_evaluation_service.asyncio.sleep", AsyncMock()):
+            with pytest.raises(RuntimeError, match="poll failed"):
+                await _poll_analyzer_operation(client, "operation", {}, "analyzer")
+
+        client.get.return_value = self.Response(
+            body={"status": "Failed", "error": {"message": "bad analyzer"}}
+        )
+        with patch("app.services.cu_evaluation_service.asyncio.sleep", AsyncMock()):
+            with pytest.raises(RuntimeError, match="bad analyzer"):
+                await _poll_analyzer_operation(client, "operation", {}, "analyzer")
+
+    async def test_operation_and_result_poll_timeouts(self):
+        client = AsyncMock()
+        client.get.return_value = self.Response(body={"status": "running"})
+        with (
+            patch("app.services.cu_evaluation_service.MAX_POLL_ATTEMPTS", 1),
+            patch("app.services.cu_evaluation_service.asyncio.sleep", AsyncMock()),
+        ):
+            with pytest.raises(RuntimeError, match="operation timed out"):
+                await _poll_analyzer_operation(client, "operation", {}, "analyzer")
+            with pytest.raises(RuntimeError, match="analysis timed out"):
+                await _poll_result(client, "operation", {})
+
+    async def test_readiness_not_found_failure_error_and_timeout(self):
+        client = AsyncMock()
+        with (
+            patch("app.services.cu_evaluation_service.MAX_POLL_ATTEMPTS", 1),
+            patch("app.services.cu_evaluation_service.asyncio.sleep", AsyncMock()),
+        ):
+            client.get.return_value = self.Response(status_code=404)
+            with pytest.raises(RuntimeError, match="was not ready"):
+                await _wait_for_analyzer_ready(client, "url", {}, "analyzer")
+
+            client.get.return_value = self.Response(status_code=500)
+            with pytest.raises(RuntimeError, match="readiness check failed"):
+                await _wait_for_analyzer_ready(client, "url", {}, "analyzer")
+
+            client.get.return_value = self.Response(body={"status": "failed"})
+            with pytest.raises(RuntimeError, match="is failed"):
+                await _wait_for_analyzer_ready(client, "url", {}, "analyzer")
+
+            client.get.return_value = self.Response(body={"status": "creating"})
+            with pytest.raises(RuntimeError, match="was not ready"):
+                await _wait_for_analyzer_ready(client, "url", {}, "analyzer")
+
+    async def test_poll_result_failure_and_fields_without_contents(self):
+        client = AsyncMock()
+        client.get.return_value = self.Response(
+            body={"status": "cancelled", "error": {"message": "cancelled by user"}}
+        )
+        with patch("app.services.cu_evaluation_service.asyncio.sleep", AsyncMock()):
+            with pytest.raises(RuntimeError, match="cancelled by user"):
+                await _poll_result(client, "operation", {"Content-Type": "application/json"})
+
+        client.get.return_value = self.Response(
+            body={"status": "Succeeded", "result": {"fields": {"score": 9}}}
+        )
+        with patch("app.services.cu_evaluation_service.asyncio.sleep", AsyncMock()):
+            assert await _poll_result(client, "operation", {}) == {"score": 9}
+
+
+class TestRubricAnalyzerSync:
+    async def test_skips_without_endpoint(self):
+        db = AsyncMock()
+        rubric = SimpleNamespace(id="12345678-rest")
+        with (
+            patch(
+                "app.services.cu_evaluation_service.config_service.get_effective_endpoint",
+                AsyncMock(return_value=""),
+            ),
+            patch(
+                "app.services.cu_evaluation_service.config_service.get_effective_key",
+                AsyncMock(return_value=""),
+            ),
+            patch("app.services.cu_evaluation_service._put_analyzer", AsyncMock()) as put,
+        ):
+            await sync_rubric_analyzers(db, rubric)
+        put.assert_not_awaited()
+        db.flush.assert_not_awaited()
+
+    async def test_syncs_voice_analyzer_and_flushes(self):
+        db = AsyncMock()
+        rubric = SimpleNamespace(
+            id="12345678-abcd", cu_content_analyzer_id="old", cu_voice_analyzer_id=None
+        )
+        with (
+            patch(
+                "app.services.cu_evaluation_service.config_service.get_effective_endpoint",
+                AsyncMock(return_value="https://endpoint/"),
+            ),
+            patch(
+                "app.services.cu_evaluation_service.config_service.get_effective_key",
+                AsyncMock(return_value="key"),
+            ),
+            patch("app.services.cu_evaluation_service._put_analyzer", AsyncMock()) as put,
+        ):
+            await sync_rubric_analyzers(db, rubric)
+        put.assert_awaited_once()
+        assert put.await_args.args[0] == "https://endpoint"
+        assert rubric.cu_content_analyzer_id is None
+        assert rubric.cu_voice_analyzer_id == "rubricVoice12345678"
+        db.flush.assert_awaited_once()
+
+    async def test_session_rubric_missing_and_found(self):
+        db = AsyncMock()
+        assert await _get_session_rubric(db, SimpleNamespace(rubric_id=None)) is None
+        rubric = object()
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = rubric
+        db.execute.return_value = result
+        assert await _get_session_rubric(db, SimpleNamespace(rubric_id="rubric")) is rubric
+
+
 class TestScoreVoiceWithCu:
     """Test voice scoring submission payloads."""
 
@@ -275,6 +411,63 @@ class TestScoreVoiceWithCu:
 
         assert captured_body == {"inputs": [{"data": "YXVkaW8tYnl0ZXM=", "mimeType": "audio/webm"}]}
         assert result == {"transcript": {"valueString": "hi"}}
+
+    @pytest.mark.parametrize(
+        ("post_status", "operation_location", "message"),
+        [(500, "operation", "submission failed"), (202, "", "No Operation-Location")],
+    )
+    async def test_submission_response_errors(self, post_status, operation_location, message):
+        response = MagicMock(
+            status_code=post_status,
+            headers={"Operation-Location": operation_location},
+            text="failure",
+        )
+        client = AsyncMock()
+        client.__aenter__.return_value = client
+        client.post.return_value = response
+        with (
+            patch(
+                "app.services.cu_evaluation_service._get_auth_headers", AsyncMock(return_value={})
+            ),
+            patch("app.services.cu_evaluation_service.httpx.AsyncClient", return_value=client),
+        ):
+            with pytest.raises(RuntimeError, match=message):
+                await score_voice_with_cu("https://endpoint/", "", "analyzer", "https://audio")
+
+    async def test_url_and_local_file_inputs(self, tmp_path):
+        captured = []
+        response = MagicMock(
+            status_code=202,
+            headers={"Operation-Location": "operation"},
+            text="",
+        )
+        client = AsyncMock()
+        client.__aenter__.return_value = client
+        client.post.return_value = response
+
+        async def capture(_client, _operation, _headers):
+            captured.append(client.post.await_args.kwargs["json"])
+            return {}
+
+        audio = tmp_path / "audio.mp3"
+        audio.write_bytes(b"local")
+        with (
+            patch(
+                "app.services.cu_evaluation_service._get_auth_headers", AsyncMock(return_value={})
+            ),
+            patch("app.services.cu_evaluation_service.httpx.AsyncClient", return_value=client),
+            patch("app.services.cu_evaluation_service._poll_result", side_effect=capture),
+        ):
+            await score_voice_with_cu("https://endpoint", "", "analyzer", "https://audio/file.wav")
+            await score_voice_with_cu("https://endpoint", "", "analyzer", str(audio))
+
+            with pytest.raises(RuntimeError, match="Failed to read local"):
+                await score_voice_with_cu(
+                    "https://endpoint", "", "analyzer", str(tmp_path / "missing")
+                )
+
+        assert captured[0] == {"inputs": [{"url": "https://audio/file.wav"}]}
+        assert captured[1]["inputs"][0]["mimeType"] == "audio/mpeg"
 
     @pytest.mark.asyncio
     async def test_audio_data_uses_stable_inputs_shape_when_binary_requested(self):
@@ -394,6 +587,27 @@ class TestMergeScores:
         result = merge_scores(content_scores, None, 60, 40)
         assert result["content_total"] == 0.0
         assert result["overall_score"] == 0.0
+
+    def test_unweighted_dimensions_use_arithmetic_mean(self):
+        assert _calculate_weighted_total([{"score": 50}, {"score": 100}]) == 75
+
+
+class TestCuValueHelpers:
+    def test_mime_type_and_nested_value_variants(self):
+        assert _mime_type_for_audio_path("https://host/audio.WAV?token=x") == "audio/wav"
+        assert _mime_type_for_audio_path("unknown") == "application/octet-stream"
+        assert _extract_cu_field_value("plain") == "plain"
+        assert _extract_cu_field_value({"valueArray": [{"valueString": "1"}]}) == [1]
+        assert _extract_cu_field_value({"valueString": "not-json"}) == "not-json"
+        assert _extract_cu_field_value({"content": "[1, 2]"}) == [1, 2]
+        assert _extract_cu_field_value({"content": 3}) == 3
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [(True, 0), (None, 0), (5, 5), (2.5, 2.5), ("3.5", 3.5), ("bad", 0), ([], 0)],
+    )
+    def test_score_coercion(self, value, expected):
+        assert _coerce_score(value) == expected
 
 
 class TestParseCuVoiceResult:

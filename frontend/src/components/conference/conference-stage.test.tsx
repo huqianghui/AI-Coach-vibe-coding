@@ -224,6 +224,30 @@ describe("ConferenceStage", () => {
     expect(container.querySelector(".grid-cols-2")).toBeInTheDocument();
   });
 
+  it("uses dedicated gallery layouts for one and two HCPs", () => {
+    const { rerender, container } = render(
+      <ConferenceStage
+        {...defaultProps}
+        digitalHumanEnabled={true}
+        avatarVideoRef={{ current: null }}
+        audienceHcps={[makeAudienceHcp(1)]}
+      />,
+    );
+
+    expect(container.querySelector(".grid-cols-1")).toBeInTheDocument();
+
+    rerender(
+      <ConferenceStage
+        {...defaultProps}
+        digitalHumanEnabled={true}
+        avatarVideoRef={{ current: null }}
+        audienceHcps={[makeAudienceHcp(1), makeAudienceHcp(2)]}
+      />,
+    );
+
+    expect(container.querySelector(".grid-cols-2")).toBeInTheDocument();
+  });
+
   it("shows every HCP as a digital human while only the current speaker is active", () => {
     const audienceHcps = [1, 2, 3].map(makeAudienceHcp);
 

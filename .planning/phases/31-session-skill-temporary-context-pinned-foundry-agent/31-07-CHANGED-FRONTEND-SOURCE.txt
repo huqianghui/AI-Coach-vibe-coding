@@ -1,0 +1,3 @@
+frontend/src/api/sessions.ts
+frontend/src/pages/user/unified-session.tsx
+frontend/src/types/session.ts

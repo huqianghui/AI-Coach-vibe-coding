@@ -130,6 +130,16 @@ describe("Scoring API client", () => {
       expect(result).toHaveLength(0);
     });
 
+    it("treats a zero limit as an omitted limit", async () => {
+      mockClient.get.mockResolvedValue({ data: [] });
+
+      await getScoreHistory(0);
+
+      expect(mockClient.get).toHaveBeenCalledWith("/scoring/history", {
+        params: undefined,
+      });
+    });
+
     it("propagates errors from apiClient", async () => {
       mockClient.get.mockRejectedValue(new Error("500 Internal Server Error"));
 

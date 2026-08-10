@@ -30,7 +30,7 @@ const mockVoiceLiveDisconnect = vi.fn().mockResolvedValue(undefined);
 const mockVoiceLiveSend = vi.fn();
 const mockAvatarSdpCallbackRef = { current: null as ((serverSdp: string) => void) | null };
 const mockGetHcpProfile = vi.hoisted(() =>
-  vi.fn((id = "hp-1") =>
+  vi.fn((id = "hp-1"): Promise<Record<string, unknown>> =>
     Promise.resolve({
       id,
       name: id === "hp-2" ? "Dr. Zhang Wei" : "Dr. Smith",
@@ -376,6 +376,15 @@ describe("ConferenceSession", () => {
   it("defaults to text input mode without an inputMode query param", () => {
     renderConferenceSession();
     expect(capturedConferenceStageProps.inputMode).toBe("text");
+  });
+
+  it("treats an unsupported inputMode value as text and an absent id as empty", () => {
+    mockSearchParams = new URLSearchParams("inputMode=video");
+    renderConferenceSession();
+
+    expect(capturedConferenceStageProps.inputMode).toBe("text");
+    expect(capturedConferenceStageProps.sessionId).toBe("");
+    expect(mockSendMessage).not.toHaveBeenCalledWith("start", "");
   });
 
   it("initializes audio input mode from the inputMode query param", () => {
@@ -1051,6 +1060,33 @@ describe("ConferenceSession", () => {
     );
   });
 
+  it("uses the translated fallback when avatar connection rejects with a non-Error", async () => {
+    mockSessionData = {
+      ...mockSessionData,
+      mode: "digital_human_realtime_model",
+    };
+    mockVoiceLiveConnect.mockRejectedValueOnce("socket closed");
+    renderConferenceSession();
+
+    await act(async () => {
+      await (capturedConferenceStageProps.onAvatarConnectClick as () => Promise<void>)();
+    });
+
+    expect(mockToastError).toHaveBeenCalledWith("数字人连接失败：error.avatarFailed");
+    expect(mockAvatarStreamDisconnect).toHaveBeenCalled();
+    expect(mockVoiceLiveDisconnect).toHaveBeenCalled();
+  });
+
+  it("does not open an avatar transport outside digital-human mode", async () => {
+    renderConferenceSession();
+
+    await act(async () => {
+      await (capturedConferenceStageProps.onAvatarConnectClick as () => Promise<void>)();
+    });
+
+    expect(mockVoiceLiveConnect).not.toHaveBeenCalled();
+  });
+
   it("adds user message and calls sendMessage when presenting", async () => {
     const user = userEvent.setup();
     renderConferenceSession();
@@ -1133,6 +1169,42 @@ describe("ConferenceSession", () => {
 
     expect(mockSpeak).toHaveBeenCalledWith("第一句问题。第二句补充说明？", "v1");
     expect(mockSpeak).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to the default TTS voice for an unknown speaker", () => {
+    mockSearchParams = new URLSearchParams("id=cs-1&inputMode=audio");
+    renderConferenceSession();
+
+    act(() => {
+      capturedCallbacks.onSpeakerText?.({
+        speaker_id: "unknown-hcp",
+        speaker_name: "Guest",
+        content: "临时嘉宾提问。",
+      });
+    });
+
+    expect(mockSpeak).toHaveBeenCalledWith("临时嘉宾提问。", undefined);
+  });
+
+  it("falls back to a legacy voice id when no assigned voice name exists", async () => {
+    mockSearchParams = new URLSearchParams("id=cs-1&inputMode=audio");
+    mockGetHcpProfile.mockResolvedValueOnce({
+      id: "hp-1",
+      name: "Dr. Smith",
+      voice_live_instance: null,
+    });
+    renderConferenceSession();
+
+    await waitFor(() => expect(mockGetHcpProfile).toHaveBeenCalledWith("hp-1"));
+    act(() => {
+      capturedCallbacks.onSpeakerText?.({
+        speaker_id: "hp-1",
+        speaker_name: "Dr. Smith",
+        content: "使用旧版语音。",
+      });
+    });
+
+    expect(mockSpeak).toHaveBeenCalledWith("使用旧版语音。", "v1");
   });
 
   it("uses each assigned Voice Live voice for conference speech in audio mode", async () => {
@@ -1536,9 +1608,302 @@ describe("ConferenceSession", () => {
       ...mockSessionData,
       audienceConfig: "not-valid-json",
     };
-    // Should not throw
     renderConferenceSession();
     expect(screen.getByTestId("audience-panel")).toBeInTheDocument();
+    expect(capturedAudiencePanelProps.hcps).toEqual([]);
+  });
+
+  it("wires avatar server SDP to the active avatar stream", async () => {
+    mockSessionData = {
+      ...mockSessionData,
+      mode: "digital_human_realtime_model",
+    };
+    renderConferenceSession();
+
+    act(() => {
+      (capturedConferenceStageProps.onAvatarConnectClick as () => void)();
+    });
+
+    await waitFor(() => {
+      expect(mockAvatarSdpCallbackRef.current).toEqual(expect.any(Function));
+    });
+    act(() => {
+      mockAvatarSdpCallbackRef.current?.("server-sdp-answer");
+    });
+    expect(mockAvatarHandleServerSdp).toHaveBeenCalledWith("server-sdp-answer");
+  });
+
+  it("rejects an HCP whose Voice Live connection has avatar disabled", async () => {
+    mockSessionData = {
+      ...mockSessionData,
+      mode: "digital_human_realtime_model",
+    };
+    mockVoiceLiveConnect.mockResolvedValueOnce({
+      avatarEnabled: false,
+      model: "gpt-4o",
+      mode: "model",
+      iceServers: [],
+    });
+    renderConferenceSession();
+
+    act(() => {
+      (capturedConferenceStageProps.onAvatarConnectClick as () => void)();
+    });
+
+    await waitFor(() => {
+      expect(mockToastError).toHaveBeenCalledWith("当前 HCP 未启用真实数字人");
+    });
+    expect(mockAvatarStreamConnect).not.toHaveBeenCalled();
+    expect(mockAvatarStreamDisconnect).toHaveBeenCalled();
+    expect(mockVoiceLiveDisconnect).toHaveBeenCalled();
+    expect(capturedConferenceStageProps.isAvatarConnected).toBe(false);
+  });
+
+  it("reports a missing avatar HCP binding without opening a connection", async () => {
+    mockSessionData = {
+      ...mockSessionData,
+      mode: "digital_human_realtime_model",
+      audienceConfig: "[]",
+    };
+    renderConferenceSession();
+
+    act(() => {
+      (capturedConferenceStageProps.onAvatarConnectClick as () => void)();
+    });
+
+    await waitFor(() => {
+      expect(mockToastError).toHaveBeenCalledWith("未找到数字人绑定的 HCP 配置");
+    });
+    expect(mockVoiceLiveConnect).not.toHaveBeenCalled();
+  });
+
+  it("coalesces reentrant avatar connection requests", async () => {
+    let resolveConnection: ((value: {
+      avatarEnabled: boolean;
+      model: string;
+      mode: string;
+      iceServers: never[];
+    }) => void) | undefined;
+    mockSessionData = {
+      ...mockSessionData,
+      mode: "digital_human_realtime_model",
+    };
+    mockVoiceLiveConnect.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveConnection = resolve;
+        }),
+    );
+    renderConferenceSession();
+
+    act(() => {
+      (capturedConferenceStageProps.onAvatarConnectClick as () => void)();
+    });
+    await waitFor(() => {
+      expect(mockVoiceLiveConnect).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      (capturedConferenceStageProps.onAvatarConnectClick as () => void)();
+    });
+
+    expect(mockVoiceLiveConnect).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolveConnection?.({
+        avatarEnabled: true,
+        model: "gpt-4o",
+        mode: "model",
+        iceServers: [],
+      });
+    });
+    await waitFor(() => {
+      expect(capturedConferenceStageProps.isAvatarConnected).toBe(true);
+    });
+  });
+
+  it("serializes reentrant avatar speech until each response completes", async () => {
+    mockSearchParams = new URLSearchParams("id=cs-1&inputMode=audio");
+    mockSessionData = {
+      ...mockSessionData,
+      mode: "digital_human_realtime_model",
+    };
+    renderConferenceSession();
+    act(() => {
+      (capturedConferenceStageProps.onAvatarConnectClick as () => void)();
+    });
+    await waitFor(() => {
+      expect(capturedConferenceStageProps.isAvatarConnected).toBe(true);
+    });
+    mockVoiceLiveSend.mockClear();
+
+    act(() => {
+      capturedCallbacks.onSpeakerText?.({
+        speaker_id: "hp-1",
+        speaker_name: "Dr. Smith",
+        content: "第一段发言。",
+      });
+      capturedCallbacks.onSpeakerText?.({
+        speaker_id: "hp-1",
+        speaker_name: "Dr. Smith",
+        content: "第二段发言。",
+      });
+    });
+
+    await waitFor(() => {
+      expect(mockVoiceLiveSend).toHaveBeenCalledTimes(2);
+    });
+    act(() => {
+      (capturedVoiceLiveOptions.onResponseDone as () => void)();
+    });
+    await waitFor(() => {
+      expect(mockVoiceLiveSend).toHaveBeenCalledTimes(4);
+    });
+    expect(mockVoiceLiveSend).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: "response.create",
+        response: expect.objectContaining({
+          instructions: expect.stringContaining("第二段发言。"),
+        }),
+      }),
+    );
+    act(() => {
+      (capturedVoiceLiveOptions.onResponseDone as () => void)();
+    });
+  });
+
+  it("unblocks queued avatar speech and reports Voice Live errors", async () => {
+    mockSearchParams = new URLSearchParams("id=cs-1&inputMode=audio");
+    mockSessionData = {
+      ...mockSessionData,
+      mode: "digital_human_realtime_model",
+    };
+    renderConferenceSession();
+    act(() => {
+      (capturedConferenceStageProps.onAvatarConnectClick as () => void)();
+    });
+    await waitFor(() => {
+      expect(capturedConferenceStageProps.isAvatarConnected).toBe(true);
+    });
+    mockVoiceLiveSend.mockClear();
+
+    act(() => {
+      capturedCallbacks.onSpeakerText?.({
+        speaker_id: "hp-1",
+        speaker_name: "Dr. Smith",
+        content: "会失败的发言。",
+      });
+      capturedCallbacks.onSpeakerText?.({
+        speaker_id: "hp-1",
+        speaker_name: "Dr. Smith",
+        content: "错误后的发言。",
+      });
+    });
+    await waitFor(() => {
+      expect(mockVoiceLiveSend).toHaveBeenCalledTimes(2);
+    });
+
+    act(() => {
+      (capturedVoiceLiveOptions.onError as (error: Error) => void)(
+        new Error("socket lost"),
+      );
+    });
+
+    expect(mockToastError).toHaveBeenCalledWith("数字人连接失败：socket lost");
+    await waitFor(() => {
+      expect(mockVoiceLiveSend).toHaveBeenCalledTimes(4);
+    });
+    act(() => {
+      (capturedVoiceLiveOptions.onResponseDone as () => void)();
+    });
+  });
+
+  it("reflects avatar connection state callback changes", () => {
+    mockSessionData = {
+      ...mockSessionData,
+      mode: "digital_human_realtime_model",
+    };
+    renderConferenceSession();
+
+    act(() => {
+      (capturedVoiceLiveOptions.onConnectionStateChange as (
+        state: string,
+      ) => void)("connecting");
+    });
+
+    expect(capturedConferenceStageProps.isAvatarConnecting).toBe(true);
+  });
+
+  it("starts session recording for an audio stream and reports start failure", async () => {
+    mockSearchParams = new URLSearchParams("id=cs-1&inputMode=audio");
+    mockSessionRecorderStart.mockResolvedValueOnce(false);
+    renderConferenceSession();
+    const stream = {} as MediaStream;
+
+    await act(async () => {
+      await (capturedSpeechOptions.onStreamReady as (
+        value: MediaStream,
+      ) => Promise<void>)(stream);
+    });
+
+    expect(mockSessionRecorderStart).toHaveBeenCalledWith(stream);
+    expect(mockToastError).toHaveBeenCalledWith("error.voiceRecordingFailed");
+  });
+
+  it("ignores recorder streams while conference input is text", async () => {
+    renderConferenceSession();
+
+    await act(async () => {
+      await (capturedSpeechOptions.onStreamReady as (
+        value: MediaStream,
+      ) => Promise<void>)({} as MediaStream);
+    });
+
+    expect(mockSessionRecorderStart).not.toHaveBeenCalled();
+  });
+
+  it("falls back to text input for speech configuration and connection errors", async () => {
+    mockSearchParams = new URLSearchParams("id=cs-1&inputMode=audio");
+    mockSpeechError = "Speech service not configured";
+    renderConferenceSession();
+
+    await waitFor(() => {
+      expect(capturedConferenceStageProps.inputMode).toBe("text");
+    });
+    expect(mockToastError).toHaveBeenCalledWith("Speech service not configured");
+  });
+
+  it("uses group run scoring navigation and reports recorder upload errors", async () => {
+    mockSearchParams = new URLSearchParams(
+      "id=cs-1&groupRunId=group-7&inputMode=audio",
+    );
+    mockSessionRecorderStopAndUpload.mockResolvedValueOnce({
+      success: false,
+      error: "upload rejected",
+    });
+    const user = userEvent.setup();
+    renderConferenceSession();
+
+    await user.click(screen.getByText("End"));
+    const endButtons = screen.getAllByText("endPresentation");
+    await user.click(endButtons[endButtons.length - 1]!);
+
+    expect(mockToastError).toHaveBeenCalledWith("upload rejected");
+    expect(mockNavigate).toHaveBeenCalledWith(
+      "/user/scoring/cs-1?groupRunId=group-7",
+    );
+  });
+
+  it("uses the translated upload failure when the recorder provides no detail", async () => {
+    mockSearchParams = new URLSearchParams("id=cs-1&inputMode=audio");
+    mockSessionRecorderStopAndUpload.mockResolvedValueOnce({ success: false });
+    const user = userEvent.setup();
+    renderConferenceSession();
+
+    await user.click(screen.getByText("End"));
+    const endButtons = screen.getAllByText("endPresentation");
+    await user.click(endButtons[endButtons.length - 1]!);
+
+    expect(mockToastError).toHaveBeenCalledWith("error.voiceRecordingFailed");
+    expect(mockNavigate).toHaveBeenCalledWith("/user/scoring/cs-1");
   });
 
   // ── Session initialization: subState ──

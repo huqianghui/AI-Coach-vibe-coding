@@ -40,7 +40,6 @@ async def create_webrtc_session_config(
     4. Exchange API key for bearer token via STS
     5. Return everything frontend needs to establish WebRTC connection
     """
-    training_context = None
     if session_id is not None:
         if not user_id:
             raise AppException(
@@ -50,8 +49,12 @@ async def create_webrtc_session_config(
             )
         from app.services.voice_live_websocket import _resolve_training_session_context
 
-        training_context = await _resolve_training_session_context(db, session_id, user_id)
-        hcp_profile_id = training_context["hcp_profile_id"]
+        await _resolve_training_session_context(db, session_id, user_id)
+        raise AppException(
+            status_code=409,
+            code="SESSION_WEBRTC_CONTEXT_UNSUPPORTED",
+            message="Session WebRTC context is unsupported; use text training.",
+        )
 
     # 1. Load config
     vl_config = await config_service.get_config(db, "azure_voice_live")
@@ -91,13 +94,6 @@ async def create_webrtc_session_config(
     echo_cancellation = False
     instructions: str | None = None
 
-    if training_context is not None and not str(default_project or "").strip():
-        raise AppException(
-            status_code=409,
-            code="AGENT_PROJECT_MISSING",
-            message="Voice Live Agent project is not configured",
-        )
-
     # 2. Per-HCP overrides
     if hcp_profile_id:
         from app.services import hcp_profile_service
@@ -106,15 +102,10 @@ async def create_webrtc_session_config(
         try:
             profile = await hcp_profile_service.get_hcp_profile(db, hcp_profile_id)
 
-            # Session-bound identity is the immutable pin. Standalone HCP playground
-            # requests retain their existing latest-profile behavior.
-            if training_context is not None:
-                agent_id = training_context["agent_name"]
-                project_name_val = str(default_project).strip()
             # D-05: auto-resync a classic (asst_*) Foundry Agent to a hosted agent
             # on first WebRTC connection, mirroring the WS-side wiring in
             # voice_live_websocket.py (Plan 29-03). No-op if not asst_-prefixed.
-            elif (profile.agent_id or "").startswith("asst_"):
+            if (profile.agent_id or "").startswith("asst_"):
                 from app.services.agent_sync_service import resync_classic_agent
 
                 await resync_classic_agent(db, profile)
@@ -122,9 +113,7 @@ async def create_webrtc_session_config(
             # D-08: forced agent mode -- a WebRTC voice session for an HCP profile
             # requires a synced hosted agent_id. Reject before any signaling URL
             # or bearer token is built (do not leak a half-configured session).
-            if training_context is None and not (
-                profile.agent_id and profile.agent_sync_status == "synced"
-            ):
+            if not (profile.agent_id and profile.agent_sync_status == "synced"):
                 raise AppException(
                     status_code=409,
                     code="AGENT_SYNC_REQUIRED",
@@ -134,9 +123,8 @@ async def create_webrtc_session_config(
                     ),
                 )
 
-            if training_context is None:
-                agent_id = profile.agent_id
-                project_name_val = default_project
+            agent_id = profile.agent_id
+            project_name_val = default_project
 
             # Resolve voice config from VoiceLiveInstance or fallback inline fields
             vc = resolve_voice_config(profile)
@@ -167,17 +155,7 @@ async def create_webrtc_session_config(
     parsed = urlparse(effective_endpoint)
     endpoint_host = parsed.hostname or parsed.netloc
 
-    if training_context is not None:
-        query = urlencode(
-            {
-                "api-version": _api_version,
-                "agent_name": training_context["agent_name"],
-                "agent_version": training_context["agent_version"],
-                "project_name": str(project_name_val or ""),
-            }
-        )
-        signaling_url = f"wss://{endpoint_host}/voice-live/realtime/calls?{query}"
-    elif is_agent:
+    if is_agent:
         query = urlencode(
             {
                 "api-version": _api_version,
@@ -224,7 +202,7 @@ async def create_webrtc_session_config(
         mode="agent" if is_agent else "model",
         session_config=session_config,
         agent_id=agent_id,
-        agent_version=(training_context["agent_version"] if training_context else None),
+        agent_version=None,
         project_name=project_name_val,
         avatar_warning=AVATAR_WARNING,
     )

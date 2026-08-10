@@ -9,7 +9,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +29,15 @@ class AgentResponseEvent:
     kind: Literal["text", "completed"]
     text: str = ""
     response_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SessionAgentResponse:
+    """Known terminal result from one explicit-Conversation Session request."""
+
+    text: str
+    response_id: str
+    iq_correlations: tuple[dict[str, str], ...]
 
 
 def _validate_agent_reference(agent_name: str, agent_version: str) -> tuple[str, str]:
@@ -74,6 +83,100 @@ async def _build_openai_request(
     if previous_response_id:
         kwargs["previous_response_id"] = previous_response_id
     return client.get_openai_client(), kwargs, project_endpoint
+
+
+async def _build_session_request(
+    db: AsyncSession,
+    agent_name: str,
+    agent_version: str,
+    conversation_id: str,
+) -> tuple[object, dict[str, Any]]:
+    """Construct the restricted exact-Agent request for a server-owned Conversation."""
+    from app.config import get_settings
+    from app.services import config_service
+
+    if not conversation_id.strip():
+        raise AgentChatError("Conversation ID is required")
+    name, version = _validate_agent_reference(agent_name, agent_version)
+    project_endpoint, api_key = await agent_sync_service.get_project_endpoint(db)
+    project_client = agent_sync_service._get_project_client(project_endpoint, api_key)
+    master = await config_service.get_master_config(db)
+    model = master.model_or_deployment if master else get_settings().voice_live_default_model
+    kwargs: dict[str, Any] = {
+        "model": model,
+        "conversation": conversation_id,
+        "stream": True,
+        "extra_body": {
+            "agent_reference": {"name": name, "version": version, "type": "agent_reference"}
+        },
+    }
+    return project_client.get_openai_client(), kwargs
+
+
+def _iq_correlation(event: object) -> dict[str, str] | None:
+    """Accept only a successful exact knowledge_base_retrieve MCP terminal event."""
+    if getattr(event, "type", "") != "response.mcp_call.completed":
+        return None
+    item = getattr(event, "item", None) or getattr(event, "mcp_call", None) or event
+    name = str(getattr(item, "name", "") or "")
+    call_id = str(getattr(item, "id", "") or getattr(item, "call_id", "") or "")
+    status = str(getattr(item, "status", "completed") or "")
+    if (
+        not call_id
+        or name != "knowledge_base_retrieve"
+        or status not in {"completed", "success", "succeeded"}
+    ):
+        return None
+    return {"call_id": call_id, "name": name}
+
+
+async def respond_in_session_conversation(
+    db: AsyncSession,
+    *,
+    agent_name: str,
+    agent_version: str,
+    conversation_id: str,
+    timeout: float = 60.0,
+) -> SessionAgentResponse:
+    """Stream one exact-Agent Response on an explicit Conversation.
+
+    Developer and user items must already have been appended to the Conversation. This
+    request intentionally has no instructions, previous_response_id, tools, or tool_choice.
+    """
+    client, kwargs = await _build_session_request(db, agent_name, agent_version, conversation_id)
+
+    def produce() -> SessionAgentResponse:
+        text: list[str] = []
+        response_id = ""
+        correlations: dict[str, dict[str, str]] = {}
+        stream = client.responses.create(**kwargs)
+        try:
+            for event in stream:
+                event_type = getattr(event, "type", "")
+                if event_type == "response.output_text.delta":
+                    text.append(str(getattr(event, "delta", "") or ""))
+                elif event_type == "response.completed":
+                    response = getattr(event, "response", None)
+                    response_id = str(getattr(response, "id", "") or "")
+                correlation = _iq_correlation(event)
+                if correlation:
+                    correlations[correlation["call_id"]] = correlation
+        finally:
+            close = getattr(stream, "close", None)
+            if callable(close):
+                close()
+        if not response_id:
+            raise AgentChatError("Agent stream ended without completion")
+        return SessionAgentResponse("".join(text), response_id, tuple(correlations.values()))
+
+    try:
+        return await asyncio.wait_for(asyncio.to_thread(produce), timeout=timeout)
+    except TimeoutError as exc:
+        raise AgentChatError("Session Agent response outcome is unknown") from exc
+    except AgentChatError:
+        raise
+    except Exception as exc:
+        raise AgentChatError(f"Session Agent stream failed: {exc}") from exc
 
 
 async def chat_with_agent(

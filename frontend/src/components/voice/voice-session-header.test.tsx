@@ -120,4 +120,52 @@ describe("VoiceSessionHeader", () => {
     const header = container.querySelector("header");
     expect(header?.className).toContain("bg-black/50");
   });
+
+  it("switches to another available mode while disabling the current mode", async () => {
+    const onModeChange = vi.fn();
+    render(
+      <VoiceSessionHeader
+        {...defaultProps}
+        currentMode="voice_realtime_model"
+        initialMode="voice_realtime_model"
+        availableModes={["text", "voice_realtime_model", "digital_human_realtime_model"]}
+        onModeChange={onModeChange}
+      />,
+    );
+
+    await userEvent.click(screen.getByTestId("mode-switch-trigger"));
+
+    expect(
+      screen.getByRole("menuitemradio", { name: "mode.voice_realtime_model" }),
+    ).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(
+      screen.getByRole("menuitemradio", { name: "mode.digital_human_realtime_model" }),
+    );
+    expect(onModeChange).toHaveBeenCalledWith("digital_human_realtime_model");
+  });
+
+  it("keeps the static indicator when only one mode is available", () => {
+    render(
+      <VoiceSessionHeader
+        {...defaultProps}
+        availableModes={["voice_realtime_model"]}
+        onModeChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByTestId("mode-switch-trigger")).not.toBeInTheDocument();
+    expect(screen.getByTestId("mode-status-indicator")).toBeInTheDocument();
+  });
+
+  it("hides connection status in text mode", () => {
+    render(
+      <VoiceSessionHeader
+        {...defaultProps}
+        currentMode="text"
+        initialMode="text"
+      />,
+    );
+
+    expect(screen.queryByTestId("connection-status")).not.toBeInTheDocument();
+  });
 });

@@ -1,14 +1,22 @@
 """Session lifecycle API: create, message with SSE streaming, end, list."""
 
 import asyncio
+import hashlib
 import json
+import secrets
+import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from sse_starlette.sse import EventSourceResponse
 
 from app.config import get_settings
 from app.dependencies import get_current_user, get_db
+from app.models.scenario import Scenario
+from app.models.session import CoachingSession
+from app.models.session_turn import SessionTurn
 from app.models.user import User
 from app.schemas.report import SessionReport
 from app.schemas.session import (
@@ -21,8 +29,10 @@ from app.schemas.session import (
 from app.schemas.suggestion import SuggestionResponse
 from app.services import session_service
 from app.services.agent_chat_service import AgentChatError, stream_agent_response
+from app.services.foundry_conversation_service import FoundryConversationService
 from app.services.report_service import generate_report
 from app.services.scoring_service import resolve_rubric_dimensions
+from app.services.session_turn_orchestrator import SessionTurnOrchestrator, TurnResult
 from app.services.suggestion_service import generate_suggestions, parse_key_messages_status
 from app.utils.exceptions import AppException
 from app.utils.pagination import PaginatedResponse
@@ -30,6 +40,85 @@ from app.utils.pagination import PaginatedResponse
 settings = get_settings()
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
+
+_UNFINISHED_TURN_STATES = (
+    "pending",
+    "leased",
+    "provider_pending",
+    "provider_unknown",
+    "reconciling",
+)
+
+
+async def _session_turn_orchestrator(db: AsyncSession) -> SessionTurnOrchestrator:
+    """Build the exact configured provider adapter for a server-owned turn."""
+    from app.services import agent_sync_service
+
+    endpoint, api_key = await agent_sync_service.get_project_endpoint(db)
+    project_client = agent_sync_service._get_project_client(endpoint, api_key)
+    openai_client = project_client.get_openai_client()
+    return SessionTurnOrchestrator(
+        FoundryConversationService(openai_client),
+        openai_client,
+    )
+
+
+async def _resolve_server_turn_key(
+    db: AsyncSession, session_id: str, message: str
+) -> tuple[str, bool]:
+    """Resume only an unfinished same-input turn; otherwise allocate server authority."""
+    digest = hashlib.sha256(message.encode("utf-8")).hexdigest()
+    existing = await db.scalar(
+        select(SessionTurn.turn_key)
+        .where(
+            SessionTurn.session_id == session_id,
+            SessionTurn.input_digest == digest,
+            SessionTurn.status.in_(_UNFINISHED_TURN_STATES),
+        )
+        .order_by(SessionTurn.created_at.desc())
+        .limit(1)
+    )
+    return (existing, True) if existing else (str(uuid.uuid4()), False)
+
+
+def _turn_state_event(result: TurnResult) -> dict[str, str] | None:
+    codes = {
+        "in_progress": "SESSION_TURN_IN_PROGRESS",
+        "reconciling": "SESSION_TURN_RECONCILING",
+        "failed_terminal": "SESSION_TURN_FAILED",
+    }
+    code = codes.get(result.status)
+    if code is None:
+        return None
+    return {
+        "event": "state",
+        "data": json.dumps({"code": code, "status": result.status}),
+    }
+
+
+async def _successful_turn_observables(
+    db: AsyncSession, session_id: str, user_message: str
+) -> tuple[str, list[SuggestionResponse]]:
+    """Compute compatibility observables after the orchestrator commits its winner."""
+    db.expire_all()
+    session = await db.scalar(
+        select(CoachingSession)
+        .options(selectinload(CoachingSession.scenario).selectinload(Scenario.hcp_profile))
+        .where(CoachingSession.id == session_id)
+    )
+    if session is None:
+        raise AppException(404, "SESSION_NOT_FOUND", "Session not found")
+
+    key_messages_status = await session_service.detect_key_messages(db, session, user_message)
+    rubric_dims = await resolve_rubric_dimensions(db, session.scenario)
+    scoring_weights = {dimension["name"]: dimension["weight"] for dimension in rubric_dims}
+    messages = await session_service.get_session_messages(db, session_id)
+    suggestions = await generate_suggestions(
+        messages=[{"role": message.role, "content": message.content} for message in messages],
+        key_messages_status=key_messages_status,
+        scoring_weights=scoring_weights,
+    )
+    return json.dumps(key_messages_status), suggestions
 
 
 @router.post("", response_model=SessionResponse, status_code=201)
@@ -109,6 +198,72 @@ async def send_message(
             code="SESSION_CLOSED",
             message="Session is no longer active",
         )
+
+    if session.skill_id and session.skill_version_id:
+        turn_key, resumed = await _resolve_server_turn_key(db, session_id, request.message)
+        orchestrator = await _session_turn_orchestrator(db)
+        await db.rollback()
+
+        async def durable_event_generator():
+            yield {
+                "event": "state",
+                "data": json.dumps(
+                    {
+                        "code": "SESSION_TURN_RESUMED" if resumed else "SESSION_TURN_ACCEPTED",
+                        "status": "in_progress",
+                    }
+                ),
+            }
+            try:
+                result = await orchestrator.run_turn(
+                    session_id,
+                    turn_key,
+                    request.message,
+                    f"api-{secrets.token_hex(8)}",
+                )
+            except AppException as exc:
+                yield {
+                    "event": "error",
+                    "data": json.dumps(
+                        {"code": exc.code, "message": exc.message, "details": exc.details}
+                    ),
+                }
+                return
+            state_event = _turn_state_event(result)
+            if state_event is not None:
+                yield state_event
+                return
+            try:
+                key_messages_status, suggestions = await _successful_turn_observables(
+                    db, session_id, request.message
+                )
+            except AppException as exc:
+                yield {
+                    "event": "error",
+                    "data": json.dumps(
+                        {"code": exc.code, "message": exc.message, "details": exc.details}
+                    ),
+                }
+                return
+            yield {"event": "text", "data": result.text}
+            yield {"event": "key_messages", "data": key_messages_status}
+            for suggestion in suggestions:
+                yield {
+                    "event": "hint",
+                    "data": json.dumps(
+                        {
+                            "content": suggestion.message,
+                            "metadata": {
+                                "type": suggestion.type.value,
+                                "trigger": suggestion.trigger,
+                                "relevance": suggestion.relevance_score,
+                            },
+                        }
+                    ),
+                }
+            yield {"event": "done", "data": ""}
+
+        return EventSourceResponse(durable_event_generator())
 
     pinned_agent = await session_service.resolve_pinned_agent(session)
 

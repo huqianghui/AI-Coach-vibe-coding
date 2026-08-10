@@ -431,6 +431,117 @@ describe("useVoiceLive (backend WebSocket proxy)", () => {
     );
   });
 
+  it("handles streaming event variants and ignores missing optional payloads", async () => {
+    const onTranscript = vi.fn();
+    const onAudioDelta = vi.fn();
+    const onAudioStateChange = vi.fn();
+    const onError = vi.fn();
+    const { result } = renderHook(() => useVoiceLive({
+      ...defaultOptions,
+      onTranscript,
+      onAudioDelta,
+      onAudioStateChange,
+      onError,
+    }));
+    const sdpCallback = vi.fn();
+    result.current.avatarSdpCallbackRef.current = sdpCallback;
+
+    await act(async () => {
+      const promise = result.current.connect("hcp-events");
+      const ws = getLastWs();
+      ws.onopen?.();
+      ws.simulateMessage({ type: "proxy.connected", mode: "agent", avatar_enabled: false });
+      ws.simulateMessage({ type: "session.created", session: { id: "session-1" } });
+      ws.simulateMessage({ type: "session.updated", session: {} });
+      await promise;
+    });
+
+    const ws = getLastWs();
+    act(() => {
+      ws.simulateMessage({ type: "input_audio_buffer.speech_stopped" });
+      ws.simulateMessage({ type: "conversation.item.input_audio_transcription.completed" });
+      ws.simulateMessage({ type: "response.audio.delta", delta: "audio-base64" });
+      ws.simulateMessage({ type: "response.audio.delta" });
+      ws.simulateMessage({
+        type: "response.audio_transcript.delta",
+        response_id: "r1",
+        item_id: "i1",
+        delta: "partial audio",
+      });
+      ws.simulateMessage({ type: "response.audio_transcript.delta" });
+      ws.simulateMessage({ type: "response.audio_transcript.done" });
+      ws.simulateMessage({
+        type: "response.text.delta",
+        response_id: "r2",
+        item_id: "i2",
+        delta: "partial text",
+      });
+      ws.simulateMessage({ type: "response.text.delta" });
+      ws.simulateMessage({
+        type: "response.text.done",
+        response_id: "r2",
+        item_id: "i2",
+        text: "final text",
+      });
+      ws.simulateMessage({ type: "response.text.done" });
+      ws.simulateMessage({ type: "custom.sdp", sdp: "generic-sdp" });
+      ws.simulateMessage({ type: "custom.answer", answer: "generic-answer" });
+      ws.simulateMessage({ type: "session.update", server_sdp: "ignored-sdp" });
+      ws.simulateMessage({ type: "session.avatar.connecting", serverSdp: "camel-sdp" });
+      ws.simulateMessage({ type: "error", error: {} });
+    });
+
+    expect(onAudioDelta).toHaveBeenCalledWith("audio-base64");
+    expect(onAudioStateChange).toHaveBeenCalledWith("idle");
+    expect(onTranscript).toHaveBeenCalledWith(expect.objectContaining({
+      content: "partial audio",
+      isFinal: false,
+    }));
+    expect(onTranscript).toHaveBeenCalledWith(expect.objectContaining({
+      content: "final text",
+      isFinal: true,
+    }));
+    expect(sdpCallback).toHaveBeenCalledWith("generic-sdp");
+    expect(sdpCallback).toHaveBeenCalledWith("generic-answer");
+    expect(sdpCallback).toHaveBeenCalledWith("camel-sdp");
+    expect(sdpCallback).not.toHaveBeenCalledWith("ignored-sdp");
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: "Unknown error" }));
+  });
+
+  it("normalizes scalar RTC ICE servers with session-level credentials", async () => {
+    const { result } = renderHook(() => useVoiceLive(defaultOptions));
+
+    const connected = await act(async () => {
+      const promise = result.current.connect({ hcpProfileId: "hcp-rtc" });
+      const ws = getLastWs();
+      ws.onopen?.();
+      ws.simulateMessage({ type: "proxy.connected", mode: "agent" });
+      ws.simulateMessage({
+        type: "session.updated",
+        session: {
+          rtc: {
+            ice_servers: "turn:rtc.example.test:3478",
+            ice_username: "session-user",
+            ice_credential: "session-secret",
+          },
+        },
+      });
+      return promise;
+    });
+
+    expect(connected).toEqual({
+      avatarEnabled: false,
+      model: "gpt-4o",
+      mode: "agent",
+      iceServers: [{
+        urls: "turn:rtc.example.test:3478",
+        username: "session-user",
+        credential: "session-secret",
+        credentialType: "password",
+      }],
+    });
+  });
+
   it("handles avatar SDP answer via callback ref", async () => {
     const { result } = renderHook(() => useVoiceLive(defaultOptions));
     const sdpCallback = vi.fn();
@@ -644,6 +755,46 @@ describe("useVoiceLive (backend WebSocket proxy)", () => {
     const msg = JSON.parse(ws.sentMessages[0]!);
     expect(msg.type).toBe("session.avatar.connect");
     expect(msg.client_sdp).toBe("offer-sdp");
+  });
+
+  it("send() supports raw strings and safely drops messages without an open socket", () => {
+    const { result } = renderHook(() => useVoiceLive(defaultOptions));
+    act(() => {
+      result.current.send({ type: "dropped-without-socket" });
+    });
+
+    const ws = new MockWebSocket("ws://test");
+    ws.readyState = MockWebSocket.CLOSED;
+    act(() => {
+      result.current.send("dropped-closed-socket");
+    });
+    expect(ws.sentMessages).toEqual([]);
+  });
+
+  it("rejects an unresolved connection on WebSocket error", async () => {
+    const onError = vi.fn();
+    const onConnectionStateChange = vi.fn();
+    const { result } = renderHook(() => useVoiceLive({
+      ...defaultOptions,
+      onError,
+      onConnectionStateChange,
+    }));
+
+    let pending!: Promise<unknown>;
+    act(() => {
+      pending = result.current.connect("hcp-ws-error");
+    });
+    const ws = getLastWs();
+    await act(async () => {
+      ws.simulateError();
+      await expect(pending).rejects.toThrow("WebSocket connection failed");
+    });
+
+    expect(result.current.connectionState).toBe("error");
+    expect(onConnectionStateChange).toHaveBeenCalledWith("error");
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "WebSocket connection failed" }),
+    );
   });
 
   // ---- JSON parse protection ----

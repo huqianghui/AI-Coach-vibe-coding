@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveMode } from "./voice-utils";
+import { encodePcmToBase64, resolveMode } from "./voice-utils";
 import type { VoiceLiveToken } from "@/types/voice-live";
 
 /**
@@ -16,6 +16,26 @@ const baseToken: VoiceLiveToken = {
   avatar_character: "",
   voice_name: "en-US-JennyNeural",
 };
+
+describe("encodePcmToBase64", () => {
+  it("clips samples and converts positive, negative, and zero PCM values", () => {
+    const encoded = encodePcmToBase64(new Float32Array([-2, -0.5, 0, 0.5, 2]));
+    const binary = atob(encoded);
+    const bytes = Uint8Array.from(binary, (value) => value.charCodeAt(0));
+    const samples = Array.from(new Int16Array(bytes.buffer));
+
+    expect(samples).toEqual([-32768, -16384, 0, 16383, 32767]);
+  });
+
+  it("returns an empty payload for empty audio", () => {
+    expect(encodePcmToBase64(new Float32Array())).toBe("");
+  });
+
+  it("treats a missing indexed sample as silence", () => {
+    const sparseLike = { length: 1 } as Float32Array;
+    expect(atob(encodePcmToBase64(sparseLike))).toBe("\0\0");
+  });
+});
 
 describe("resolveMode", () => {
   it("returns digital_human_realtime_agent when avatar_enabled + agent_id", () => {

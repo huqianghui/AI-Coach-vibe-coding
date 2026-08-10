@@ -15,46 +15,26 @@ vi.mock("react-i18next", async () => {
 
 const mockExportSessionsMutate = vi.fn();
 const mockExportAdminMutate = vi.fn();
+let mockExportSessionsPending = false;
+let mockExportAdminPending = false;
+let mockOrgData: Record<string, unknown> | undefined;
+let mockScoreTrendData: Array<Record<string, unknown>> | undefined;
 
 vi.mock("@/hooks/use-analytics", () => ({
   useExportSessionsExcel: () => ({
     mutate: mockExportSessionsMutate,
-    isPending: false,
+    isPending: mockExportSessionsPending,
   }),
   useExportAdminReport: () => ({
     mutate: mockExportAdminMutate,
-    isPending: false,
+    isPending: mockExportAdminPending,
   }),
   useOrgAnalytics: () => ({
-    data: {
-      total_sessions: 1247,
-      avg_org_score: 73.8,
-      completion_rate: 68,
-      active_users: 156,
-      bu_stats: [
-        { business_unit: "Oncology", avg_score: 78, session_count: 300, user_count: 40 },
-        { business_unit: "Hematology", avg_score: 72, session_count: 250, user_count: 35 },
-        { business_unit: "Immunology", avg_score: 65, session_count: 200, user_count: 30 },
-        { business_unit: "Neurology", avg_score: 70, session_count: 150, user_count: 25 },
-      ],
-      skill_gaps: [
-        { business_unit: "Oncology", dimension: "Knowledge", avg_score: 82 },
-        { business_unit: "Oncology", dimension: "Communication", avg_score: 75 },
-        { business_unit: "Hematology", dimension: "Knowledge", avg_score: 70 },
-        { business_unit: "Hematology", dimension: "Communication", avg_score: 68 },
-        { business_unit: "Immunology", dimension: "Knowledge", avg_score: 60 },
-        { business_unit: "Immunology", dimension: "Communication", avg_score: 55 },
-        { business_unit: "Neurology", dimension: "Knowledge", avg_score: 72 },
-        { business_unit: "Neurology", dimension: "Communication", avg_score: 66 },
-      ],
-    },
+    data: mockOrgData,
     isLoading: false,
   }),
   useScoreTrends: () => ({
-    data: [
-      { month: "Jan", overall: 70, benchmark: 75 },
-      { month: "Feb", overall: 72, benchmark: 75 },
-    ],
+    data: mockScoreTrendData,
   }),
 }));
 
@@ -96,7 +76,37 @@ function renderPage() {
 }
 
 describe("AdminReportsPage", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockExportSessionsPending = false;
+    mockExportAdminPending = false;
+    mockOrgData = {
+      total_sessions: 1247,
+      avg_org_score: 73.8,
+      completion_rate: 68,
+      active_users: 156,
+      bu_stats: [
+        { business_unit: "Oncology", avg_score: 82, session_count: 300, user_count: 40 },
+        { business_unit: "Hematology", avg_score: 72, session_count: 250, user_count: 35 },
+        { business_unit: "Immunology", avg_score: 55, session_count: 0, user_count: 0 },
+        { business_unit: "Neurology", avg_score: 70, session_count: 150, user_count: 25 },
+      ],
+      skill_gaps: [
+        { business_unit: "Oncology", dimension: "Knowledge", avg_score: 82 },
+        { business_unit: "Oncology", dimension: "Communication", avg_score: 75 },
+        { business_unit: "Hematology", dimension: "Knowledge", avg_score: 70 },
+        { business_unit: "Hematology", dimension: "Communication", avg_score: 68 },
+        { business_unit: "Immunology", dimension: "Knowledge", avg_score: 60 },
+        { business_unit: "Immunology", dimension: "Communication", avg_score: 55 },
+        { business_unit: "Neurology", dimension: "Knowledge", avg_score: 72 },
+        { business_unit: "Neurology", dimension: "Communication", avg_score: 66 },
+      ],
+    };
+    mockScoreTrendData = [
+      { month: "Jan", overall: 70, benchmark: 75 },
+      { month: "Feb", overall: 72, benchmark: 75 },
+    ];
+  });
 
   it("renders the page title", () => {
     renderPage();
@@ -168,5 +178,34 @@ describe("AdminReportsPage", () => {
     // Radix Select renders the trigger with placeholder text
     const triggers = document.querySelectorAll("[role='combobox']");
     expect(triggers.length).toBeGreaterThanOrEqual(0);
+  });
+
+  it("renders disabled loading controls while both exports are pending", () => {
+    mockExportSessionsPending = true;
+    mockExportAdminPending = true;
+    renderPage();
+
+    expect(screen.getByRole("button", { name: /Export Sessions/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Export Full Report/i })).toBeDisabled();
+    expect(document.querySelectorAll(".animate-spin")).toHaveLength(2);
+  });
+
+  it("uses zero and empty-chart fallbacks before analytics load", () => {
+    mockOrgData = undefined;
+    mockScoreTrendData = undefined;
+    renderPage();
+
+    expect(screen.getAllByText("0").length).toBeGreaterThanOrEqual(3);
+    expect(screen.getByText("0%")).toBeInTheDocument();
+    expect(screen.queryByText("Oncology")).not.toBeInTheDocument();
+  });
+
+  it("renders all score bands and zero-user completion without failing", () => {
+    const { container } = renderPage();
+
+    expect(container.querySelector(".bg-strength\\/10")).toBeInTheDocument();
+    expect(container.querySelector(".bg-chart-3\\/10")).toBeInTheDocument();
+    expect(container.querySelector(".bg-destructive\\/10")).toBeInTheDocument();
+    expect(screen.getByText("Immunology")).toBeInTheDocument();
   });
 });

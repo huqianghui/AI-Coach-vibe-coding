@@ -310,11 +310,33 @@ class TestSessionsDirect:
         db.add(rubric)
         await db.flush()
 
+        skill_content = "# SOP\n## Step 1: Open\n## Step 2: Discover\n## Step 3: Close"
+        skill = Skill(
+            id="test-skill-id",
+            name="Direct Session Skill",
+            content=skill_content,
+            status="published",
+            created_by=user.id,
+        )
+        db.add(skill)
+        await db.flush()
+        skill_version = SkillVersion(
+            skill_id=skill.id,
+            version_number=1,
+            content=skill_content,
+            metadata_json='{"knowledge_references":["test-reference"]}',
+            is_published=True,
+            created_by=user.id,
+        )
+        db.add(skill_version)
+        await db.flush()
+
         scenario = Scenario(
             name="DSess Scn",
             hcp_profile_id=hcp.id,
             key_messages=json.dumps(["PFS", "Safety"]),
-            skill_id="test-skill-id",
+            skill_id=skill.id,
+            skill_version_id=skill_version.id,
             status="active",
             rubric_id=rubric.id,
             created_by=user.id,
@@ -398,6 +420,8 @@ class TestSessionsDirect:
 
         user, scenario = await self._seed_scenario(db_session)
         session = await create_session(db_session, scenario.id, user.id)
+        session.skill_id = None
+        session.skill_version_id = None
         await save_message(db_session, session.id, "user", "Hello doctor")
         await db_session.commit()
 
@@ -451,6 +475,8 @@ class TestSessionsDirect:
 
         user, scenario = await self._seed_scenario(db_session)
         session = await create_session(db_session, scenario.id, user.id)
+        session.skill_id = None
+        session.skill_version_id = None
         await save_message(db_session, session.id, "user", "Hi")
         await db_session.commit()
 

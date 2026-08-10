@@ -1,0 +1,6 @@
+# Reviewed executable frontend source changed from baseline through Plan 08.
+frontend/scripts/verify-changed-v8-branches.mjs
+frontend/src/api/sessions.ts
+frontend/src/pages/admin/rubric-editor.tsx
+frontend/src/pages/user/unified-session.tsx
+frontend/src/types/session.ts

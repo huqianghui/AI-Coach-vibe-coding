@@ -2,10 +2,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import apiClient from "./client";
 import {
   createSession,
+  getActiveSession,
   getUserSessions,
   getSession,
   getSessionMessages,
   endSession,
+  streamSessionMessage,
 } from "./sessions";
 
 vi.mock("./client", () => ({
@@ -25,6 +27,144 @@ const mockClient = apiClient as unknown as {
 beforeEach(() => vi.clearAllMocks());
 
 describe("Sessions API client", () => {
+  describe("streamSessionMessage", () => {
+    it("serializes exactly message and dispatches durable SSE events", async () => {
+      localStorage.setItem("access_token", "test-token");
+      const body = [
+        'event: state\ndata: {"code":"SESSION_TURN_ACCEPTED","status":"in_progress"}\n',
+        "event: text\ndata: Hello\n",
+        'event: hint\ndata: {"content":"Tip"}\n',
+        'event: key_messages\ndata: [{"message":"KM","delivered":true,"detected_at":null}]\n',
+        "event: done\ndata: \n",
+      ].join("\n");
+      const fetchMock = vi
+        .spyOn(globalThis, "fetch")
+        .mockResolvedValue(new Response(body, { status: 200 }));
+      const callbacks = {
+        onState: vi.fn(),
+        onText: vi.fn(),
+        onHint: vi.fn(),
+        onKeyMessages: vi.fn(),
+        onDone: vi.fn(),
+        onError: vi.fn(),
+      };
+
+      await streamSessionMessage("session-1", "User text", callbacks);
+
+      const request = fetchMock.mock.calls[0]!;
+      expect(request[0]).toBe("/api/v1/sessions/session-1/message");
+      const options = request[1] as RequestInit;
+      expect(JSON.parse(options.body as string)).toEqual({ message: "User text" });
+      expect(Object.keys(JSON.parse(options.body as string))).toEqual(["message"]);
+      expect(callbacks.onState).toHaveBeenCalledWith({
+        code: "SESSION_TURN_ACCEPTED",
+        status: "in_progress",
+      });
+      expect(callbacks.onText).toHaveBeenCalledWith("Hello");
+      expect(callbacks.onHint).toHaveBeenCalledWith({ content: "Tip" });
+      expect(callbacks.onKeyMessages).toHaveBeenCalledTimes(1);
+      expect(callbacks.onDone).toHaveBeenCalledOnce();
+      expect(callbacks.onError).not.toHaveBeenCalled();
+    });
+
+    it("parses structured and plain stream errors", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(
+          'event: error\ndata: {"code":"SESSION_TURN_FAILED","message":"Failed"}\n\n' +
+            "event: error\ndata: Plain failure\n\n",
+          { status: 200 },
+        ),
+      );
+      const onError = vi.fn();
+      const callbacks = {
+        onState: vi.fn(),
+        onText: vi.fn(),
+        onHint: vi.fn(),
+        onKeyMessages: vi.fn(),
+        onDone: vi.fn(),
+        onError,
+      };
+
+      await streamSessionMessage("session-1", "Hello", callbacks);
+
+      expect(onError).toHaveBeenNthCalledWith(1, {
+        code: "SESSION_TURN_FAILED",
+        message: "Failed",
+      });
+      expect(onError).toHaveBeenNthCalledWith(2, { message: "Plain failure" });
+    });
+
+    it("fails when the streaming endpoint is unavailable", async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(null, { status: 409 }),
+      );
+      const callbacks = {
+        onState: vi.fn(),
+        onText: vi.fn(),
+        onHint: vi.fn(),
+        onKeyMessages: vi.fn(),
+        onDone: vi.fn(),
+        onError: vi.fn(),
+      };
+
+      await expect(
+        streamSessionMessage("session-1", "Hello", callbacks),
+      ).rejects.toThrow("Stream failed: 409");
+    });
+
+    it("handles fragmented CRLF events, empty chunks, unknown events, and a signal", async () => {
+      localStorage.removeItem("access_token");
+      const encoder = new TextEncoder();
+      const chunks = [
+        "event: text\r\nda",
+        "ta: Fragmented\r\n\r\nevent: unknown\r\ndata: ignored\r\n\r\n",
+      ];
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new Uint8Array());
+          chunks.forEach((chunk) => controller.enqueue(encoder.encode(chunk)));
+          controller.close();
+        },
+      });
+      const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(body, { status: 200 }),
+      );
+      const callbacks = {
+        onState: vi.fn(),
+        onText: vi.fn(),
+        onHint: vi.fn(),
+        onKeyMessages: vi.fn(),
+        onDone: vi.fn(),
+        onError: vi.fn(),
+      };
+      const controller = new AbortController();
+
+      await streamSessionMessage("session-1", "Hello", callbacks, controller.signal);
+
+      expect(callbacks.onText).toHaveBeenCalledWith("Fragmented");
+      expect(callbacks.onDone).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/v1/sessions/session-1/message",
+        expect.objectContaining({
+          signal: controller.signal,
+          headers: expect.objectContaining({ Authorization: "Bearer null" }),
+        }),
+      );
+    });
+  });
+
+  describe("getActiveSession", () => {
+    it("calls GET /sessions/active", async () => {
+      mockClient.get.mockResolvedValue({ data: { id: "active-1", status: "in_progress" } });
+
+      await expect(getActiveSession()).resolves.toEqual({
+        id: "active-1",
+        status: "in_progress",
+      });
+      expect(mockClient.get).toHaveBeenCalledWith("/sessions/active");
+    });
+  });
+
   describe("createSession", () => {
     it("calls POST /sessions with scenario_id and defaults to realtime voice", async () => {
       mockClient.post.mockResolvedValue({

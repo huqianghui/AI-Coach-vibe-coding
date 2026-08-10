@@ -39,15 +39,10 @@ from app.utils.encryption import encrypt_value
 
 settings = get_settings()
 
-REAL_FOUNDRY_ENDPOINT = settings.azure_foundry_endpoint
-REAL_FOUNDRY_API_KEY = settings.azure_foundry_api_key
-REAL_FOUNDRY_PROJECT = settings.azure_foundry_default_project
-
-# Skip all tests if real Azure credentials are not configured
-pytestmark = pytest.mark.skipif(
-    not REAL_FOUNDRY_ENDPOINT or not REAL_FOUNDRY_API_KEY,
-    reason="AZURE_FOUNDRY_ENDPOINT and AZURE_FOUNDRY_API_KEY required for real config tests",
-)
+HAS_REAL_FOUNDRY = bool(settings.azure_foundry_endpoint and settings.azure_foundry_api_key)
+REAL_FOUNDRY_ENDPOINT = settings.azure_foundry_endpoint or "https://offline.invalid"
+REAL_FOUNDRY_API_KEY = settings.azure_foundry_api_key or "offline-placeholder"
+REAL_FOUNDRY_PROJECT = settings.azure_foundry_default_project or "offline-placeholder"
 
 
 # ---------------------------------------------------------------------------
@@ -1101,6 +1096,7 @@ class TestHandleVoiceLiveWebsocket:
 # ===========================================================================
 
 
+@pytest.mark.skipif(not HAS_REAL_FOUNDRY, reason="real Azure Foundry credentials required")
 class TestRealCredentialVerification:
     """Verify real .env credentials are loaded correctly through DB layer."""
 
@@ -2559,6 +2555,7 @@ async def _connect_with_retry(connect_fn, *, max_retries=5, delay=3.0):
     raise last_err  # type: ignore[misc]
 
 
+@pytest.mark.skipif(not HAS_REAL_FOUNDRY, reason="real Azure Foundry credentials required")
 class TestRealAzureSessionConfig:
     """Tests that validate session config against real Azure Voice Live service."""
 
@@ -2748,6 +2745,7 @@ def _ensure_real_azure_modules():
     importlib.import_module("azure.ai.voicelive.aio")
 
 
+@pytest.mark.skipif(not HAS_REAL_FOUNDRY, reason="real Azure Foundry credentials required")
 class TestRealVoiceLiveIntegration:
     """Real-data integration tests covering mock-based test class scenarios.
 

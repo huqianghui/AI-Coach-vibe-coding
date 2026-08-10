@@ -39,6 +39,23 @@ describe("transcribeAudio", () => {
     );
   });
 
+  it("uses a WAV filename and URL-encodes the requested language", async () => {
+    vi.mocked(apiClient.post).mockResolvedValueOnce({
+      data: { text: "hello", language: "en US" },
+    });
+    const blob = new Blob(["wav"], { type: "audio/wav" });
+
+    await transcribeAudio(blob, "en US");
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      "/speech/transcribe?language=en%20US",
+      expect.any(FormData),
+      expect.any(Object),
+    );
+    const form = vi.mocked(apiClient.post).mock.calls[0]?.[1] as FormData;
+    expect((form.get("audio") as File).name).toBe("recording.wav");
+  });
+
   it("returns transcription response", async () => {
     vi.mocked(apiClient.post).mockResolvedValueOnce({
       data: { text: "hello doctor", language: "en-US" },
@@ -79,6 +96,25 @@ describe("transcribeAudio", () => {
     });
     await expect(transcribeAudio(new Blob(["audio"]))).rejects.toThrow(
       "Azure Speech 未配置独立的 Key 和区域，请在管理员设置中配置 Speech STT/TTS。",
+    );
+  });
+
+  it("uses the backend Axios message when no known error code is present", async () => {
+    vi.mocked(apiClient.post).mockRejectedValueOnce({
+      isAxiosError: true,
+      response: { data: { message: "Custom speech failure" } },
+    });
+
+    await expect(transcribeAudio(new Blob(["audio"]))).rejects.toThrow(
+      "Custom speech failure",
+    );
+  });
+
+  it("uses the generic fallback for an Axios error without response data", async () => {
+    vi.mocked(apiClient.post).mockRejectedValueOnce({ isAxiosError: true });
+
+    await expect(transcribeAudio(new Blob(["audio"]))).rejects.toThrow(
+      "语音转写失败，请重试或使用文字输入。",
     );
   });
 });

@@ -10,6 +10,7 @@ from app.models.message import SessionMessage
 from app.models.scenario import Scenario
 from app.models.scoring_rubric import ScoringRubric
 from app.models.session import CoachingSession
+from app.models.skill import Skill, SkillVersion
 from app.models.user import User
 from app.services.agent_chat_service import AgentResponseEvent
 from app.services.agents.adapters.mock import MockCoachingAdapter
@@ -92,11 +93,32 @@ async def _setup_session(
         session.add(rubric)
         await session.flush()
 
+        skill_content = "# SOP\n## Step 1: Open\n## Step 2: Discover\n## Step 3: Close"
+        skill = Skill(
+            name="Extended Session Skill",
+            content=skill_content,
+            status="published",
+            created_by=admin.id,
+        )
+        session.add(skill)
+        await session.flush()
+        skill_version = SkillVersion(
+            skill_id=skill.id,
+            version_number=1,
+            content=skill_content,
+            metadata_json='{"knowledge_references":["test-reference"]}',
+            is_published=True,
+            created_by=admin.id,
+        )
+        session.add(skill_version)
+        await session.flush()
+
         scenario = Scenario(
             name="Extended Scenario",
             hcp_profile_id=hcp.id,
             key_messages=json.dumps(["Superior PFS", "Better safety"]),
-            skill_id="test-skill-id",
+            skill_id=skill.id,
+            skill_version_id=skill_version.id,
             status="active",
             created_by=admin.id,
             rubric_id=rubric.id,

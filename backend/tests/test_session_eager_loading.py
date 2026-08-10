@@ -15,6 +15,7 @@ from app.models.hcp_profile import HcpProfile
 from app.models.message import SessionMessage
 from app.models.scenario import Scenario
 from app.models.session import CoachingSession
+from app.models.skill import Skill, SkillVersion
 from app.models.user import User
 from app.services.auth import create_access_token, get_password_hash
 from tests.conftest import TestSessionLocal
@@ -54,11 +55,32 @@ async def _create_test_data(status: str = "created") -> tuple[str, str, str, str
         db.add(hcp)
         await db.flush()
 
+        skill_content = "# SOP\n## Step 1: Open\n## Step 2: Discover\n## Step 3: Close"
+        skill = Skill(
+            name="Eager Load Skill",
+            content=skill_content,
+            status="published",
+            created_by=admin.id,
+        )
+        db.add(skill)
+        await db.flush()
+        skill_version = SkillVersion(
+            skill_id=skill.id,
+            version_number=1,
+            content=skill_content,
+            metadata_json='{"knowledge_references":["test-reference"]}',
+            is_published=True,
+            created_by=admin.id,
+        )
+        db.add(skill_version)
+        await db.flush()
+
         scenario = Scenario(
             name="Eager Load Scenario",
             hcp_profile_id=hcp.id,
             key_messages=json.dumps(["Key message 1"]),
-            skill_id="test-skill",
+            skill_id=skill.id,
+            skill_version_id=skill_version.id,
             status="active",
             created_by=admin.id,
             rubric_id="test-rubric",

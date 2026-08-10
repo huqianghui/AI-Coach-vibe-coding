@@ -9,6 +9,7 @@ import pytest
 import sqlalchemy as sa
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -177,12 +178,12 @@ def test_session_create_contract_has_no_agent_identity_fields() -> None:
     """Browser-owned session input cannot select Agent identity or continuation state."""
     assert set(SessionCreate.model_fields) == {"scenario_id", "mode"}
 
-    request = SessionCreate.model_validate(
-        {
-            "scenario_id": "scenario-1",
-            "agent_name": "attacker-agent",
-            "agent_version": "999",
-            "agent_response_id": "resp_attacker",
-        }
-    )
-    assert request.model_dump() == {"scenario_id": "scenario-1", "mode": "text"}
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        SessionCreate.model_validate(
+            {
+                "scenario_id": "scenario-1",
+                "agent_name": "attacker-agent",
+                "agent_version": "999",
+                "agent_response_id": "resp_attacker",
+            }
+        )

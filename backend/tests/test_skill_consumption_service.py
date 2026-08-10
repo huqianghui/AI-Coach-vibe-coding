@@ -18,7 +18,7 @@ from sqlalchemy import select
 from app.models.hcp_profile import HcpProfile
 from app.models.scenario import Scenario
 from app.models.session import CoachingSession
-from app.models.skill import Skill
+from app.models.skill import Skill, SkillVersion
 from app.models.user import User
 from app.services.skill_manager import SkillContent
 from tests.conftest import TestSessionLocal
@@ -800,10 +800,25 @@ class TestScenarioPinIsStale:
 
 async def _seed_active_scenario(user_id: str, hcp_id: str, skill_id: str) -> str:
     async with TestSessionLocal() as session:
+        skill = await session.get(Skill, skill_id)
+        skill_content = "# SOP\n## Step 1: Open\n## Step 2: Discover\n## Step 3: Close"
+        skill.content = skill_content
+        skill.status = "published"
+        skill_version = SkillVersion(
+            skill_id=skill_id,
+            version_number=1,
+            content=skill_content,
+            metadata_json='{"knowledge_references":["test-reference"]}',
+            is_published=True,
+            created_by=user_id,
+        )
+        session.add(skill_version)
+        await session.flush()
         scenario = Scenario(
             name="Active consumption scenario",
             hcp_profile_id=hcp_id,
             skill_id=skill_id,
+            skill_version_id=skill_version.id,
             status="active",
             created_by=user_id,
             rubric_id="test-rubric-id",
@@ -837,12 +852,13 @@ class TestSessionServiceWiring:
         with patch(
             "app.services.skill_consumption_service.get_skill_content_for_session",
             new=AsyncMock(return_value=cloud_content),
-        ):
+        ) as mock_cloud_content:
             async with TestSessionLocal() as session:
                 created = await create_session(session, scenario_id, user_id)
 
         assert created.focus_instruction
-        assert "Greet the HCP" in created.focus_instruction
+        assert "Step 1: Open" in created.focus_instruction
+        mock_cloud_content.assert_not_awaited()
 
     async def test_create_session_no_cloud_content_leaves_focus_instruction_none(self):
         """Regression: a scenario whose skill has no resolvable content (cloud
@@ -858,11 +874,13 @@ class TestSessionServiceWiring:
         with patch(
             "app.services.skill_consumption_service.get_skill_content_for_session",
             new=AsyncMock(return_value=None),
-        ):
+        ) as mock_cloud_content:
             async with TestSessionLocal() as session:
                 created = await create_session(session, scenario_id, user_id)
 
-        assert created.focus_instruction is None
+        assert created.focus_instruction
+        assert "Step 1: Open" in created.focus_instruction
+        mock_cloud_content.assert_not_awaited()
 
     async def test_update_sop_progress_calls_cloud_chain_at_most_once_high1(self):
         """End-to-end HIGH-1 proof from the real call sites: create_session()
@@ -920,4 +938,4 @@ class TestSessionServiceWiring:
                         session, coaching_session, [{"role": "user", "content": "hi"}]
                     )
 
-        mock_download.assert_called_once()
+        mock_download.assert_not_awaited()

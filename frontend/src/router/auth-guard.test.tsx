@@ -96,6 +96,26 @@ describe("ProtectedRoute", () => {
 });
 
 describe("AdminRoute", () => {
+  it("redirects when the authenticated user profile is missing", async () => {
+    mockToken = "valid-token";
+    mockUser = null;
+    mockIsLoading = false;
+
+    const { AdminRoute } = await import("./auth-guard");
+    render(
+      <MemoryRouter initialEntries={["/admin/dashboard"]}>
+        <Routes>
+          <Route element={<AdminRoute />}>
+            <Route path="/admin/dashboard" element={<div>Admin Dashboard</div>} />
+          </Route>
+          <Route path="/user/dashboard" element={<div>User Dashboard</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("User Dashboard")).toBeInTheDocument();
+  });
+
   it("redirects non-admin users to /user/dashboard", async () => {
     mockToken = "valid-token";
     mockUser = { role: "user", full_name: "Regular User" };

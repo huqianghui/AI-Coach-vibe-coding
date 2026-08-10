@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import apiClient from "./client";
 import {
   fetchVoiceLiveToken,
+  fetchWebRTCSession,
   fetchVoiceLiveStatus,
   fetchVoiceLiveModels,
   fetchAvatarCharacters,
@@ -34,6 +35,56 @@ const mockClient = apiClient as unknown as {
 beforeEach(() => vi.clearAllMocks());
 
 describe("Voice Live API client", () => {
+  describe("fetchWebRTCSession", () => {
+    it("omits all optional identifiers when none are supplied", async () => {
+      const session = { token: "token", ice_servers: [] };
+      mockClient.post.mockResolvedValue({ data: session });
+
+      await expect(fetchWebRTCSession()).resolves.toEqual(session);
+      expect(mockClient.post).toHaveBeenCalledWith(
+        "/voice-live/webrtc/session",
+        null,
+        { params: {} },
+      );
+    });
+
+    it("includes every supplied authority identifier", async () => {
+      const session = { token: "token", ice_servers: [] };
+      mockClient.post.mockResolvedValue({ data: session });
+
+      await expect(fetchWebRTCSession("hcp-1", "vl-1", "session-1")).resolves.toEqual(
+        session,
+      );
+      expect(mockClient.post).toHaveBeenCalledWith(
+        "/voice-live/webrtc/session",
+        null,
+        {
+          params: {
+            hcp_profile_id: "hcp-1",
+            vl_instance_id: "vl-1",
+            session_id: "session-1",
+          },
+        },
+      );
+    });
+
+    it.each([
+      ["HCP", ["hcp-1", undefined, undefined], { hcp_profile_id: "hcp-1" }],
+      ["instance", [undefined, "vl-1", undefined], { vl_instance_id: "vl-1" }],
+      ["Session", [undefined, undefined, "session-1"], { session_id: "session-1" }],
+    ] as const)("supports only the %s identifier", async (_label, args, params) => {
+      mockClient.post.mockResolvedValue({ data: { token: "token" } });
+
+      await fetchWebRTCSession(...args);
+
+      expect(mockClient.post).toHaveBeenCalledWith(
+        "/voice-live/webrtc/session",
+        null,
+        { params },
+      );
+    });
+  });
+
   describe("fetchVoiceLiveToken", () => {
     it("calls POST /voice-live/token and returns token data", async () => {
       const tokenData = {
@@ -59,6 +110,16 @@ describe("Voice Live API client", () => {
       mockClient.post.mockRejectedValue(new Error("401 Unauthorized"));
 
       await expect(fetchVoiceLiveToken()).rejects.toThrow("401 Unauthorized");
+    });
+
+    it("adds an HCP profile identifier when provided", async () => {
+      mockClient.post.mockResolvedValue({ data: { token: "hcp-token" } });
+
+      await fetchVoiceLiveToken("hcp-1");
+
+      expect(mockClient.post).toHaveBeenCalledWith("/voice-live/token", null, {
+        params: { hcp_profile_id: "hcp-1" },
+      });
     });
   });
 

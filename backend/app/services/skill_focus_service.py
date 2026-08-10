@@ -15,7 +15,7 @@ from app.services.skill_manager import SkillContent
 logger = logging.getLogger(__name__)
 
 
-def extract_sop_steps(sop_content: str) -> list[str]:
+def extract_sop_steps(sop_content: str, *, allow_fallback: bool = True) -> list[str]:
     """Extract numbered SOP steps from content.
 
     Handles formats:
@@ -51,7 +51,8 @@ def extract_sop_steps(sop_content: str) -> list[str]:
 
     # Pattern 3: Markdown headers "## Step N" or "### N."
     header_pattern = re.compile(
-        r"^#{2,4}\s*(?:Step\s*)?(\d+)\.?\s*(.+)$", re.MULTILINE | re.IGNORECASE
+        r"^#{2,4}\s*(?:Step\s*)?(\d+)\.?\s*[:：]?\s*(.+)$",
+        re.MULTILINE | re.IGNORECASE,
     )
     matches = header_pattern.findall(sop_content)
     if matches:
@@ -59,6 +60,9 @@ def extract_sop_steps(sop_content: str) -> list[str]:
         steps = [m[1].strip() for m in sorted_matches]
         if steps:
             return steps
+
+    if not allow_fallback:
+        return []
 
     # Fallback: split by double newlines and treat each paragraph as a step
     paragraphs = [p.strip() for p in sop_content.split("\n\n") if p.strip()]
