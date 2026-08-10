@@ -457,12 +457,13 @@ async def handle_voice_live_websocket(
                 await _send_error(ws, exc.message, exc.code)
                 return
 
-            await _send_error(
-                ws,
-                "Session Voice and avatar context is unavailable; use text training.",
-                "SESSION_VOICE_CONTEXT_UNAVAILABLE",
-            )
-            return
+            # A training Session owns every identity and modality input. Ignore
+            # browser-supplied HCP/prompt/instance/avatar overrides and use the
+            # immutable Session pin plus its trusted HCP Voice configuration.
+            hcp_profile_id = training_context["hcp_profile_id"]
+            system_prompt = None
+            vl_instance_id = None
+            avatar_enabled_override = training_context["avatar_enabled"]
         elif system_prompt is not None:
             if not isinstance(system_prompt, str):
                 await _send_error(ws, "system_prompt must be a string", "INVALID_SYSTEM_PROMPT")
