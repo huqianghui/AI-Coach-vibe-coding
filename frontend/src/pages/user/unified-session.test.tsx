@@ -316,8 +316,6 @@ describe("UnifiedSession", () => {
     mockScenarioState.data = mockScenario;
     mockScenarioState.isLoading = false;
     mockScenarioState.isError = false;
-    mockScenario.hcp_profile.voice_live_enabled = true;
-    mockScenario.hcp_profile.avatar_enabled = true;
     mockStartSession.mockResolvedValue({
       avatarEnabled: true,
       model: "gpt-4o-realtime",
