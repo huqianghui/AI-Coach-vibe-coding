@@ -43,6 +43,7 @@ dev = [
     "pytest-cov>=5.0.0",
     "pytest-html>=4.1.0",
     "ruff>=0.6.0",
+    "azure-cognitiveservices-speech>=1.48.0",
 ]
 postgresql = [
     "asyncpg>=0.29.0",
